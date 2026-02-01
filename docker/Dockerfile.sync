@@ -38,8 +38,12 @@ COPY scripts/sync_iptv.py scripts/
 COPY services/ services/
 COPY utils/ utils/
 
-# Copiar crontab
+# Copiar crontab y entrypoint
 COPY docker/crontab /app/crontab
+COPY docker/entrypoint-sync.sh /app/entrypoint.sh
+
+# Hacer el entrypoint ejecutable
+RUN chmod +x /app/entrypoint.sh
 
 # Crear directorio para logs
 RUN mkdir -p /var/log
@@ -49,5 +53,5 @@ ENV DOCKER_CONTAINER=true \
     M3U_DIR=/app/data/m3u \
     PYTHONUNBUFFERED=1
 
-# Comando: ejecutar supercronic con el crontab
-CMD ["supercronic", "/app/crontab"]
+# Comando: usar el entrypoint que ejecuta sync primero y luego supercronic
+CMD ["/app/entrypoint.sh"]
