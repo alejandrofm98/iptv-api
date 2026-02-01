@@ -51,6 +51,7 @@ RUN mkdir -p /var/log
 # Variable de entorno
 ENV DOCKER_CONTAINER=true \
     M3U_DIR=/app/data/m3u \
+    PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
 
 # Comando: usar el entrypoint que ejecuta sync primero y luego supercronic

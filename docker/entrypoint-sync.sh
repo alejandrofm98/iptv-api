@@ -4,13 +4,18 @@
 # Ejecuta sync inmediatamente al arrancar, luego inicia supercronic
 # ============================================
 
+# Asegurar que Python encuentre los módulos en /app
+export PYTHONPATH=/app:$PYTHONPATH
+
 echo "🚀 Iniciando IPTV Sync Scheduler..."
 echo "📅 $(date)"
+echo "📂 Directorio de trabajo: $(pwd)"
+echo "🔧 PYTHONPATH: $PYTHONPATH"
 
 # Ejecutar sincronización inmediata
 echo ""
 echo "⚡ Ejecutando sincronización inicial..."
-python /app/scripts/sync_iptv.py
+cd /app && python scripts/sync_iptv.py
 
 # Verificar si el sync tuvo éxito
 if [ $? -eq 0 ]; then
