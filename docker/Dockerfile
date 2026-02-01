@@ -32,11 +32,11 @@ COPY scripts/ /app/scripts/
 RUN mkdir -p /app/data/m3u
 
 # Puerto expuesto
-EXPOSE 3001
+EXPOSE 3010
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3001/health || exit 1
+    CMD curl -f http://localhost:3010/health || exit 1
 
 # Comando por defecto
-CMD ["uvicorn", "scripts.api:app", "--host", "0.0.0.0", "--port", "3001"]
+CMD ["uvicorn", "scripts.api:app", "--host", "0.0.0.0", "--port", "3010"]
