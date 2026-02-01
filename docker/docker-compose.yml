@@ -28,30 +28,14 @@ services:
       - ../data:/app/data
     networks:
       - iptv-network
-      - traefik-network
+      - dokploy-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    labels:
-      # Traefik labels para acceso directo a la API (opcional)
-      - "traefik.enable=true"
-      # Router para api.tudominio.com (acceso directo a FastAPI)
-      - "traefik.http.routers.iptv-api.rule=Host(`api.${TRAEFIK_DOMAIN:-localhost}`)"
-      - "traefik.http.routers.iptv-api.entrypoints=websecure"
-      - "traefik.http.routers.iptv-api.tls=true"
-      - "traefik.http.routers.iptv-api.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.iptv-api.middlewares=iptv-api-stripprefix"
-      # Servicio
-      - "traefik.http.services.iptv-api.loadbalancer.server.port=3001"
-      - "traefik.http.services.iptv-api.loadbalancer.server.scheme=http"
-      # Health check
-      - "traefik.http.services.iptv-api.loadbalancer.healthcheck.path=/health"
-      - "traefik.http.services.iptv-api.loadbalancer.healthcheck.interval=30s"
-      # Middleware para quitar prefijo si es necesario
-      - "traefik.http.middlewares.iptv-api-stripprefix.stripprefix.prefixes=/api"
+
 
   # ============================================
   # Nginx Reverse Proxy (Entrypoint principal)
@@ -69,33 +53,7 @@ services:
         condition: service_healthy
     networks:
       - iptv-network
-      - traefik-network  # Red compartida con Traefik
-    labels:
-      # Habilitar Traefik
-      - "traefik.enable=true"
-      
-      # Router HTTP → HTTPS (redirección)
-      - "traefik.http.routers.iptv-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
-      - "traefik.http.routers.iptv-http.entrypoints=web"
-      - "traefik.http.routers.iptv-http.middlewares=redirect-to-https"
-      
-      # Router HTTPS principal
-      - "traefik.http.routers.iptv.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
-      - "traefik.http.routers.iptv.entrypoints=websecure"
-      - "traefik.http.routers.iptv.tls=true"
-      - "traefik.http.routers.iptv.tls.certresolver=letsencrypt"
-      
-      # Servicio (load balancer)
-      - "traefik.http.services.iptv.loadbalancer.server.port=80"
-      - "traefik.http.services.iptv.loadbalancer.server.scheme=http"
-      
-      # Health check para Traefik
-      - "traefik.http.services.iptv.loadbalancer.healthcheck.path=/health"
-      - "traefik.http.services.iptv.loadbalancer.healthcheck.interval=30s"
-      
-      # Middleware: Redirección HTTP → HTTPS
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+      - dokploy-network
 
   # ============================================
   # Sync Scheduler (Supercronic)
@@ -121,6 +79,7 @@ services:
       - ../data:/app/data
     networks:
       - iptv-network
+      - dokploy-network
     depends_on:
       - iptv-api
     # No expone puertos, solo ejecuta cron internamente
@@ -130,15 +89,10 @@ services:
 # Networks
 # ============================================
 networks:
+  dokploy-network:
+    external: true
   iptv-network:
     driver: bridge
-    
-  # Red para Traefik - Dokploy la conecta automáticamente
-  # o la crea si no existe
-  traefik-network:
-    driver: bridge
-    # En Dokploy, Traefik está en la red por defecto
-    # Las labels hacen que Traefik descubra los servicios
 
 # ============================================
 # Volumes
