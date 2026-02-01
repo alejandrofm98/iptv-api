@@ -4,7 +4,7 @@
 # ============================================
 
 # Cada 2 horas en punto (00:00, 02:00, 04:00, etc.)
-0 */2 * * * python /app/scripts/sync_iptv.py >> /var/log/sync.log 2>&1
+# 0 */2 * * * python /app/scripts/sync_iptv.py >> /var/log/sync.log 2>&1
 
 # Alternative: Cada 2 horas desde el inicio del contenedor
-# */2 * * * python /app/scripts/sync_iptv.py >> /var/log/sync.log 2>&1
+*/2 * * * python /app/scripts/sync_iptv.py >> /var/log/sync.log 2>&1
