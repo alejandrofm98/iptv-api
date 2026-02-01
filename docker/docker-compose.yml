@@ -56,6 +56,15 @@ services:
     networks:
       - iptv-network
       - dokploy-network
+    labels:
+      # Habilitar Traefik
+      - "traefik.enable=true"
+      # Router HTTP (sin HTTPS)
+      - "traefik.http.routers.iptv.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
+      - "traefik.http.routers.iptv.entrypoints=web"
+      # Servicio
+      - "traefik.http.services.iptv.loadbalancer.server.port=80"
+      - "traefik.http.services.iptv.loadbalancer.server.scheme=http"
 
   # ============================================
   # Sync Scheduler (Supercronic)
