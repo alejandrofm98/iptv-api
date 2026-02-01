@@ -133,9 +133,12 @@ networks:
   iptv-network:
     driver: bridge
     
+  # Red para Traefik - Dokploy la conecta automáticamente
+  # o la crea si no existe
   traefik-network:
-    external: true  # Red externa creada por Traefik/Dokploy
-    name: traefik-network  # Nombre estándar en Dokploy
+    driver: bridge
+    # En Dokploy, Traefik está en la red por defecto
+    # Las labels hacen que Traefik descubra los servicios
 
 # ============================================
 # Volumes
