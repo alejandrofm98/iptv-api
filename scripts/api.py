@@ -511,7 +511,7 @@ async def proxy_stream(
 # Stream Validation for Nginx (sin proxy)
 # ============================================
 
-@app.get("/api/auth/validate-stream/{content_type}/{username}/{password}/{provider_id}", tags=["Stream"])
+@app.get("/auth/validate-stream/{content_type}/{username}/{password}/{provider_id}", tags=["Stream"])
 async def validate_stream(
     content_type: str,
     username: str,
