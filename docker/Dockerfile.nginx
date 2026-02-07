@@ -5,8 +5,7 @@ FROM nginx:alpine
 # Copiar configuración personalizada desde la carpeta nginx/
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 
-# Copiar certificados SSL si existen (opcional)
-COPY nginx/ssl/ /etc/nginx/ssl/ 2>/dev/null || true
+# Los certificados SSL se montan como volumen, no se copian en la imagen
 
 # Verificar configuración al construir
 RUN nginx -t
