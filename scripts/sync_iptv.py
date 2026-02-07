@@ -59,7 +59,7 @@ def proxy_logo_url(logo_url: str, public_domain: str) -> str:
       public_domain: Dominio público del API (https://iptv.walerike.com)
   
   Returns:
-      URL transformada usando el proxy HTTPS
+      URL transformada usando el proxy HTTPS con query string
   """
   if not logo_url:
     return CONSTANTS.DEFAULT_LOGO_URL
@@ -68,9 +68,8 @@ def proxy_logo_url(logo_url: str, public_domain: str) -> str:
   if logo_url.startswith('https://') or logo_url.startswith('/'):
     return logo_url
   
-  # Convertir HTTP a HTTPS usando el proxy (SIN codificar)
-  # La API se encarga de decodificar si es necesario
-  return f"{public_domain}/logo/{logo_url}"
+  # Convertir HTTP a HTTPS usando el proxy con query string
+  return f"{public_domain}/logo/?url={logo_url}"
 
 
 def extraer_temporada_episodio(nombre):

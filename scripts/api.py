@@ -754,9 +754,9 @@ async def validate_stream(
 # ============================================
 # Logo/Image Proxy - Para解决 Mixed Content
 # ============================================
-@app.get("/logo/{path:path}", tags=["Logo"])
+@app.get("/logo/", tags=["Logo"])
 async def proxy_logo(
-    path: str,
+    url: str = Query(..., description="URL original del logo"),
     request: Request,
     stream_svc: StreamProxyService = Depends(get_stream_service_dep)
 ):
@@ -767,24 +767,20 @@ async def proxy_logo(
     import httpx
     from urllib.parse import unquote, urlparse
     
-    # La URL puede venir codificada o no, normalizar
-    # Ejemplos: http://... o http%3A%2F%2F...
-    original_url = unquote(path)
+    # La URL puede venir codificada o no
+    original_url = unquote(url)
     
     # Asegurarse de que empieza con http
     if not original_url.startswith('http'):
-        # Si no tiene protocolo, añadir http://
-        original_url = 'http://' + original_url
+        raise HTTPException(400, "URL inválida: falta protocolo http:// o https://")
     
     try:
-        # Hacer proxy de la imagen
         client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
         response = await client.get(original_url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         })
         response.raise_for_status()
         
-        # Determinar content-type
         content_type = response.headers.get("content-type", "image/jpeg")
         
         return Response(
