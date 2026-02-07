@@ -27,7 +27,7 @@ class UserCreate(BaseModel):
     """Modelo para crear usuario"""
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6)
-    max_connections: int = Field(default=2, ge=1, le=10)
+    max_connections: int = Field(default=5, ge=1, le=10)
     role: str = Field(default="user")  # <--- NUEVO
     expires_at: Optional[datetime] = None
 
