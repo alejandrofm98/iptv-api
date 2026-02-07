@@ -756,8 +756,8 @@ async def validate_stream(
 # ============================================
 @app.get("/logo/", tags=["Logo"])
 async def proxy_logo(
-    url: str = Query(..., description="URL original del logo"),
     request: Request,
+    url: str = Query(..., description="URL original del logo"),
     stream_svc: StreamProxyService = Depends(get_stream_service_dep)
 ):
     """
