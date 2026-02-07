@@ -17,6 +17,33 @@ class StreamProxyService:
         # Cache de URLs originales: stream_id -> url original
         self._url_cache: Dict[str, str] = {}
 
+    def resolve_redirects(self, url: str) -> Optional[str]:
+        """
+        Resuelve redirects HTTP y devuelve la URL final.
+        
+        Esto es necesario porque algunos proveedores devuelven 302 redirects
+        a URLs HTTP, lo que causa problemas de Mixed Content en clientes HTTPS.
+        
+        Args:
+            url: URL inicial que puede tener redirects
+            
+        Returns:
+            URL final después de seguir todos los redirects, o None si hay error
+        """
+        try:
+            # Usar HEAD request para no descargar el contenido completo
+            response = httpx.head(
+                url, 
+                follow_redirects=True,
+                headers={'User-Agent': CONSTANTS.DEFAULT_USER_AGENT},
+                timeout=10.0
+            )
+            return str(response.url)
+        except Exception as e:
+            print(f"⚠️ Error resolviendo redirects para {url}: {e}")
+            # Si falla, devolver la URL original
+            return url
+
     def _hash_url(self, url: str) -> str:
         """Genera hash de URL (mismo método que playlist_service)"""
         return hashlib.md5(url.encode()).hexdigest()[:16]

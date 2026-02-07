@@ -555,11 +555,15 @@ async def validate_stream(
     if not original_url:
         raise HTTPException(404, "Stream no encontrado")
 
-    # Devolver URL original en header para que nginx haga proxy
+    # Resolver redirects para evitar Mixed Content (HTTP -> HTTPS)
+    # El proveedor puede devolver 302 a URL HTTP, pero nosotros necesitamos la URL final
+    final_url = stream_svc.resolve_redirects(original_url)
+
+    # Devolver URL final en header para que nginx haga proxy
     return PlainTextResponse(
         content="OK",
         headers={
-            "X-Original-Url": original_url,
+            "X-Original-Url": final_url,
             "X-Provider-Id": clean_provider_id
         }
     )
