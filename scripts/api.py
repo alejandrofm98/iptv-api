@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status
+from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -749,6 +749,51 @@ async def validate_stream(
             "X-Provider-Id": clean_provider_id
         }
     )
+
+
+# ============================================
+# Logo/Image Proxy - Para解决 Mixed Content
+# ============================================
+@app.get("/logo/{path:path}", tags=["Logo"])
+async def proxy_logo(
+    path: str,
+    request: Request,
+    stream_svc: StreamProxyService = Depends(get_stream_service_dep)
+):
+    """
+    Proxy de imágenes/logos para resolver Mixed Content.
+    Recibe una URL HTTP del proveedor y la sirve a través de HTTPS.
+    """
+    import httpx
+    
+    # Decodificar la URL
+    from urllib.parse import unquote
+    original_url = unquote(path)
+    
+    if not original_url.startswith("http"):
+        raise HTTPException(400, "URL inválida")
+    
+    try:
+        # Hacer proxy de la imagen
+        client = httpx.AsyncClient(timeout=30.0)
+        response = await client.get(original_url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        response.raise_for_status()
+        
+        # Determinar content-type
+        content_type = response.headers.get("content-type", "image/jpeg")
+        
+        return Response(
+            content=response.content,
+            media_type=content_type,
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(502, f"Error al obtener imagen: {str(e)}")
 
 
 # ============================================
