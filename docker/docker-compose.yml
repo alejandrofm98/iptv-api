@@ -26,8 +26,8 @@ services:
       # Public domain (para generar URLs en M3U)
       - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-http://localhost}
     volumes:
-      # Montar directorio local de datos (incluye playlist.m3u)
-      - ../data:/app/data
+      # Volumen compartido entre todos los servicios
+      - iptv-data:/app/data
     networks:
       - iptv-network
       - dokploy-network
@@ -59,8 +59,8 @@ services:
     container_name: iptv-nginx
     restart: unless-stopped
     volumes:
-      # Solo montar datos y SSL (NO la config, está en la imagen)
-      - ../data:/app/data:ro
+      # Volumen compartido (solo lectura) y SSL
+      - iptv-data:/app/data:ro
       - ../nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       iptv-api:
@@ -98,8 +98,8 @@ services:
       # Public domain (para URLs en M3U)
       - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-http://localhost}
     volumes:
-      # Compartir datos con la API (lectura/escritura)
-      - ../data:/app/data
+      # Volumen compartido entre todos los servicios (lectura/escritura)
+      - iptv-data:/app/data
     networks:
       - iptv-network
       - dokploy-network
