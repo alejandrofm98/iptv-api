@@ -50,6 +50,30 @@ def detectar_tipo_contenido(url, nombre):
   return CONSTANTS.CONTENT_TYPE_CHANNEL
 
 
+def proxy_logo_url(logo_url: str, public_domain: str) -> str:
+  """
+  Convierte URLs de logos HTTP a HTTPS usando el proxy.
+  
+  Args:
+      logo_url: URL original del logo (puede ser HTTP)
+      public_domain: Dominio público del API (https://iptv.walerike.com)
+  
+  Returns:
+      URL transformada usando el proxy HTTPS
+  """
+  if not logo_url:
+    return CONSTANTS.DEFAULT_LOGO_URL
+  
+  # Si ya es HTTPS o es una URL local, dejarla como está
+  if logo_url.startswith('https://') or logo_url.startswith('/'):
+    return logo_url
+  
+  # Convertir HTTP a HTTPS usando el proxy
+  from urllib.parse import quote
+  encoded_url = quote(logo_url, safe='')
+  return f"{public_domain}/logo/{encoded_url}"
+
+
 def extraer_temporada_episodio(nombre):
   """
   Extrae temporada y episodio del nombre
@@ -111,8 +135,8 @@ def procesar_item(item, idx, tipo):
   # Extraer country del grupo
   country = extraer_country(item['group'])
 
-  # Usar la URL del logo directamente
-  logo_url = item['logo'] if item['logo'] else CONSTANTS.DEFAULT_LOGO_URL
+  # Convertir URL del logo a HTTPS usando el proxy
+  logo_url = proxy_logo_url(item['logo'], settings.public_domain)
 
   # Extraer provider_id de la URL
   provider_id = extraer_provider_id(item['url'])
@@ -378,7 +402,8 @@ def parsear_m3u(m3u_content: str) -> list:
 
       logo = ''
       if CONSTANTS.M3U_TVG_LOGO_ATTR in line:
-        logo = line.split(CONSTANTS.M3U_TVG_LOGO_ATTR)[1].split('"')[0]
+        raw_logo = line.split(CONSTANTS.M3U_TVG_LOGO_ATTR)[1].split('"')[0]
+        logo = proxy_logo_url(raw_logo, settings.public_domain)
 
       tvg_id = ''
       if CONSTANTS.M3U_TVG_ID_ATTR in line:
