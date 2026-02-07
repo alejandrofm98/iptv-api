@@ -18,11 +18,11 @@ class DeviceService:
         self.supabase = supabase
         self.settings = get_settings()
 
-    def _generate_device_id(self, user_agent: str, ip_address: str) -> str:
-        """Genera un ID único para el dispositivo"""
-        # Combinamos User-Agent e IP para crear un identificador único
-        raw = f"{user_agent}:{ip_address}"
-        return hashlib.sha256(raw.encode()).hexdigest()[:32]
+    def _generate_device_id(self, ip_address: str) -> str:
+        """Genera un ID único basado solo en la IP (cada IP = 1 dispositivo)"""
+        # Usamos solo la IP para identificar dispositivos
+        # Esto permite que múltiples apps desde la misma red cuenten como 1 sesión
+        return hashlib.sha256(ip_address.encode()).hexdigest()[:32]
 
     def _parse_device_info(self, user_agent: str) -> Tuple[str, DeviceType]:
         """
@@ -125,7 +125,7 @@ class DeviceService:
         Returns:
             (success, message, session_data)
         """
-        device_id = self._generate_device_id(user_agent, ip_address)
+        device_id = self._generate_device_id(ip_address)
         device_name, device_type = self._parse_device_info(user_agent)
 
         # Buscar sesión existente para este dispositivo
@@ -232,7 +232,7 @@ class DeviceService:
         Returns:
             (allowed, message)
         """
-        device_id = self._generate_device_id(user_agent, ip_address)
+        device_id = self._generate_device_id(ip_address)
 
         # Verificar si ya está registrado
         existing = self.supabase.table('active_sessions').select('id').eq(
