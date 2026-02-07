@@ -259,13 +259,23 @@ class DeviceService:
 
     def get_all_sessions(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Obtiene todas las sesiones activas (para admin)"""
+        # Obtener sesiones
         result = self.supabase.table('active_sessions').select(
-            '*, users!inner(username)'
+            '*'
         ).order('last_activity', desc=True).limit(limit).execute()
 
-        sessions = []
-        for session in (result.data or []):
-            session['username'] = session.pop('users', {}).get('username', 'Unknown')
-            sessions.append(session)
+        sessions = result.data or []
+        
+        # Obtener usernames de los usuarios
+        user_ids = [s['user_id'] for s in sessions if s.get('user_id')]
+        if user_ids:
+            users_result = self.supabase.table('users').select(
+                'id,username'
+            ).in_('id', user_ids).execute()
+            users_map = {u['id']: u['username'] for u in (users_result.data or [])}
+            
+            # Añadir username a cada sesión
+            for session in sessions:
+                session['username'] = users_map.get(session.get('user_id'), 'Unknown')
 
         return sessions
