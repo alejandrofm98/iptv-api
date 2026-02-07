@@ -24,7 +24,7 @@ services:
       # M3U
       - M3U_DIR=/app/data/m3u
       # Public domain (para generar URLs en M3U)
-      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-http://localhost}
+      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-https://localhost}
     volumes:
       # Volumen compartido entre todos los servicios
       - iptv-data:/app/data
@@ -40,9 +40,11 @@ services:
     labels:
       # Traefik: API endpoints van directo al contenedor (sin pasar por nginx)
       - "traefik.enable=true"
-      # Router para /api/* y /docs/* (prioridad alta) - Sin HTTPS
+      # Router para /api/* y /docs/* (prioridad alta) - Con HTTPS
       - "traefik.http.routers.iptv-api.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (PathPrefix(`/api/`) || PathPrefix(`/docs`) || PathPrefix(`/openapi`) || PathPrefix(`/redoc`))"
-      - "traefik.http.routers.iptv-api.entrypoints=web"
+      - "traefik.http.routers.iptv-api.entrypoints=websecure"
+      - "traefik.http.routers.iptv-api.tls=true"
+      - "traefik.http.routers.iptv-api.tls.certresolver=letsencrypt"
       - "traefik.http.routers.iptv-api.priority=100"
       - "traefik.http.services.iptv-api.loadbalancer.server.port=3010"
 
@@ -67,10 +69,12 @@ services:
       - iptv-network
       - dokploy-network
     labels:
-      # Traefik: Todo EXCEPTO /api/* va a nginx - Sin HTTPS
+      # Traefik: Todo EXCEPTO /api/* va a nginx - Con HTTPS
       - "traefik.enable=true"
       - "traefik.http.routers.iptv-nginx.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
-      - "traefik.http.routers.iptv-nginx.entrypoints=web"
+      - "traefik.http.routers.iptv-nginx.entrypoints=websecure"
+      - "traefik.http.routers.iptv-nginx.tls=true"
+      - "traefik.http.routers.iptv-nginx.tls.certresolver=letsencrypt"
       - "traefik.http.routers.iptv-nginx.priority=10"
       - "traefik.http.services.iptv-nginx.loadbalancer.server.port=80"
 
@@ -92,7 +96,7 @@ services:
       # M3U
       - M3U_DIR=/app/data/m3u
       # Public domain (para URLs en M3U)
-      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-http://localhost}
+      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-https://localhost}
     volumes:
       # Volumen compartido entre todos los servicios (lectura/escritura)
       - iptv-data:/app/data
