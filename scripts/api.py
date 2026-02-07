@@ -99,7 +99,10 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Ajustar en producción
+    allow_origins=[
+        "https://walactvweb.walerike.com",
+        "http://localhost:4200"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
