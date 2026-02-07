@@ -6,9 +6,8 @@ FROM nginx:alpine
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 
 # Los certificados SSL se montan como volumen, no se copian en la imagen
-
-# Verificar configuración al construir
-RUN nginx -t
+# NOTA: No podemos verificar nginx -t aquí porque el upstream iptv-api
+# no existe durante la construcción (solo existe en runtime)
 
 # Puerto por defecto
 EXPOSE 80
