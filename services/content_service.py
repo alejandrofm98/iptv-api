@@ -77,7 +77,7 @@ class ContentService:
         base_url = self.settings.public_domain.rstrip('/')
 
         if content_type == 'live':
-            return f"{base_url}/{content_type}/{username}/{password}/{stream_id}"
+            return f"{base_url}/{username}/{password}/{stream_id}"
 
         return f"{base_url}/{content_type}/{username}/{password}/{stream_id}.{extension}" if extension else f"{base_url}/{content_type}/{username}/{password}/{stream_id}"
 
