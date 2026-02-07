@@ -1,7 +1,6 @@
 """
 Servicio de gestión de contenido (canales, películas, series)
 """
-import hashlib
 from typing import Optional, List, Dict, Any
 from supabase import Client
 
@@ -15,59 +14,57 @@ class ContentService:
         self.supabase = supabase
         self.settings = get_settings()
 
-    def _extract_stream_id(self, url: str) -> str:
-        """Extrae un ID único del stream a partir de la URL original"""
-        return hashlib.md5(url.encode()).hexdigest()[:16]
-
-    def _build_proxy_url(self, original_url: str, username: str, password: str, content_type: str = 'live') -> str:
-        """Construye la URL proxificada para el stream"""
-        stream_id = self._extract_stream_id(original_url)
+    def _build_proxy_url(self, provider_id: str, username: str, password: str, content_type: str = 'live') -> str:
+        """Construye la URL proxificada para el stream usando provider_id"""
         base_url = self.settings.public_domain.rstrip('/')
-        return f"{base_url}/{content_type}/{username}/{password}/{stream_id}.ts"
+        return f"{base_url}/{content_type}/{username}/{password}/{provider_id}.ts"
 
     def _parse_channel(self, row: Dict[str, Any], username: str = '', password: str = '') -> Dict[str, Any]:
         """Parses a channel row from Supabase"""
+        provider_id = row.get('provider_id', '')
         return {
-            'id': row.get('id'),
+            'id': provider_id,
             'num': row.get('numero'),
             'nombre': row.get('nombre'),
             'logo': row.get('logo'),
             'grupo': row.get('grupo'),
             'country': row.get('country'),
-            'provider_id': row.get('provider_id'),
+            'provider_id': provider_id,
             'tvg_id': row.get('tvg_id'),
             'url': row.get('url'),
-            'stream_url': self._build_proxy_url(row.get('url', ''), username, password, 'live') if username and password else None
+            'stream_url': self._build_proxy_url(provider_id, username, password, 'live') if provider_id and username and password else None
         }
 
     def _parse_movie(self, row: Dict[str, Any], username: str = '', password: str = '') -> Dict[str, Any]:
         """Parses a movie row from Supabase"""
+        provider_id = row.get('provider_id', '')
         return {
-            'id': row.get('id'),
+            'id': provider_id,
             'num': row.get('numero'),
             'nombre': row.get('nombre'),
             'logo': row.get('logo'),
             'grupo': row.get('grupo'),
             'country': row.get('country'),
-            'provider_id': row.get('provider_id'),
+            'provider_id': provider_id,
             'url': row.get('url'),
-            'stream_url': self._build_proxy_url(row.get('url', ''), username, password, 'movie') if username and password else None
+            'stream_url': self._build_proxy_url(provider_id, username, password, 'movie') if provider_id and username and password else None
         }
 
     def _parse_series(self, row: Dict[str, Any], username: str = '', password: str = '') -> Dict[str, Any]:
         """Parses a series row from Supabase"""
+        provider_id = row.get('provider_id', '')
         return {
-            'id': row.get('id'),
+            'id': provider_id,
             'num': row.get('numero'),
             'nombre': row.get('nombre'),
             'logo': row.get('logo'),
             'grupo': row.get('grupo'),
             'country': row.get('country'),
-            'provider_id': row.get('provider_id'),
+            'provider_id': provider_id,
             'temporada': row.get('temporada'),
             'episodio': row.get('episodio'),
             'url': row.get('url'),
-            'stream_url': self._build_proxy_url(row.get('url', ''), username, password, 'series') if username and password else None
+            'stream_url': self._build_proxy_url(provider_id, username, password, 'series') if provider_id and username and password else None
         }
 
     def get_channels(
