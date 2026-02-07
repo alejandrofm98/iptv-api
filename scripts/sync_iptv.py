@@ -68,10 +68,9 @@ def proxy_logo_url(logo_url: str, public_domain: str) -> str:
   if logo_url.startswith('https://') or logo_url.startswith('/'):
     return logo_url
   
-  # Convertir HTTP a HTTPS usando el proxy
-  from urllib.parse import quote
-  encoded_url = quote(logo_url, safe='')
-  return f"{public_domain}/logo/{encoded_url}"
+  # Convertir HTTP a HTTPS usando el proxy (SIN codificar)
+  # La API se encarga de decodificar si es necesario
+  return f"{public_domain}/logo/{logo_url}"
 
 
 def extraer_temporada_episodio(nombre):
