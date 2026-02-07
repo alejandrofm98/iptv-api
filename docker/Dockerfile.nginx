@@ -2,11 +2,11 @@
 # Esto asegura que nginx.conf se incluya en la imagen y no dependa de volúmenes
 FROM nginx:alpine
 
-# Copiar configuración personalizada
-COPY nginx.conf /etc/nginx/nginx.conf
+# Copiar configuración personalizada desde la carpeta nginx/
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
 
 # Copiar certificados SSL si existen (opcional)
-COPY ssl/ /etc/nginx/ssl/ 2>/dev/null || true
+COPY nginx/ssl/ /etc/nginx/ssl/ 2>/dev/null || true
 
 # Verificar configuración al construir
 RUN nginx -t
