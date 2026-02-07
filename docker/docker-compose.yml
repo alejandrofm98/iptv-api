@@ -14,8 +14,8 @@ services:
       dockerfile: docker/Dockerfile
     container_name: iptv-api
     restart: unless-stopped
-#    ports:
-#      - "3010:3010"
+    ports:
+      - "3010:3010"
     env_file:
       - .env
     environment:

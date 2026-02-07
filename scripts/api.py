@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 
-from services import UserService, DeviceService, PlaylistService, StreamProxyService
+from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService
 from utils.config import get_settings
 from utils.models import UserCreate, UserUpdate, ValidateCredentials, AuthResult, SystemStats
 from utils.constants import JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES
@@ -30,6 +30,7 @@ user_service: UserService = None
 device_service: DeviceService = None
 playlist_service: PlaylistService = None
 stream_service: StreamProxyService = None
+content_service: ContentService = None
 
 # ============================================
 # Funciones de Utilidad Auth
@@ -65,7 +66,7 @@ async def cleanup_sessions_task():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestión del ciclo de vida de la aplicación"""
-    global supabase_client, user_service, device_service, playlist_service, stream_service
+    global supabase_client, user_service, device_service, playlist_service, stream_service, content_service
 
     print("🚀 Iniciando IPTV API...")
 
@@ -77,6 +78,7 @@ async def lifespan(app: FastAPI):
         device_service = DeviceService(supabase_client)
         playlist_service = PlaylistService(supabase_client)
         stream_service = StreamProxyService(supabase_client)
+        content_service = ContentService(supabase_client)
 
         stream_service.preload_cache()
         asyncio.create_task(cleanup_sessions_task())
@@ -159,6 +161,10 @@ def get_playlist_service_dep() -> PlaylistService:
 def get_stream_service_dep() -> StreamProxyService:
     if not stream_service: raise HTTPException(500, "Servicio no disponible")
     return stream_service
+
+def get_content_service_dep() -> ContentService:
+    if not content_service: raise HTTPException(500, "Servicio no disponible")
+    return content_service
 
 
 # ============================================
@@ -382,6 +388,162 @@ async def reload_template(
             status_code=500,
             detail="No se pudo recargar el template. Verifica que playlist_template.m3u exista."
         )
+
+
+# ============================================
+# API: Canales JSON (Público con User/Pass en URL)
+# ============================================
+
+@app.get("/api/channels", tags=["Channels"])
+async def get_channels(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    group: Optional[str] = Query(None),
+    country: Optional[str] = Query(None),
+    username: str = Query(...),
+    password: str = Query(...),
+    user_svc: UserService = Depends(get_user_service_dep),
+    content_svc: ContentService = Depends(get_content_service_dep)
+):
+    """Obtiene lista paginada de canales en JSON"""
+    auth = user_svc.validate_credentials(username, password)
+
+    if not auth.valid:
+        raise HTTPException(401, auth.message)
+
+    return content_svc.get_channels(
+        skip=skip,
+        limit=limit,
+        group=group,
+        country=country,
+        username=username,
+        password=password
+    )
+
+
+@app.get("/api/channels/{channel_id}", tags=["Channels"])
+async def get_channel(
+    channel_id: str,
+    username: str = Query(...),
+    password: str = Query(...),
+    user_svc: UserService = Depends(get_user_service_dep),
+    content_svc: ContentService = Depends(get_content_service_dep)
+):
+    """Obtiene un canal específico"""
+    auth = user_svc.validate_credentials(username, password)
+
+    if not auth.valid:
+        raise HTTPException(401, auth.message)
+
+    channel = content_svc.get_channel(channel_id, username, password)
+    if not channel:
+        raise HTTPException(404, "Canal no encontrado")
+
+    return channel
+
+
+# ============================================
+# API: Películas JSON (Público con User/Pass en URL)
+# ============================================
+
+@app.get("/api/movies", tags=["Movies"])
+async def get_movies(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    group: Optional[str] = Query(None),
+    country: Optional[str] = Query(None),
+    username: str = Query(...),
+    password: str = Query(...),
+    user_svc: UserService = Depends(get_user_service_dep),
+    content_svc: ContentService = Depends(get_content_service_dep)
+):
+    """Obtiene lista paginada de películas en JSON"""
+    auth = user_svc.validate_credentials(username, password)
+
+    if not auth.valid:
+        raise HTTPException(401, auth.message)
+
+    return content_svc.get_movies(
+        skip=skip,
+        limit=limit,
+        group=group,
+        country=country,
+        username=username,
+        password=password
+    )
+
+
+@app.get("/api/movies/{movie_id}", tags=["Movies"])
+async def get_movie(
+    movie_id: str,
+    username: str = Query(...),
+    password: str = Query(...),
+    user_svc: UserService = Depends(get_user_service_dep),
+    content_svc: ContentService = Depends(get_content_service_dep)
+):
+    """Obtiene una película específica"""
+    auth = user_svc.validate_credentials(username, password)
+
+    if not auth.valid:
+        raise HTTPException(401, auth.message)
+
+    movie = content_svc.get_movie(movie_id, username, password)
+    if not movie:
+        raise HTTPException(404, "Película no encontrada")
+
+    return movie
+
+
+# ============================================
+# API: Series JSON (Público con User/Pass en URL)
+# ============================================
+
+@app.get("/api/series", tags=["Series"])
+async def get_series(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    group: Optional[str] = Query(None),
+    country: Optional[str] = Query(None),
+    username: str = Query(...),
+    password: str = Query(...),
+    user_svc: UserService = Depends(get_user_service_dep),
+    content_svc: ContentService = Depends(get_content_service_dep)
+):
+    """Obtiene lista paginada de series en JSON"""
+    auth = user_svc.validate_credentials(username, password)
+
+    if not auth.valid:
+        raise HTTPException(401, auth.message)
+
+    return content_svc.get_series(
+        skip=skip,
+        limit=limit,
+        group=group,
+        country=country,
+        username=username,
+        password=password
+    )
+
+
+@app.get("/api/series/{series_id}", tags=["Series"])
+async def get_series_item(
+    series_id: str,
+    username: str = Query(...),
+    password: str = Query(...),
+    user_svc: UserService = Depends(get_user_service_dep),
+    content_svc: ContentService = Depends(get_content_service_dep)
+):
+    """Obtiene una serie específica"""
+    auth = user_svc.validate_credentials(username, password)
+
+    if not auth.valid:
+        raise HTTPException(401, auth.message)
+
+    serie = content_svc.get_serie(series_id, username, password)
+    if not serie:
+        raise HTTPException(404, "Serie no encontrada")
+
+    return serie
 
 
 # ============================================
