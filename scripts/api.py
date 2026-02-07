@@ -674,10 +674,21 @@ async def proxy_stream(
     try:
         status_code, headers, body = await stream_svc.get_stream_response(original_url)
 
+        # Add CORS headers for browser requests
+        cors_headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Expose-Headers': 'Content-Length, Content-Type',
+        }
+
+        # Merge headers
+        response_headers = {**headers, **cors_headers}
+
         return StreamingResponse(
             body,
             status_code=status_code,
-            headers=headers,
+            headers=response_headers,
             media_type=headers.get('content-type', 'video/mp2t')
         )
     except Exception as e:
