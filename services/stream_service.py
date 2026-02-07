@@ -17,7 +17,7 @@ class StreamProxyService:
         # Cache de URLs originales: stream_id -> url original
         self._url_cache: Dict[str, str] = {}
 
-    def resolve_redirects(self, url: str) -> Optional[str]:
+    def resolve_redirects(self, url: str) -> str:
         """
         Resuelve redirects HTTP y devuelve la URL final.
         
@@ -28,19 +28,37 @@ class StreamProxyService:
             url: URL inicial que puede tener redirects
             
         Returns:
-            URL final después de seguir todos los redirects, o None si hay error
+            URL final después de seguir todos los redirects, o URL original si hay error
         """
+        import time
+        start_time = time.time()
+        
         try:
-            # Usar HEAD request para no descargar el contenido completo
-            response = httpx.head(
-                url, 
+            # Algunos proveedores no soportan HEAD, usar GET con stream=True
+            # para no descargar todo el contenido
+            with httpx.stream(
+                'GET',
+                url,
                 follow_redirects=True,
                 headers={'User-Agent': CONSTANTS.DEFAULT_USER_AGENT},
-                timeout=10.0
-            )
-            return str(response.url)
+                timeout=15.0
+            ) as response:
+                final_url = str(response.url)
+                elapsed = time.time() - start_time
+                
+                if final_url != url:
+                    print(f"🔄 Redirect resuelto: {url[:60]}... -> {final_url[:60]}... ({elapsed:.2f}s)")
+                else:
+                    print(f"✅ Sin redirects: {url[:60]}... ({elapsed:.2f}s)")
+                
+                return final_url
+                
+        except httpx.TimeoutException:
+            print(f"⏱️ Timeout resolviendo redirects para {url[:60]}...")
+            return url
         except Exception as e:
-            print(f"⚠️ Error resolviendo redirects para {url}: {e}")
+            elapsed = time.time() - start_time
+            print(f"⚠️ Error resolviendo redirects ({elapsed:.2f}s): {e}")
             # Si falla, devolver la URL original
             return url
 
