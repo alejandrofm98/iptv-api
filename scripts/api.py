@@ -96,7 +96,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS
+# CORS - FastAPI maneja esto automáticamente si recibe el header Origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -106,6 +106,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # IMPORTANTE: Permitir que FastAPI use el header Origin de la petición
+    expose_headers=["*"],
 )
 
 # ============================================
