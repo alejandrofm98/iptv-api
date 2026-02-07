@@ -367,6 +367,21 @@ async def get_countries(
 ):
     return {"countries": playlist_svc.get_available_countries()}
 
+@app.get("/api/content/count", tags=["Content"])
+async def get_content_count(
+    username: str = Query(...),
+    password: str = Query(...),
+    user_svc: UserService = Depends(get_user_service_dep),
+    content_svc: ContentService = Depends(get_content_service_dep)
+):
+    """Obtiene el número total de canales, películas y series"""
+    auth = user_svc.validate_credentials(username, password)
+
+    if not auth.valid:
+        raise HTTPException(401, auth.message)
+
+    return content_svc.get_content_count()
+
 @app.post("/api/admin/reload-template", tags=["Admin"])
 async def reload_template(
     _: dict = Depends(require_admin),

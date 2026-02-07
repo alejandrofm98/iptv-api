@@ -271,3 +271,15 @@ class ContentService:
                 countries.add(item[column])
 
         return sorted(list(countries))
+
+    def get_content_count(self) -> Dict[str, int]:
+        """Obtiene el número total de canales, películas y series"""
+        channels = self.supabase.table('channels').select('id', count='exact').execute()
+        movies = self.supabase.table('movies').select('id', count='exact').execute()
+        series = self.supabase.table('series').select('id', count='exact').execute()
+
+        return {
+            'channels': channels.count or 0,
+            'movies': movies.count or 0,
+            'series': series.count or 0
+        }
