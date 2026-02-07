@@ -40,11 +40,9 @@ services:
     labels:
       # Traefik: API endpoints van directo al contenedor (sin pasar por nginx)
       - "traefik.enable=true"
-      # Router para /api/* y /docs/* (prioridad alta)
+      # Router para /api/* y /docs/* (prioridad alta) - Sin HTTPS
       - "traefik.http.routers.iptv-api.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (PathPrefix(`/api/`) || PathPrefix(`/docs`) || PathPrefix(`/openapi`) || PathPrefix(`/redoc`))"
-      - "traefik.http.routers.iptv-api.entrypoints=websecure"
-      - "traefik.http.routers.iptv-api.tls=true"
-      - "traefik.http.routers.iptv-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.iptv-api.entrypoints=web"
       - "traefik.http.routers.iptv-api.priority=100"
       - "traefik.http.services.iptv-api.loadbalancer.server.port=3010"
 
@@ -69,12 +67,10 @@ services:
       - iptv-network
       - dokploy-network
     labels:
-      # Traefik: Todo EXCEPTO /api/* va a nginx
+      # Traefik: Todo EXCEPTO /api/* va a nginx - Sin HTTPS
       - "traefik.enable=true"
       - "traefik.http.routers.iptv-nginx.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
-      - "traefik.http.routers.iptv-nginx.entrypoints=websecure"
-      - "traefik.http.routers.iptv-nginx.tls=true"
-      - "traefik.http.routers.iptv-nginx.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.iptv-nginx.entrypoints=web"
       - "traefik.http.routers.iptv-nginx.priority=10"
       - "traefik.http.services.iptv-nginx.loadbalancer.server.port=80"
 
