@@ -141,6 +141,7 @@ class ContentService:
         limit: int = 50,
         group: Optional[str] = None,
         country: Optional[str] = None,
+        search: Optional[str] = None,
         username: str = '',
         password: str = ''
     ) -> Dict[str, Any]:
@@ -151,6 +152,8 @@ class ContentService:
             query = query.ilike('grupo', f'%{group}%')
         if country:
             query = query.eq('country', country)
+        if search:
+            query = query.ilike('nombre', f'%{search}%')
 
         query = query.order('numero', desc=False)
         query = query.range(skip, skip + limit - 1)
@@ -178,6 +181,7 @@ class ContentService:
         limit: int = 50,
         group: Optional[str] = None,
         country: Optional[str] = None,
+        search: Optional[str] = None,
         username: str = '',
         password: str = ''
     ) -> Dict[str, Any]:
@@ -188,6 +192,8 @@ class ContentService:
             query = query.ilike('grupo', f'%{group}%')
         if country:
             query = query.eq('country', country)
+        if search:
+            query = query.ilike('nombre', f'%{search}%')
 
         query = query.order('numero', desc=False)
         query = query.range(skip, skip + limit - 1)
@@ -215,6 +221,7 @@ class ContentService:
         limit: int = 50,
         group: Optional[str] = None,
         country: Optional[str] = None,
+        search: Optional[str] = None,
         username: str = '',
         password: str = ''
     ) -> Dict[str, Any]:
@@ -225,6 +232,8 @@ class ContentService:
             query = query.ilike('grupo', f'%{group}%')
         if country:
             query = query.eq('country', country)
+        if search:
+            query = query.ilike('nombre', f'%{search}%')
 
         query = query.order('numero', desc=False)
         query = query.range(skip, skip + limit - 1)

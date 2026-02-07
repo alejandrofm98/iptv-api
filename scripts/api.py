@@ -420,6 +420,7 @@ async def get_channels(
     limit: int = Query(50, ge=1, le=100),
     group: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
     username: str = Query(...),
     password: str = Query(...),
     user_svc: UserService = Depends(get_user_service_dep),
@@ -436,6 +437,7 @@ async def get_channels(
         limit=limit,
         group=group,
         country=country,
+        search=search,
         username=username,
         password=password
     )
@@ -472,6 +474,7 @@ async def get_movies(
     limit: int = Query(50, ge=1, le=100),
     group: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
     username: str = Query(...),
     password: str = Query(...),
     user_svc: UserService = Depends(get_user_service_dep),
@@ -488,6 +491,7 @@ async def get_movies(
         limit=limit,
         group=group,
         country=country,
+        search=search,
         username=username,
         password=password
     )
@@ -524,6 +528,7 @@ async def get_series(
     limit: int = Query(50, ge=1, le=100),
     group: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
     username: str = Query(...),
     password: str = Query(...),
     user_svc: UserService = Depends(get_user_service_dep),
@@ -540,6 +545,7 @@ async def get_series(
         limit=limit,
         group=group,
         country=country,
+        search=search,
         username=username,
         password=password
     )
