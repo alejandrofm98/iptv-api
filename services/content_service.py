@@ -2,6 +2,7 @@
 Servicio de gestión de contenido (canales, películas, series)
 """
 from typing import Optional, List, Dict, Any
+from urllib.parse import urlparse
 from supabase import Client
 
 from utils.config import get_settings
@@ -14,57 +15,122 @@ class ContentService:
         self.supabase = supabase
         self.settings = get_settings()
 
-    def _build_proxy_url(self, provider_id: str, username: str, password: str, content_type: str = 'live') -> str:
-        """Construye la URL proxificada para el stream usando provider_id"""
+    def _extract_stream_id(self, url: str) -> tuple:
+        """
+        Extrae el ID y extensión del stream de la URL original.
+
+        Args:
+        Returns:
+            (stream_id, extension, content_type)
+        """
+        if not url:
+            return (None, None, 'live')
+
+        parsed = urlparse(url)
+        path_parts = [p for p in parsed.path.split('/') if p]
+
+        if len(path_parts) >= 2:
+            path_lower = parsed.path.lower()
+
+            if '/live/' in path_lower:
+                content_type = 'live'
+            elif '/movie/' in path_lower:
+                content_type = 'movie'
+            elif '/series/' in path_lower:
+                content_type = 'series'
+            else:
+                content_type = 'live'
+
+            last_part = path_parts[-1] if path_parts else ''
+            if '.' in last_part:
+                parts = last_part.rsplit('.', 1)
+                stream_id = parts[0]
+                extension = parts[1] if len(parts) > 1 else 'ts'
+            else:
+                stream_id = last_part
+                extension = 'ts'
+
+            return (stream_id, extension, content_type)
+
+        return (None, None, 'live')
+
+    def _build_proxy_url(self, original_url: str, username: str, password: str) -> str:
+        """
+        Transforma la URL original al formato del proxy.
+
+        Args:
+            original_url: URL original ej: http://PROVIDER_URL/series/USER/PASS/1732159.mkv
+            username: Usuario IPTV
+            password: Password IPTV
+
+        Returns:
+            URL transformada ej: https://DOMAIN.com/series/user/pass/1732159.mkv
+        """
+        if not original_url:
+            return ''
+
+        stream_id, extension, content_type = self._extract_stream_id(original_url)
+
+        if not stream_id:
+            return ''
+
         base_url = self.settings.public_domain.rstrip('/')
-        return f"{base_url}/{content_type}/{username}/{password}/{provider_id}.ts"
+        extension = f'.{extension}' if extension else ''
+
+        return f"{base_url}/{content_type}/{username}/{password}/{stream_id}{extension}"
 
     def _parse_channel(self, row: Dict[str, Any], username: str = '', password: str = '') -> Dict[str, Any]:
         """Parses a channel row from Supabase"""
-        provider_id = row.get('provider_id', '')
+        original_url = row.get('url', '')
+        stream_id, _, _ = self._extract_stream_id(original_url)
+
         return {
-            'id': provider_id,
+            'id': stream_id or '',
             'num': row.get('numero'),
             'nombre': row.get('nombre'),
             'logo': row.get('logo'),
             'grupo': row.get('grupo'),
             'country': row.get('country'),
-            'provider_id': provider_id,
+            'provider_id': row.get('provider_id'),
             'tvg_id': row.get('tvg_id'),
-            'url': row.get('url'),
-            'stream_url': self._build_proxy_url(provider_id, username, password, 'live') if provider_id and username and password else None
+            'url': original_url,
+            'stream_url': self._build_proxy_url(original_url, username, password) if original_url and username and password else None
         }
 
     def _parse_movie(self, row: Dict[str, Any], username: str = '', password: str = '') -> Dict[str, Any]:
         """Parses a movie row from Supabase"""
-        provider_id = row.get('provider_id', '')
+        original_url = row.get('url', '')
+        stream_id, _, _ = self._extract_stream_id(original_url)
+
         return {
-            'id': provider_id,
+            'id': stream_id or '',
             'num': row.get('numero'),
             'nombre': row.get('nombre'),
             'logo': row.get('logo'),
             'grupo': row.get('grupo'),
             'country': row.get('country'),
-            'provider_id': provider_id,
-            'url': row.get('url'),
-            'stream_url': self._build_proxy_url(provider_id, username, password, 'movie') if provider_id and username and password else None
+            'provider_id': row.get('provider_id'),
+            'url': original_url,
+            'stream_url': self._build_proxy_url(original_url, username, password) if original_url and username and password else None
         }
 
     def _parse_series(self, row: Dict[str, Any], username: str = '', password: str = '') -> Dict[str, Any]:
         """Parses a series row from Supabase"""
-        provider_id = row.get('provider_id', '')
+        original_url = row.get('url', '')
+        stream_id, _, _ = self._extract_stream_id(original_url)
+
         return {
-            'id': provider_id,
+            'id': stream_id or '',
             'num': row.get('numero'),
             'nombre': row.get('nombre'),
             'logo': row.get('logo'),
             'grupo': row.get('grupo'),
             'country': row.get('country'),
-            'provider_id': provider_id,
+            'provider_id': row.get('provider_id'),
             'temporada': row.get('temporada'),
             'episodio': row.get('episodio'),
-            'url': row.get('url'),
-            'stream_url': self._build_proxy_url(provider_id, username, password, 'series') if provider_id and username and password else None
+            'url': original_url,
+            'stream_url': self._build_proxy_url(original_url, username, password) if original_url and username and password else None
         }
 
     def get_channels(

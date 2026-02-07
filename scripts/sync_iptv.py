@@ -88,11 +88,11 @@ def extraer_country(grupo):
 def extraer_provider_id(url: str) -> str:
   """
   Extrae el provider_id de la URL del proveedor.
-  
+
   Ejemplos:
-    - http://line.ultra-8k.xyz:80/USER/PASS/176861 → "176861"
-    - http://line.ultra-8k.xyz:80/series/USER/PASS/1306345.mkv → "1306345"
-    - http://line.ultra-8k.xyz:80/movie/USER/PASS/2001330.mkv → "2001330"
+    - http://PROVIDER_URL/USER/PASS/176861 → "176861"
+    - http://PROVIDER_URL/series/USER/PASS/1306345.mkv → "1306345"
+    - http://PROVIDER_URL/movie/USER/PASS/2001330.mkv → "2001330"
   """
   try:
     # Obtener la última parte de la URL (después del último /)
@@ -196,12 +196,12 @@ def crear_template_m3u(contenido_m3u: str) -> str:
   """
   lines = contenido_m3u.split('\n')
   processed_lines = []
-  
+
   # Compilar regex patterns (solo una vez durante el sync)
   # IMPORTANTE: Soportar tanto .mkv como .mp4
-  pattern_series = re.compile(r'http://line\.ultra-8k\.xyz:80/series/[^/]+/[^/]+/(\d+)\.(mkv|mp4)$')
-  pattern_movie = re.compile(r'http://line\.ultra-8k\.xyz:80/movie/[^/]+/[^/]+/(\d+)\.(mkv|mp4)$')
-  pattern_live = re.compile(r'http://line\.ultra-8k\.xyz:80/[^/]+/[^/]+/(\d+)$')
+  pattern_series = re.compile(r'http://PROVIDER_URL/series/[^/]+/[^/]+/(\d+)\.(mkv|mp4)$')
+  pattern_movie = re.compile(r'http://PROVIDER_URL/movie/[^/]+/[^/]+/(\d+)\.(mkv|mp4)$')
+  pattern_live = re.compile(r'http://PROVIDER_URL/[^/]+/[^/]+/(\d+)$')
   
   for line in lines:
     # Limpiar caracteres de control (\r de Windows, espacios al final)
