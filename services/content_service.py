@@ -75,9 +75,11 @@ class ContentService:
             return ''
 
         base_url = self.settings.public_domain.rstrip('/')
-        extension = f'.{extension}' if extension else ''
 
-        return f"{base_url}/{content_type}/{username}/{password}/{stream_id}{extension}"
+        if content_type == 'live':
+            return f"{base_url}/{content_type}/{username}/{password}/{stream_id}"
+
+        return f"{base_url}/{content_type}/{username}/{password}/{stream_id}.{extension}" if extension else f"{base_url}/{content_type}/{username}/{password}/{stream_id}"
 
     def _parse_channel(self, row: Dict[str, Any], username: str = '', password: str = '') -> Dict[str, Any]:
         """Parses a channel row from Supabase"""
