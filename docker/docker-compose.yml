@@ -59,8 +59,9 @@ services:
     container_name: iptv-nginx
     restart: unless-stopped
     volumes:
-      # Solo montar datos, NO la config (está en la imagen)
+      # Solo montar datos y SSL (NO la config, está en la imagen)
       - ../data:/app/data:ro
+      - ../nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       iptv-api:
         condition: service_healthy
