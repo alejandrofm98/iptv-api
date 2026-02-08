@@ -357,12 +357,13 @@ async def get_system_stats(
 async def get_groups_public(
     content_type: str = Query('channels', enum=['channels', 'movies', 'series']),
     countries: Optional[str] = Query(None, description="Filtrar por países (separados por coma: US,MX,ES)"),
-    auth: AuthResult = Depends(require_auth_with_credentials),
+    auth: AuthResult = Depends(require_auth_with_session),
     content_svc: ContentService = Depends(get_content_service)
 ):
     """
     Obtiene grupos disponibles por tipo de contenido.
     Opcionalmente filtra por uno o varios países.
+    Requiere Bearer Token.
     """
     country_list = None
     if countries:
@@ -374,7 +375,7 @@ async def get_groups_public(
 @app.get("/api/content/countries", tags=["Content"])
 async def get_countries_public(
     content_type: str = Query('channels', enum=['channels', 'movies', 'series']),
-    auth: AuthResult = Depends(require_auth_with_credentials),
+    auth: AuthResult = Depends(require_auth_with_session),
     content_svc: ContentService = Depends(get_content_service)
 ):
     """Obtiene países disponibles por tipo de contenido (requiere auth)"""
