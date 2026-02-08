@@ -1,0 +1,12 @@
+# Testing dependencies
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.0.0
+httpx>=0.24.0
+
+# For mocking
+pytest-mock>=3.10.0
+factory-boy>=3.2.0
+
+# Coverage
+coverage>=7.0.0

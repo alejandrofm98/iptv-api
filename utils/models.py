@@ -132,6 +132,27 @@ class PlaylistInfo(BaseModel):
 
 
 # ============================================
+# Pagination Models
+# ============================================
+
+class PaginationParams(BaseModel):
+    """Parámetros de paginación estándar"""
+    page: int = Field(1, ge=1, description="Número de página")
+    page_size: int = Field(50, ge=1, le=100, description="Items por página")
+
+
+class PaginatedResponse(BaseModel):
+    """Respuesta paginada estándar"""
+    items: List[dict]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    has_next: bool
+    has_prev: bool
+
+
+# ============================================
 # Stats Models
 # ============================================
 

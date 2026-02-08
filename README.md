@@ -1,4 +1,4 @@
-# IPTV API v2.0 - Sistema de Gestión de Usuarios con Control de Dispositivos
+# IPTV API v2.1 - Sistema de Gestión de Usuarios con Control de Dispositivos
 
 API para gestión de usuarios IPTV con autenticación JWT, control de conexiones simultáneas y generación dinámica de playlists M3U.
 
@@ -11,10 +11,14 @@ API para gestión de usuarios IPTV con autenticación JWT, control de conexiones
 - **Límite de conexiones**: Máximo de dispositivos simultáneos por cuenta
 - **Playlists dinámicas**: Generación de M3U con URLs proxificadas y filtros
 - **Proxy de streams**: Autenticación en cada solicitud de stream
+- **Endpoints unificados**: API REST consistente para canales, películas y series
+- **Paginación estándar**: Soporte para paginación con page/page_size
+- **Búsqueda por nombre**: Filtrado de contenido por búsqueda de texto
 - **Detección de dispositivos**: Identificación automática del tipo de dispositivo
 - **Limpieza automática**: Sesiones inactivas se eliminan automáticamente
 - **Estadísticas del sistema**: Endpoint para monitorear uso del sistema
 - **Sincronización automática**: Scripts para sincronizar contenido desde fuente IPTV
+- **Manejo de errores consistente**: Respuestas de error estandarizadas
 
 ## Arquitectura
 
@@ -35,7 +39,7 @@ API para gestión de usuarios IPTV con autenticación JWT, control de conexiones
 ```
 iptv-api/
 ├── scripts/
-│   ├── api.py              # Aplicación FastAPI principal (v2.0)
+│   ├── api.py              # Aplicación FastAPI principal (v2.1)
 │   └── sync_iptv.py        # Script de sincronización de contenido
 ├── services/
 │   ├── __init__.py         # Exporta todos los servicios
@@ -43,11 +47,14 @@ iptv-api/
 │   ├── device_service.py   # Control de dispositivos
 │   ├── playlist_service.py # Generación de M3U
 │   ├── stream_service.py   # Proxy de streams
+│   ├── content_service.py  # Gestión de contenido (canales, películas, series)
 │   └── bulk_insert.py      # Inserción masiva de datos
 ├── utils/
 │   ├── config.py           # Configuración centralizada
 │   ├── models.py           # Modelos Pydantic
-│   └── constants.py        # Constantes del sistema
+│   ├── constants.py        # Constantes del sistema
+│   ├── exceptions.py       # Excepciones personalizadas (nuevo en v2.1)
+│   └── dependencies.py     # Dependencias reutilizables (nuevo en v2.1)
 ├── database/
 │   └── schema.sql          # Script SQL para Supabase
 ├── docker/
@@ -126,7 +133,7 @@ Respuesta:
 Incluir el token en el header `Authorization`:
 
 ```bash
-curl http://localhost/api/users \
+curl http://localhost/api/admin/users \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..."
 ```
 
@@ -142,31 +149,43 @@ curl http://localhost/api/users \
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| POST | `/api/users` | Crear usuario |
-| GET | `/api/users` | Listar usuarios |
-| GET | `/api/users/{id}` | Obtener usuario |
-| PUT | `/api/users/{id}` | Actualizar usuario |
-| DELETE | `/api/users/{id}` | Eliminar usuario |
-| POST | `/api/users/validate` | Validar credenciales (Legacy) |
+| POST | `/api/admin/users` | Crear usuario |
+| GET | `/api/admin/users` | Listar usuarios (paginado) |
+| GET | `/api/admin/users/{id}` | Obtener usuario |
+| PUT | `/api/admin/users/{id}` | Actualizar usuario |
+| DELETE | `/api/admin/users/{id}` | Eliminar usuario |
 
-**Nota**: Los usuarios pueden tener rol `admin` o `user`.
+**Paginación**: `GET /api/admin/users?page=1&page_size=50`
+
+Respuesta paginada:
+```json
+{
+  "items": [...],
+  "total": 150,
+  "page": 1,
+  "page_size": 50,
+  "pages": 3,
+  "has_next": true,
+  "has_prev": false
+}
+```
 
 ### Dispositivos (Requiere Admin)
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/users/{id}/devices` | Dispositivos del usuario |
-| DELETE | `/api/users/{id}/devices/{device_id}` | Desconectar dispositivo |
-| DELETE | `/api/users/{id}/devices` | Desconectar todos |
-| GET | `/api/sessions` | Todas las sesiones activas |
+| GET | `/api/admin/users/{id}/devices` | Dispositivos del usuario |
+| DELETE | `/api/admin/users/{id}/devices/{device_id}` | Desconectar dispositivo |
+| DELETE | `/api/admin/users/{id}/devices` | Desconectar todos |
+| GET | `/api/admin/sessions` | Todas las sesiones activas |
 
 ### Estadísticas (Requiere Admin)
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/stats` | Estadísticas del sistema |
+| GET | `/api/admin/stats` | Estadísticas del sistema |
 
-Respuesta de `/api/stats`:
+Respuesta de `/api/admin/stats`:
 ```json
 {
   "total_users": 100,
@@ -182,24 +201,86 @@ Respuesta de `/api/stats`:
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/content/groups` | Lista de grupos disponibles |
-| GET | `/api/content/countries` | Lista de países disponibles |
+| GET | `/api/admin/content/groups` | Lista de grupos disponibles |
+| GET | `/api/admin/content/countries` | Lista de países disponibles |
+| POST | `/api/admin/content/reload` | Recargar template M3U |
+
+### Contenido (Público - Autenticado por URL)
+
+**Endpoint unificado** para canales, películas y series:
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/api/content` | Lista paginada de contenido |
+| GET | `/api/content/{type}/{id}` | Item específico |
+
+**Parámetros de `/api/content`**:
+- `content_type`: Tipo de contenido (`channels`, `movies`, `series`)
+- `page`: Número de página (default: 1)
+- `page_size`: Items por página (default: 50, max: 100)
+- `group`: Filtrar por grupo
+- `country`: Filtrar por país
+- `search`: Buscar por nombre (búsqueda parcial, case-insensitive)
+
+**Ejemplos**:
+
+```bash
+# Obtener canales paginados
+curl "http://localhost/api/content?content_type=channels&page=1&page_size=50&username=user&password=pass"
+
+# Buscar películas por nombre
+curl "http://localhost/api/content?content_type=movies&search=Inception&username=user&password=pass"
+
+# Filtrar series por grupo y país
+curl "http://localhost/api/content?content_type=series&group=Action&country=US&username=user&password=pass"
+
+# Obtener item específico
+curl "http://localhost/api/content/movies/12345?username=user&password=pass"
+```
+
+Respuesta de lista paginada:
+```json
+{
+  "items": [
+    {
+      "id": "12345",
+      "num": 1,
+      "nombre": "Canal 1",
+      "logo": "http://...",
+      "grupo": "Sports",
+      "country": "ES",
+      "stream_url": "https://domain.com/..."
+    }
+  ],
+  "total": 2500,
+  "page": 1,
+  "page_size": 50,
+  "pages": 50,
+  "has_next": true,
+  "has_prev": false
+}
+```
 
 ### Playlist y Streams (Público - Autenticado por URL)
 
 | Endpoint | Descripción |
 |----------|-------------|
 | `/playlist/{user}/{pass}.m3u` | Playlist M3U personalizada |
-| `/live/{user}/{pass}/{stream_id}` | Stream de canal en vivo |
-| `/movie/{user}/{pass}/{stream_id}` | Stream de película |
-| `/series/{user}/{pass}/{stream_id}` | Stream de serie |
+| `/stream/{type}/{user}/{pass}/{stream_id}` | Stream proxy unificado |
 
 **Parámetros de playlist**:
-- `type`: Filtrar por tipo (`channels`, `movies`, `series`)
+- `content_type`: Filtrar por tipo (`channels`, `movies`, `series`)
 - `group`: Filtrar por grupo
 - `country`: Filtrar por país
 
-Ejemplo: `/playlist/usuario/pass.m3u?type=channels&country=ES`
+**Ejemplo**: `/playlist/usuario/pass.m3u?content_type=channels&country=ES`
+
+**Tipos de stream**:
+- `live`: Canales en vivo
+- `movie`: Películas
+- `series`: Series
+
+**Ejemplo**: `/stream/live/usuario/pass/123456`
 
 ## Uso
 
@@ -212,7 +293,7 @@ curl -X POST http://localhost/api/auth/login \
   -d "username=admin&password=admin123"
 
 # Crear usuario con el token
-curl -X POST http://localhost/api/users \
+curl -X POST http://localhost/api/admin/users \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer TOKEN_AQUI" \
   -d '{
@@ -230,20 +311,20 @@ curl -X POST http://localhost/api/users \
 http://tu-dominio.com/playlist/usuario1/password123.m3u
 
 # Con filtros:
-http://tu-dominio.com/playlist/usuario1/password123.m3u?type=channels&country=ES
+http://tu-dominio.com/playlist/usuario1/password123.m3u?content_type=channels&country=ES
 ```
 
 ### Ver dispositivos conectados
 
 ```bash
-curl http://localhost/api/users/{user_id}/devices \
+curl http://localhost/api/admin/users/{user_id}/devices \
   -H "Authorization: Bearer TOKEN_AQUI"
 ```
 
 ### Ver estadísticas del sistema
 
 ```bash
-curl http://localhost/api/stats \
+curl http://localhost/api/admin/stats \
   -H "Authorization: Bearer TOKEN_AQUI"
 ```
 
@@ -275,15 +356,28 @@ El sistema detecta automáticamente el tipo de dispositivo basándose en el User
 
 ## Respuestas de Error
 
-| Código | Significado |
-|--------|-------------|
-| 401 | Credenciales inválidas o token expirado |
-| 403 | Cuenta desactivada, expirada o sin permisos |
-| 429 | Límite de dispositivos alcanzado |
-| 404 | Recurso no encontrado |
-| 400 | Error en la solicitud |
-| 500 | Error interno del servidor |
-| 502 | Error al obtener stream |
+Todas las respuestas de error siguen el mismo formato:
+
+```json
+{
+  "error": "NotFound",
+  "message": "Usuario no encontrado",
+  "details": {"id": "123"},
+  "status_code": 404
+}
+```
+
+| Código | Error | Significado |
+|--------|-------|-------------|
+| 400 | BadRequest | Petición inválida |
+| 401 | Unauthorized | Credenciales inválidas o token expirado |
+| 403 | Forbidden | Cuenta desactivada, expirada o sin permisos |
+| 404 | NotFound | Recurso no encontrado |
+| 409 | Conflict | Recurso ya existe (duplicado) |
+| 429 | TooManyRequests | Límite de dispositivos alcanzado |
+| 500 | InternalError | Error interno del servidor |
+| 502 | BadGateway | Error al obtener stream |
+| 503 | ServiceUnavailable | Servicio no disponible |
 
 ## Configuración Avanzada
 
@@ -325,6 +419,25 @@ Los servicios principales están en `services/`:
 - **DeviceService**: Control de sesiones y dispositivos conectados
 - **PlaylistService**: Generación de playlists M3U, filtros, estadísticas
 - **StreamProxyService**: Proxy de streams, cache de URLs
+- **ContentService**: Gestión unificada de canales, películas y series
+
+### Dependencias reutilizables
+
+En `utils/dependencies.py`:
+- `get_user_service()`, `get_content_service()`: Obtener servicios
+- `require_admin()`: Verificar rol de administrador
+- `require_auth_with_credentials()`: Validar credenciales user/pass
+- `require_auth_with_session()`: Validar credenciales + registrar sesión
+
+### Excepciones personalizadas
+
+En `utils/exceptions.py`:
+- `NotFoundException`: Recurso no encontrado (404)
+- `BadRequestException`: Petición inválida (400)
+- `UnauthorizedException`: No autorizado (401)
+- `ForbiddenException`: Acceso prohibido (403)
+- `ConflictException`: Conflicto (409)
+- `TooManyRequestsException`: Rate limiting (429)
 
 ### Modelos de datos
 
@@ -333,10 +446,30 @@ Los modelos Pydantic están en `utils/models.py`:
 - `Token`: Respuesta de autenticación JWT
 - `DeviceResponse`, `SessionInfo`: Información de dispositivos
 - `SystemStats`: Estadísticas del sistema
+- `PaginationParams`, `PaginatedResponse`: Paginación
 
 ### Configuración
 
 La configuración centralizada está en `utils/config.py` usando Pydantic Settings.
+
+## Changelog
+
+### v2.1 (2024)
+- **Nuevo**: Endpoints unificados para contenido (`/api/content`)
+- **Nuevo**: Paginación estándar con `page`/`page_size`
+- **Nuevo**: Búsqueda por nombre con parámetro `search`
+- **Nuevo**: Excepciones personalizadas para manejo de errores consistente
+- **Nuevo**: Dependencias reutilizables para autenticación
+- **Nuevo**: Endpoint unificado para streams (`/stream/{type}/...`)
+- **Mejorado**: Estructura de endpoints con prefijos `/api/admin/`
+- **Eliminado**: Endpoints legacy (`/api/channels`, `/api/movies`, `/api/series`, `/live/`, `/movie/`, `/series/`)
+
+### v2.0
+- **Nuevo**: Autenticación JWT completa
+- **Nuevo**: Control de dispositivos y sesiones
+- **Nuevo**: Generación dinámica de playlists M3U
+- **Nuevo**: Proxy de streams con autenticación
+- **Nuevo**: Soporte para canales, películas y series
 
 ## Licencia
 

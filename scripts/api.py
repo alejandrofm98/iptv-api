@@ -1,3 +1,13 @@
+"""
+IPTV API - Refactorizada con mejores prácticas REST
+
+Cambios principales:
+- Paginación estándar (page/page_size) en lugar de skip/limit
+- Dependencias reutilizables para autenticación
+- Endpoints unificados para contenido
+- Manejo de errores consistente
+- Estructura organizada con prefijos claros
+"""
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -12,42 +22,29 @@ from jose import JWTError, jwt
 
 from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService
 from utils.config import get_settings
-from utils.models import UserCreate, UserUpdate, ValidateCredentials, AuthResult, SystemStats
+from utils.models import UserCreate, UserUpdate, ValidateCredentials, AuthResult, SystemStats, Token
 from utils.constants import JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES
-from utils.models import Token
+from utils.exceptions import (
+    NotFoundException, UnauthorizedException, ForbiddenException,
+    BadRequestException, ConflictException, TooManyRequestsException
+)
+from utils.dependencies import (
+    set_services, get_user_service, get_device_service, get_playlist_service,
+    get_stream_service, get_content_service, get_current_user, require_admin,
+    require_auth_with_credentials, require_auth_with_session, AuthResult as AuthDep
+)
 
 # Configuración
 settings = get_settings()
-
-# Configuración JWT
 SECRET_KEY = settings.jwt_secret
 ALGORITHM = JWT_ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 
-# Clientes Supabase (inicializados en startup)
-supabase_client = None
-user_service: UserService = None
-device_service: DeviceService = None
-playlist_service: PlaylistService = None
-stream_service: StreamProxyService = None
-content_service: ContentService = None
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+
 
 # ============================================
-# Funciones de Utilidad Auth
-# ============================================
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-# ============================================
-# Limpieza y Ciclo de Vida
+# Ciclo de Vida
 # ============================================
 
 async def cleanup_sessions_task():
@@ -55,10 +52,10 @@ async def cleanup_sessions_task():
     while True:
         try:
             await asyncio.sleep(settings.cleanup_interval_minutes * 60)
-            if device_service:
-                cleaned = device_service.cleanup_inactive_sessions()
-                if cleaned > 0:
-                    print(f"🧹 Limpiadas {cleaned} sesiones inactivas")
+            device_svc = get_device_service()
+            cleaned = device_svc.cleanup_inactive_sessions()
+            if cleaned > 0:
+                print(f"🧹 Limpiadas {cleaned} sesiones inactivas")
         except Exception as e:
             print(f"❌ Error en limpieza de sesiones: {e}")
 
@@ -66,21 +63,22 @@ async def cleanup_sessions_task():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestión del ciclo de vida de la aplicación"""
-    global supabase_client, user_service, device_service, playlist_service, stream_service, content_service
-
     print("🚀 Iniciando IPTV API...")
 
     if not settings.is_valid():
         print("❌ Error: Configuración incompleta")
     else:
         supabase_client = settings.get_supabase_client()
-        user_service = UserService(supabase_client)
-        device_service = DeviceService(supabase_client)
-        playlist_service = PlaylistService(supabase_client)
-        stream_service = StreamProxyService(supabase_client)
-        content_service = ContentService(supabase_client)
+        user_svc = UserService(supabase_client)
+        device_svc = DeviceService(supabase_client)
+        playlist_svc = PlaylistService(supabase_client)
+        stream_svc = StreamProxyService(supabase_client)
+        content_svc = ContentService(supabase_client)
 
-        stream_service.preload_cache()
+        # Inicializar servicios globales
+        set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc)
+
+        stream_svc.preload_cache()
         asyncio.create_task(cleanup_sessions_task())
         print("✅ IPTV API iniciada correctamente")
 
@@ -88,15 +86,19 @@ async def lifespan(app: FastAPI):
 
     print("🛑 Cerrando IPTV API...")
 
+
+# ============================================
 # Crear aplicación
+# ============================================
+
 app = FastAPI(
     title="IPTV API",
     description="API para gestión de usuarios IPTV con control de dispositivos y JWT",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan
 )
 
-# CORS - FastAPI maneja esto automáticamente si recibe el header Origin
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -106,98 +108,58 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    # IMPORTANTE: Permitir que FastAPI use el header Origin de la petición
-    expose_headers=["*"],
 )
 
+
 # ============================================
-# Dependencias de Seguridad
+# Funciones de Utilidad
 # ============================================
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    """Verifica el token JWT y retorna el usuario"""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="No se pudo validar las credenciales",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-        role: str = payload.get("role")
-
-        if user_id is None or role is None:
-            raise credentials_exception
-
-        # Opcional: Verificar que el usuario sigue existiendo y activo en BD
-        # user_db = user_service.get_user(user_id)
-        # if not user_db or not user_db['is_active']:
-        #    raise credentials_exception
-
-        return {"id": user_id, "role": role}
-
-    except JWTError:
-        raise credentials_exception
-
-async def require_admin(current_user: dict = Depends(get_current_user)):
-    """Verifica que el usuario tenga rol de admin"""
-    if current_user.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Se requieren permisos de administrador"
-        )
-    return current_user
-
-# Helpers para servicios
-def get_user_service_dep() -> UserService:
-    if not user_service: raise HTTPException(500, "Servicio no disponible")
-    return user_service
-
-def get_device_service_dep() -> DeviceService:
-    if not device_service: raise HTTPException(500, "Servicio no disponible")
-    return device_service
-
-def get_playlist_service_dep() -> PlaylistService:
-    if not playlist_service: raise HTTPException(500, "Servicio no disponible")
-    return playlist_service
-
-def get_stream_service_dep() -> StreamProxyService:
-    if not stream_service: raise HTTPException(500, "Servicio no disponible")
-    return stream_service
-
-def get_content_service_dep() -> ContentService:
-    if not content_service: raise HTTPException(500, "Servicio no disponible")
-    return content_service
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """Crea un token JWT de acceso"""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 # ============================================
 # Health Check
 # ============================================
 
-@app.get("/")
+@app.get("/", tags=["Health"])
 async def root():
-    return {"service": "IPTV API v2", "status": "running"}
+    return {"service": "IPTV API", "version": "2.1.0", "status": "running"}
 
-@app.get("/health")
+
+@app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "healthy"}
 
 
+# ============================================
+# API: Autenticación
+# ============================================
+
 @app.post("/api/auth/login", response_model=Token, tags=["Auth"])
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), svc: UserService = Depends(get_user_service_dep)):
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    svc: UserService = Depends(get_user_service)
+):
     """Endpoint de Login. Retorna JWT token."""
     user = svc.get_user_by_username(form_data.username)
 
     if not user:
-        raise HTTPException(status_code=400, detail="Usuario o contraseña incorrectos")
+        raise UnauthorizedException("Usuario o contraseña incorrectos")
 
     if not svc._verify_password(form_data.password, user['password_hash']):
-        raise HTTPException(status_code=400, detail="Usuario o contraseña incorrectos")
+        raise UnauthorizedException("Usuario o contraseña incorrectos")
 
     if not user['is_active']:
-        raise HTTPException(status_code=403, detail="Usuario inactivo")
+        raise ForbiddenException("Usuario inactivo")
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -205,139 +167,172 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), svc: UserServi
         expires_delta=access_token_expires
     )
 
-    return {"access_token": access_token, "token_type": "bearer", "role": user.get('role', 'user')}
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "role": user.get('role', 'user')
+    }
 
 
 # ============================================
-# API: Usuarios (Protegido con JWT Admin)
+# API: Usuarios (Admin)
 # ============================================
 
-@app.post("/api/users", response_model=dict, tags=["Users"])
+@app.post("/api/admin/users", response_model=dict, tags=["Admin - Users"])
 async def create_user(
     user_data: UserCreate,
     _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service_dep)
+    svc: UserService = Depends(get_user_service)
 ):
     """Crear nuevo usuario (Solo Admin)"""
     try:
         return svc.create_user(user_data)
     except ValueError as e:
-        raise HTTPException(400, str(e))
-    except Exception as e:
-        raise HTTPException(500, f"Error al crear usuario: {e}")
+        raise BadRequestException(str(e))
 
-@app.get("/api/users", response_model=list, tags=["Users"])
+
+@app.get("/api/admin/users", response_model=dict, tags=["Admin - Users"])
 async def list_users(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(100, ge=1, le=1000, description="Items por página"),
     _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service_dep)
+    svc: UserService = Depends(get_user_service)
 ):
-    """Listar usuarios (Solo Admin)"""
-    return svc.list_users(skip, limit)
+    """Listar usuarios paginados (Solo Admin)"""
+    skip = (page - 1) * page_size
+    users = svc.list_users(skip, page_size)
 
-@app.get("/api/users/{user_id}", response_model=dict, tags=["Users"])
+    # Obtener total para paginación
+    all_users = svc.list_users(0, 10000)
+    total = len(all_users)
+    pages = (total + page_size - 1) // page_size
+
+    return {
+        "items": users,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages,
+        "has_next": page < pages,
+        "has_prev": page > 1
+    }
+
+
+@app.get("/api/admin/users/{user_id}", response_model=dict, tags=["Admin - Users"])
 async def get_user(
     user_id: str,
     _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service_dep)
+    svc: UserService = Depends(get_user_service)
 ):
     """Obtener usuario por ID (Solo Admin)"""
     user = svc.get_user(user_id)
     if not user:
-        raise HTTPException(404, "Usuario no encontrado")
+        raise NotFoundException("Usuario", user_id)
     return user
 
-@app.put("/api/users/{user_id}", response_model=dict, tags=["Users"])
+
+@app.put("/api/admin/users/{user_id}", response_model=dict, tags=["Admin - Users"])
 async def update_user(
     user_id: str,
     user_data: UserUpdate,
     _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service_dep)
+    svc: UserService = Depends(get_user_service)
 ):
     """Actualizar usuario (Solo Admin)"""
     user = svc.update_user(user_id, user_data)
     if not user:
-        raise HTTPException(404, "Usuario no encontrado")
+        raise NotFoundException("Usuario", user_id)
     return user
 
-@app.delete("/api/users/{user_id}", tags=["Users"])
+
+@app.delete("/api/admin/users/{user_id}", tags=["Admin - Users"])
 async def delete_user(
     user_id: str,
     _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service_dep)
+    svc: UserService = Depends(get_user_service)
 ):
     """Eliminar usuario (Solo Admin)"""
     success = svc.delete_user(user_id)
     if not success:
-        raise HTTPException(404, "Usuario no encontrado")
+        raise NotFoundException("Usuario", user_id)
     return {"message": "Usuario eliminado"}
 
-# Mantenemos validate_credentials para compatibilidad externa si la usas scripts internos,
-# pero para el Frontend deberían usar /api/auth/login
-@app.post("/api/users/validate", response_model=AuthResult, tags=["Users"], deprecated=True)
-async def validate_credentials_legacy(
-    creds: ValidateCredentials,
-    _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service_dep)
-):
-    """Validar credenciales (Uso interno/Legacy)"""
-    return svc.validate_credentials(creds.username, creds.password)
-
 
 # ============================================
-# API: Dispositivos (Protegido con JWT Admin)
+# API: Dispositivos (Admin)
 # ============================================
 
-@app.get("/api/users/{user_id}/devices", response_model=list, tags=["Devices"])
+@app.get("/api/admin/users/{user_id}/devices", response_model=list, tags=["Admin - Devices"])
 async def get_user_devices(
     user_id: str,
     _: dict = Depends(require_admin),
-    svc: DeviceService = Depends(get_device_service_dep)
+    svc: DeviceService = Depends(get_device_service)
 ):
+    """Obtiene dispositivos de un usuario"""
     return svc.get_user_devices(user_id)
 
-@app.delete("/api/users/{user_id}/devices/{device_id}", tags=["Devices"])
+
+@app.delete("/api/admin/users/{user_id}/devices/{device_id}", tags=["Admin - Devices"])
 async def disconnect_device(
     user_id: str,
     device_id: str,
     _: dict = Depends(require_admin),
-    svc: DeviceService = Depends(get_device_service_dep)
+    svc: DeviceService = Depends(get_device_service)
 ):
+    """Desconecta un dispositivo específico"""
     success = svc.disconnect_device(user_id, device_id)
     if not success:
-        raise HTTPException(404, "Dispositivo no encontrado")
+        raise NotFoundException("Dispositivo", device_id)
     return {"message": "Dispositivo desconectado"}
 
-@app.delete("/api/users/{user_id}/devices", tags=["Devices"])
+
+@app.delete("/api/admin/users/{user_id}/devices", tags=["Admin - Devices"])
 async def disconnect_all_devices(
     user_id: str,
     _: dict = Depends(require_admin),
-    svc: DeviceService = Depends(get_device_service_dep)
+    svc: DeviceService = Depends(get_device_service)
 ):
+    """Desconecta todos los dispositivos de un usuario"""
     count = svc.disconnect_all_devices(user_id)
     return {"message": f"{count} dispositivos desconectados"}
 
-@app.get("/api/sessions", response_model=list, tags=["Devices"])
+
+@app.get("/api/admin/sessions", tags=["Admin - Devices"])
 async def get_all_sessions(
-    limit: int = Query(100, ge=1, le=1000),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=1000),
     _: dict = Depends(require_admin),
-    svc: DeviceService = Depends(get_device_service_dep)
+    svc: DeviceService = Depends(get_device_service)
 ):
-    return svc.get_all_sessions(limit)
+    """Obtiene todas las sesiones activas paginadas"""
+    sessions = svc.get_all_sessions(page_size * page)
+    # Paginar manualmente
+    total = len(sessions)
+    start = (page - 1) * page_size
+    end = start + page_size
+    pages = (total + page_size - 1) // page_size
+
+    return {
+        "items": sessions[start:end],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages
+    }
 
 
 # ============================================
-# API: Stats (Protegido con JWT Admin)
+# API: Stats (Admin)
 # ============================================
 
-@app.get("/api/stats", response_model=SystemStats, tags=["Stats"])
+@app.get("/api/admin/stats", response_model=SystemStats, tags=["Admin - Stats"])
 async def get_system_stats(
     _: dict = Depends(require_admin),
-    user_svc: UserService = Depends(get_user_service_dep),
-    device_svc: DeviceService = Depends(get_device_service_dep),
-    playlist_svc: PlaylistService = Depends(get_playlist_service_dep)
+    user_svc: UserService = Depends(get_user_service),
+    device_svc: DeviceService = Depends(get_device_service),
+    playlist_svc: PlaylistService = Depends(get_playlist_service)
 ):
+    """Obtiene estadísticas del sistema"""
     users = user_svc.list_users(limit=10000)
     sessions = device_svc.get_all_sessions(limit=10000)
     playlist_stats = playlist_svc.get_playlist_stats()
@@ -355,47 +350,42 @@ async def get_system_stats(
 
 
 # ============================================
-# API: Contenido (Protegido con JWT Admin)
+# API: Contenido (Público)
 # ============================================
 
 @app.get("/api/content/groups", tags=["Content"])
-async def get_groups(
-    _: dict = Depends(require_admin),
-    playlist_svc: PlaylistService = Depends(get_playlist_service_dep)
+async def get_groups_public(
+    content_type: str = Query('channels', enum=['channels', 'movies', 'series']),
+    countries: Optional[str] = Query(None, description="Filtrar por países (separados por coma: US,MX,ES)"),
+    auth: AuthResult = Depends(require_auth_with_credentials),
+    content_svc: ContentService = Depends(get_content_service)
 ):
-    return {"groups": playlist_svc.get_available_groups()}
+    """
+    Obtiene grupos disponibles por tipo de contenido.
+    Opcionalmente filtra por uno o varios países.
+    """
+    country_list = None
+    if countries:
+        country_list = [c.strip().upper() for c in countries.split(',') if c.strip()]
+    
+    return {"groups": content_svc.get_groups(content_type, country_list)}
+
 
 @app.get("/api/content/countries", tags=["Content"])
-async def get_countries(
-    _: dict = Depends(require_admin),
-    playlist_svc: PlaylistService = Depends(get_playlist_service_dep)
+async def get_countries_public(
+    content_type: str = Query('channels', enum=['channels', 'movies', 'series']),
+    auth: AuthResult = Depends(require_auth_with_credentials),
+    content_svc: ContentService = Depends(get_content_service)
 ):
-    return {"countries": playlist_svc.get_available_countries()}
+    """Obtiene países disponibles por tipo de contenido (requiere auth)"""
+    return {"countries": content_svc.get_countries(content_type)}
 
-@app.get("/api/content/count", tags=["Content"])
-async def get_content_count(
-    username: str = Query(...),
-    password: str = Query(...),
-    user_svc: UserService = Depends(get_user_service_dep),
-    content_svc: ContentService = Depends(get_content_service_dep)
-):
-    """Obtiene el número total de canales, películas y series"""
-    auth = user_svc.validate_credentials(username, password)
-
-    if not auth.valid:
-        raise HTTPException(401, auth.message)
-
-    return content_svc.get_content_count()
-
-@app.post("/api/admin/reload-template", tags=["Admin"])
+@app.post("/api/admin/content/reload", tags=["Admin - Content"])
 async def reload_template(
     _: dict = Depends(require_admin),
-    playlist_svc: PlaylistService = Depends(get_playlist_service_dep)
+    playlist_svc: PlaylistService = Depends(get_playlist_service)
 ):
-    """
-    Recarga el template M3U en memoria.
-    Útil después de sincronizar el contenido con sync_iptv.py
-    """
+    """Recarga el template M3U en memoria"""
     playlist_svc.reload_template()
     if playlist_svc._template_cache is not None:
         return {
@@ -404,176 +394,70 @@ async def reload_template(
             "size": len(playlist_svc._template_cache)
         }
     else:
-        raise HTTPException(
-            status_code=500,
-            detail="No se pudo recargar el template. Verifica que playlist_template.m3u exista."
-        )
+        raise BadRequestException("No se pudo recargar el template. Verifica que playlist_template.m3u exista.")
 
 
 # ============================================
-# API: Canales JSON (Público con User/Pass en URL)
-# ============================================
+# API: Contenido (Público - Requiere Auth)
+# =========================================###
 
-@app.get("/api/channels", tags=["Channels"])
-async def get_channels(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-    group: Optional[str] = Query(None),
-    country: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    username: str = Query(...),
-    password: str = Query(...),
-    user_svc: UserService = Depends(get_user_service_dep),
-    content_svc: ContentService = Depends(get_content_service_dep)
+@app.get("/api/content", tags=["Content"])
+async def get_content(
+    content_type: str = Query(..., enum=['channels', 'movies', 'series'], description="Tipo de contenido"),
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(50, ge=1, le=100, description="Items por página"),
+    group: Optional[str] = Query(None, description="Filtrar por grupo"),
+    country: Optional[str] = Query(None, description="Filtrar por país"),
+    search: Optional[str] = Query(None, description="Buscar por nombre"),
+    auth: AuthDep = Depends(require_auth_with_credentials),
+    content_svc: ContentService = Depends(get_content_service)
 ):
-    """Obtiene lista paginada de canales en JSON"""
-    auth = user_svc.validate_credentials(username, password)
-
-    if not auth.valid:
-        raise HTTPException(401, auth.message)
-
-    return content_svc.get_channels(
-        skip=skip,
-        limit=limit,
+    """
+    Obtiene lista paginada de contenido (canales, películas o series).
+    Endpoint unificado que reemplaza /api/channels, /api/movies, /api/series.
+    """
+    return content_svc.get_content_list(
+        content_type=content_type,
+        page=page,
+        page_size=page_size,
         group=group,
         country=country,
         search=search,
-        username=username,
-        password=password
+        username=auth.username,
+        password=''  # No necesitamos password para construir URLs
     )
 
 
-@app.get("/api/channels/{channel_id}", tags=["Channels"])
-async def get_channel(
-    channel_id: str,
-    username: str = Query(...),
-    password: str = Query(...),
-    user_svc: UserService = Depends(get_user_service_dep),
-    content_svc: ContentService = Depends(get_content_service_dep)
+@app.get("/api/content/{content_type}/{item_id}", tags=["Content"])
+async def get_content_item(
+    content_type: str,
+    item_id: str,
+    auth: AuthDep = Depends(require_auth_with_credentials),
+    content_svc: ContentService = Depends(get_content_service)
 ):
-    """Obtiene un canal específico"""
-    auth = user_svc.validate_credentials(username, password)
+    """
+    Obtiene un item específico de contenido.
+    Endpoint unificado que reemplaza /api/channels/{id}, /api/movies/{id}, /api/series/{id}.
+    """
+    if content_type not in ['channels', 'movies', 'series']:
+        raise BadRequestException("Tipo de contenido inválido", {"valid_types": ["channels", "movies", "series"]})
 
-    if not auth.valid:
-        raise HTTPException(401, auth.message)
-
-    channel = content_svc.get_channel(channel_id, username, password)
-    if not channel:
-        raise HTTPException(404, "Canal no encontrado")
-
-    return channel
-
-
-# ============================================
-# API: Películas JSON (Público con User/Pass en URL)
-# ============================================
-
-@app.get("/api/movies", tags=["Movies"])
-async def get_movies(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-    group: Optional[str] = Query(None),
-    country: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    username: str = Query(...),
-    password: str = Query(...),
-    user_svc: UserService = Depends(get_user_service_dep),
-    content_svc: ContentService = Depends(get_content_service_dep)
-):
-    """Obtiene lista paginada de películas en JSON"""
-    auth = user_svc.validate_credentials(username, password)
-
-    if not auth.valid:
-        raise HTTPException(401, auth.message)
-
-    return content_svc.get_movies(
-        skip=skip,
-        limit=limit,
-        group=group,
-        country=country,
-        search=search,
-        username=username,
-        password=password
+    item = content_svc.get_content_item(
+        content_type=content_type,
+        item_id=item_id,
+        username=auth.username,
+        password=''
     )
 
+    if not item:
+        content_name = {"channels": "Canal", "movies": "Película", "series": "Serie"}[content_type]
+        raise NotFoundException(content_name, item_id)
 
-@app.get("/api/movies/{movie_id}", tags=["Movies"])
-async def get_movie(
-    movie_id: str,
-    username: str = Query(...),
-    password: str = Query(...),
-    user_svc: UserService = Depends(get_user_service_dep),
-    content_svc: ContentService = Depends(get_content_service_dep)
-):
-    """Obtiene una película específica"""
-    auth = user_svc.validate_credentials(username, password)
-
-    if not auth.valid:
-        raise HTTPException(401, auth.message)
-
-    movie = content_svc.get_movie(movie_id, username, password)
-    if not movie:
-        raise HTTPException(404, "Película no encontrada")
-
-    return movie
+    return item
 
 
 # ============================================
-# API: Series JSON (Público con User/Pass en URL)
-# ============================================
-
-@app.get("/api/series", tags=["Series"])
-async def get_series(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-    group: Optional[str] = Query(None),
-    country: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    username: str = Query(...),
-    password: str = Query(...),
-    user_svc: UserService = Depends(get_user_service_dep),
-    content_svc: ContentService = Depends(get_content_service_dep)
-):
-    """Obtiene lista paginada de series en JSON"""
-    auth = user_svc.validate_credentials(username, password)
-
-    if not auth.valid:
-        raise HTTPException(401, auth.message)
-
-    return content_svc.get_series(
-        skip=skip,
-        limit=limit,
-        group=group,
-        country=country,
-        search=search,
-        username=username,
-        password=password
-    )
-
-
-@app.get("/api/series/{series_id}", tags=["Series"])
-async def get_series_item(
-    series_id: str,
-    username: str = Query(...),
-    password: str = Query(...),
-    user_svc: UserService = Depends(get_user_service_dep),
-    content_svc: ContentService = Depends(get_content_service_dep)
-):
-    """Obtiene una serie específica"""
-    auth = user_svc.validate_credentials(username, password)
-
-    if not auth.valid:
-        raise HTTPException(401, auth.message)
-
-    serie = content_svc.get_serie(series_id, username, password)
-    if not serie:
-        raise HTTPException(404, "Serie no encontrada")
-
-    return serie
-
-
-# ============================================
-# Playlist M3U (Público o Protegido por User/Pass en URL)
+# API: Playlist M3U
 # ============================================
 
 @app.get("/playlist/{username}/{password}.m3u", tags=["Playlist"])
@@ -581,37 +465,40 @@ async def get_playlist(
     username: str,
     password: str,
     request: Request,
-    type: Optional[str] = Query(None),
-    group: Optional[str] = Query(None),
-    country: Optional[str] = Query(None),
-    user_svc: UserService = Depends(get_user_service_dep),
-    device_svc: DeviceService = Depends(get_device_service_dep),
-    playlist_svc: PlaylistService = Depends(get_playlist_service_dep)
+    content_type: Optional[str] = Query(None, enum=['channels', 'movies', 'series'], description="Tipo de contenido (omitir para todos)"),
+    group: Optional[str] = Query(None, description="Filtrar por grupo"),
+    country: Optional[str] = Query(None, description="Filtrar por país"),
+    user_svc: UserService = Depends(get_user_service),
+    device_svc: DeviceService = Depends(get_device_service),
+    playlist_svc: PlaylistService = Depends(get_playlist_service)
 ):
+    """Genera playlist M3U para el usuario autenticado"""
+    # Validar credenciales desde path params
     auth = user_svc.validate_credentials(username, password)
-
+    
     if not auth.valid:
-        raise HTTPException(401, auth.message)
-
+        raise UnauthorizedException(auth.message)
+    
     if not auth.can_connect:
-        raise HTTPException(403, auth.message)
-
+        raise ForbiddenException(auth.message)
+    
+    # Registrar sesión del dispositivo
     user_agent = request.headers.get('User-Agent', 'Unknown')
     ip_address = request.client.host if request.client else 'Unknown'
-
+    
     success, message, _ = device_svc.register_or_update_session(
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
         max_connections=auth.max_devices
     )
-
+    
     if not success:
-        raise HTTPException(429, message)
-
-    include_channels = type is None or type == 'channels'
-    include_movies = type is None or type == 'movies'
-    include_series = type is None or type == 'series'
+        raise TooManyRequestsException(message)
+    
+    include_channels = content_type is None or content_type == 'channels'
+    include_movies = content_type is None or content_type == 'movies'
+    include_series = content_type is None or content_type == 'series'
 
     m3u_content = playlist_svc.generate_m3u(
         username=username,
@@ -634,58 +521,58 @@ async def get_playlist(
 
 
 # ============================================
-# Stream Proxy
+# API: Stream Proxy
 # ============================================
 
-@app.get("/live/{username}/{password}/{stream_id}", tags=["Stream"])
-@app.get("/movie/{username}/{password}/{stream_id}", tags=["Stream"])
-@app.get("/series/{username}/{password}/{stream_id}", tags=["Stream"])
+@app.get("/stream/{content_type}/{username}/{password}/{stream_id}", tags=["Stream"])
 async def proxy_stream(
+    content_type: str,
     username: str,
     password: str,
     stream_id: str,
     request: Request,
-    user_svc: UserService = Depends(get_user_service_dep),
-    device_svc: DeviceService = Depends(get_device_service_dep),
-    stream_svc: StreamProxyService = Depends(get_stream_service_dep)
+    user_svc: UserService = Depends(get_user_service),
+    device_svc: DeviceService = Depends(get_device_service),
+    stream_svc: StreamProxyService = Depends(get_stream_service)
 ):
+    """
+    Proxy de streams para canales, películas y series.
+    Endpoint unificado que reemplaza /live/, /movie/, /series/.
+    """
+    if content_type not in ['live', 'movie', 'series']:
+        raise BadRequestException("Tipo de stream inválido", {"valid_types": ["live", "movie", "series"]})
+    
+    # Validar credenciales desde path params
     auth = user_svc.validate_credentials(username, password)
-
+    
     if not auth.valid:
-        raise HTTPException(401, auth.message)
-
+        raise UnauthorizedException(auth.message)
+    
     if not auth.can_connect:
-        raise HTTPException(403, auth.message)
-
+        raise ForbiddenException(auth.message)
+    
+    # Registrar sesión del dispositivo
     user_agent = request.headers.get('User-Agent', 'Unknown')
     ip_address = request.client.host if request.client else 'Unknown'
-
+    
     success, message, _ = device_svc.register_or_update_session(
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
         max_connections=auth.max_devices
     )
-
+    
     if not success:
-        raise HTTPException(429, message)
-
-    path = request.url.path
-    if path.startswith('/live/'): content_type = 'live'
-    elif path.startswith('/movie/'): content_type = 'movie'
-    elif path.startswith('/series/'): content_type = 'series'
-    else: content_type = 'live'
+        raise TooManyRequestsException(message)
 
     clean_stream_id = stream_id.split('.')[0]
     original_url = stream_svc.get_original_url(clean_stream_id, content_type)
 
     if not original_url:
-        raise HTTPException(404, "Stream no encontrado")
+        raise NotFoundException("Stream", stream_id)
 
     try:
         status_code, headers, body = await stream_svc.get_stream_response(original_url)
-
-        # No añadir CORS headers aquí - el middleware global ya los maneja
 
         return StreamingResponse(
             body,
@@ -694,62 +581,59 @@ async def proxy_stream(
             media_type=headers.get('content-type', 'video/mp2t')
         )
     except Exception as e:
-        raise HTTPException(502, f"Error al obtener stream: {e}")
+        raise BadRequestException(f"Error al obtener stream: {str(e)}")
 
 
 # ============================================
-# Stream Validation for Nginx (sin proxy)
+# API: Stream Validation (Nginx)
 # ============================================
 
-@app.get("/auth/validate-stream/{content_type}/{username}/{password}/{provider_id}", tags=["Stream"])
+@app.get("/auth/validate-stream/{content_type}/{username}/{password}/{provider_id}", tags=["Stream Validation"])
 async def validate_stream(
     content_type: str,
     username: str,
     password: str,
     provider_id: str,
     request: Request,
-    user_svc: UserService = Depends(get_user_service_dep),
-    device_svc: DeviceService = Depends(get_device_service_dep),
-    stream_svc: StreamProxyService = Depends(get_stream_service_dep)
+    user_svc: UserService = Depends(get_user_service),
+    device_svc: DeviceService = Depends(get_device_service),
+    stream_svc: StreamProxyService = Depends(get_stream_service)
 ):
     """
     Valida credenciales y devuelve URL original para nginx.
     Usado por nginx auth_request para validar antes de proxy directo.
-    Busca por provider_id (ej: "176861") en lugar de hash MD5.
     """
+    # Validar credenciales desde path params
     auth = user_svc.validate_credentials(username, password)
-
+    
     if not auth.valid:
-        raise HTTPException(401, auth.message)
-
+        raise UnauthorizedException(auth.message)
+    
     if not auth.can_connect:
-        raise HTTPException(403, auth.message)
-
+        raise ForbiddenException(auth.message)
+    
+    # Registrar sesión del dispositivo
     user_agent = request.headers.get('User-Agent', 'Unknown')
     ip_address = request.client.host if request.client else 'Unknown'
-
+    
     success, message, _ = device_svc.register_or_update_session(
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
         max_connections=auth.max_devices
     )
-
+    
     if not success:
-        raise HTTPException(429, message)
-
-    # Quitar extensión si existe (.mkv, .mp4, .ts)
+        raise TooManyRequestsException(message)
+    
     clean_provider_id = provider_id.split('.')[0]
     original_url = stream_svc.get_original_url(clean_provider_id, content_type)
 
     if not original_url:
-        raise HTTPException(404, "Stream no encontrado")
+        raise NotFoundException("Stream", provider_id)
 
-    # Resolver redirects para evitar Mixed Content (HTTP -> HTTPS)
-    # El proveedor puede devolver 302 a URL HTTP, pero nosotros necesitamos la URL final
     final_url = stream_svc.resolve_redirects(original_url)
 
-    # Devolver URL final en header para que nginx haga proxy
     return PlainTextResponse(
         content="OK",
         headers={
@@ -760,37 +644,35 @@ async def validate_stream(
 
 
 # ============================================
-# Logo/Image Proxy - Para解决 Mixed Content
+# API: Logo/Image Proxy
 # ============================================
-@app.get("/logo/", tags=["Logo"])
+
+@app.get("/logo", tags=["Logo"])
 async def proxy_logo(
-    request: Request,
     url: str = Query(..., description="URL original del logo"),
-    stream_svc: StreamProxyService = Depends(get_stream_service_dep)
+    stream_svc: StreamProxyService = Depends(get_stream_service)
 ):
     """
     Proxy de imágenes/logos para resolver Mixed Content.
     Recibe una URL HTTP del proveedor y la sirve a través de HTTPS.
     """
+    from urllib.parse import unquote
     import httpx
-    from urllib.parse import unquote, urlparse
-    
-    # La URL puede venir codificada o no
+
     original_url = unquote(url)
-    
-    # Asegurarse de que empieza con http
+
     if not original_url.startswith('http'):
-        raise HTTPException(400, "URL inválida: falta protocolo http:// o https://")
-    
+        raise BadRequestException("URL inválida: falta protocolo http:// o https://")
+
     try:
         client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
         response = await client.get(original_url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         })
         response.raise_for_status()
-        
+
         content_type = response.headers.get("content-type", "image/jpeg")
-        
+
         return Response(
             content=response.content,
             media_type=content_type,
@@ -800,7 +682,7 @@ async def proxy_logo(
             }
         )
     except Exception as e:
-        raise HTTPException(502, f"Error al obtener imagen: {str(e)}")
+        raise BadRequestException(f"Error al obtener imagen: {str(e)}")
 
 
 # ============================================
