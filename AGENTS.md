@@ -192,6 +192,8 @@ postman/        # API collections
 
 ### Content Endpoints (Unified)
 ```
+GET /api/content/groups?content_type=channels|movies|series&countries=US,MX
+GET /api/content/countries?content_type=channels|movies|series
 GET /api/content?content_type=channels|movies|series&page=1&page_size=50
 GET /api/content/{type}/{item_id}
 ```

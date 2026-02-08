@@ -197,17 +197,55 @@ Respuesta de `/api/admin/stats`:
 }
 ```
 
-### Contenido (Requiere Admin)
+### Contenido (Público - Bearer Token)
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/admin/content/groups` | Lista de grupos disponibles |
-| GET | `/api/admin/content/countries` | Lista de países disponibles |
-| POST | `/api/admin/content/reload` | Recargar template M3U |
+| GET | `/api/content/groups` | Lista de grupos disponibles |
+| GET | `/api/content/countries` | Lista de países disponibles |
+| GET | `/api/content` | Lista paginada de contenido |
+| GET | `/api/content/{type}/{id}` | Item específico |
 
-### Contenido (Público - Autenticado por URL)
+**Parámetros de `/api/content/groups`**:
+- `content_type`: Tipo de contenido (`channels`, `movies`, `series`)
+- `countries`: Filtrar por países (separados por coma: `US,MX,ES`)
 
-**Endpoint unificado** para canales, películas y series:
+**Ejemplos**:
+
+```bash
+# Obtener grupos de canales
+curl "http://localhost/api/content/groups?content_type=channels" \
+  -H "Authorization: Bearer TOKEN"
+
+# Obtener grupos filtrados por países
+curl "http://localhost/api/content/groups?content_type=channels&countries=US,MX" \
+  -H "Authorization: Bearer TOKEN"
+
+# Obtener lista de países
+curl "http://localhost/api/content/countries?content_type=channels" \
+  -H "Authorization: Bearer TOKEN"
+```
+
+Respuesta de `/api/content/groups`:
+```json
+{
+  "groups": ["Deportes", "Películas", "Series", "Noticias"]
+}
+```
+
+Respuesta de `/api/content/countries`:
+```json
+{
+  "countries": [
+    {"code": "AR", "name": "Argentina"},
+    {"code": "ES", "name": "España"},
+    {"code": "MX", "name": "México"},
+    {"code": "US", "name": "Estados Unidos"}
+  ]
+}
+```
+
+### Contenido (Público - Query Params)
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
@@ -221,6 +259,8 @@ Respuesta de `/api/admin/stats`:
 - `group`: Filtrar por grupo
 - `country`: Filtrar por país
 - `search`: Buscar por nombre (búsqueda parcial, case-insensitive)
+- `username`: Usuario
+- `password`: Contraseña
 
 **Ejemplos**:
 
