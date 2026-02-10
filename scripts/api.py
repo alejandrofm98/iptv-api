@@ -104,12 +104,25 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://walactvweb.walerike.com",
-        "http://localhost:4200"
+        "http://localhost:4200",
+        "*"  # Temporal para debugging
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
+
+# Manejador de excepciones global para asegurar CORS
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Manejador global que asegura cabeceras CORS en errores"""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error", "message": str(exc)}
+    )
 
 
 # ============================================

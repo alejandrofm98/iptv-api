@@ -47,6 +47,16 @@ services:
       - "traefik.http.routers.iptv-api.tls.certresolver=letsencrypt"
       - "traefik.http.routers.iptv-api.priority=100"
       - "traefik.http.services.iptv-api.loadbalancer.server.port=3010"
+      # CORS Headers en Traefik
+      - "traefik.http.middlewares.iptv-cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE"
+      - "traefik.http.middlewares.iptv-cors.headers.accesscontrolallowheaders=*"
+      - "traefik.http.middlewares.iptv-cors.headers.accesscontrolalloworiginlist=https://walactvweb.walerike.com,http://localhost:4200"
+      - "traefik.http.middlewares.iptv-cors.headers.accesscontrolmaxage=3600"
+      - "traefik.http.middlewares.iptv-cors.headers.addvaryheader=true"
+      - "traefik.http.routers.iptv-api.middlewares=iptv-cors@docker"
+      # Timeouts
+      - "traefik.http.services.iptv-api.loadbalancer.passhostheader=true"
+      - "traefik.http.services.iptv-api.loadbalancer.responseforwarding.flushinterval=100ms"
 
 
   # ============================================

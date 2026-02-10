@@ -157,22 +157,25 @@ postman/        # API collections
 
 ## Database & Supabase
 - Use Supabase client for all database operations
+- Use `PostgresService` (psycopg2) for complex SQL queries requiring DISTINCT, GROUP BY, or large result sets
 - Use `utils.constants` for table names
 - Handle timezone-aware datetimes carefully
 - Use `.execute()` pattern for queries
 
 ## Key Patterns to Follow
 1. Services are stateless classes receiving Supabase client in `__init__`
-2. Configuration goes in `utils.config.Settings`
-3. Constants go in `utils.constants`
-4. Pydantic models go in `utils.models`
-5. **Custom exceptions go in `utils.exceptions`**
-6. **Reusable dependencies go in `utils.dependencies`**
-7. Use dependency injection in FastAPI routes
-8. Always validate user permissions in admin endpoints
-9. Handle JWT authentication using `get_current_user` dependency
-10. **Use `page/page_size` for pagination (not skip/limit)**
-11. **Return consistent error responses using custom exceptions**
+2. Use `PostgresService` for SQL queries requiring DISTINCT, GROUP BY, or handling >1000 rows
+3. Configuration goes in `utils.config.Settings`
+4. Constants go in `utils.constants`
+5. Pydantic models go in `utils.models`
+6. **Custom exceptions go in `utils.exceptions`**
+7. **Reusable dependencies go in `utils.dependencies`**
+8. Use dependency injection in FastAPI routes
+9. Always validate user permissions in admin endpoints
+10. Handle JWT authentication using `get_current_user` dependency
+11. **Use `page/page_size` for pagination (not skip/limit)**
+12. **Return consistent error responses using custom exceptions**
+13. **Content endpoints use Bearer Token (`require_auth_with_jwt`)
 
 ## API Structure
 
@@ -209,7 +212,8 @@ GET /stream/{live|movie|series}/{username}/{password}/{stream_id}
 - Validate all user inputs with Pydantic
 - Check user roles before admin operations
 - Hash passwords with bcrypt (never store plain text)
-- Use `require_auth_with_credentials` for public endpoints
+- Use `require_auth_with_jwt` for content endpoints (Bearer Token)
+- Use `require_auth_with_credentials` for legacy public endpoints (query params)
 - Use `require_auth_with_session` for stream endpoints (tracks devices)
 
 ## New Files (v2.1)
@@ -227,12 +231,32 @@ Custom exceptions for consistent error handling:
 Reusable FastAPI dependencies:
 - `get_user_service()` - Obtener UserService
 - `get_content_service()` - Obtener ContentService
+- `get_postgres_service()` - Obtener PostgresService
 - `get_current_user()` - Validar JWT token
 - `require_admin()` - Requerir rol admin
-- `require_auth_with_credentials()` - Validar user/pass
-- `require_auth_with_session()` - Validar + registrar sesión
+- `require_auth_with_jwt()` - Validar Bearer Token (para endpoints de content)
+- `require_auth_with_credentials()` - Validar user/pass (legacy)
+- `require_auth_with_session()` - Validar + registrar sesión (para streams)
+
+### services/postgres_service.py
+Servicio para consultas SQL directas con psycopg2:
+- `execute_query()` - Ejecutar consultas SELECT
+- `get_distinct_groups()` - Obtener grupos distintos con DISTINCT
+- `get_distinct_countries()` - Obtener países distintos con GROUP BY
+- Conexión directa a PostgreSQL sin límite de 1000 registros de Supabase
 
 ## Migration Notes (v2.0 → v2.1)
+
+### Authentication Changes
+Content endpoints now use Bearer Token instead of query params:
+- **Old**: `GET /api/content?content_type=channels&username=user&password=pass`
+- **New**: `GET /api/content?content_type=channels` with `Authorization: Bearer <token>`
+
+Applies to:
+- `/api/content/groups`
+- `/api/content/countries`
+- `/api/content`
+- `/api/content/{type}/{id}`
 
 ### Removed Endpoints (Legacy)
 These endpoints were removed. Use the new unified endpoints:
@@ -247,6 +271,12 @@ These endpoints were removed. Use the new unified endpoints:
 - Old: `skip=0&limit=50`
 - New: `page=1&page_size=50`
 - Response now includes: `total`, `pages`, `has_next`, `has_prev`
+
+### New PostgreSQL Service
+For complex queries, use `PostgresService` instead of Supabase client:
+- Queries with DISTINCT or GROUP BY
+- Queries returning >1000 rows
+- Raw SQL queries
 
 ### Error Response Format
 All errors now return consistent JSON:

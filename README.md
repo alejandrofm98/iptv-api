@@ -12,6 +12,7 @@ API para gestión de usuarios IPTV con autenticación JWT, control de conexiones
 - **Playlists dinámicas**: Generación de M3U con URLs proxificadas y filtros
 - **Proxy de streams**: Autenticación en cada solicitud de stream
 - **Endpoints unificados**: API REST consistente para canales, películas y series
+- **Consultas SQL directas**: Uso de psycopg2 para consultas complejas con DISTINCT y GROUP BY
 - **Paginación estándar**: Soporte para paginación con page/page_size
 - **Búsqueda por nombre**: Filtrado de contenido por búsqueda de texto
 - **Detección de dispositivos**: Identificación automática del tipo de dispositivo
@@ -93,6 +94,15 @@ Variables importantes:
 - `API_SECRET_KEY`: Clave secreta para JWT
 - `IPTV_SOURCE_URL`: URL de la playlist fuente para sincronización
 - `PUBLIC_DOMAIN`: Dominio público para generar URLs
+
+**Configuración PostgreSQL opcional** (para consultas SQL directas):
+- `PG_HOST`: Host de PostgreSQL (si no se especifica, se extrae de SUPABASE_URL)
+- `PG_PORT`: Puerto de PostgreSQL (default: 5432)
+- `PG_DATABASE`: Nombre de la base de datos (default: postgres)
+- `PG_USER`: Usuario de PostgreSQL
+- `PG_PASSWORD`: Contraseña de PostgreSQL
+
+Si no se configuran las variables PG_*, el sistema extrae automáticamente la conexión de SUPABASE_URL.
 
 ### 3. Iniciar con Docker
 
@@ -199,12 +209,14 @@ Respuesta de `/api/admin/stats`:
 
 ### Contenido (Público - Bearer Token)
 
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/content/groups` | Lista de grupos disponibles |
-| GET | `/api/content/countries` | Lista de países disponibles |
-| GET | `/api/content` | Lista paginada de contenido |
-| GET | `/api/content/{type}/{id}` | Item específico |
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-------------|------|
+| GET | `/api/content/groups` | Lista de grupos disponibles | Bearer Token |
+| GET | `/api/content/countries` | Lista de países disponibles | Bearer Token |
+| GET | `/api/content` | Lista paginada de contenido | Bearer Token |
+| GET | `/api/content/{type}/{id}` | Item específico | Bearer Token |
+
+**Nota**: Los endpoints de contenido utilizan **psycopg2** para consultas SQL directas con DISTINCT y GROUP BY, eliminando el límite de 1000 registros de Supabase.
 
 **Parámetros de `/api/content/groups`**:
 - `content_type`: Tipo de contenido (`channels`, `movies`, `series`)
@@ -455,6 +467,8 @@ Los servicios principales están en `services/`:
 - **PlaylistService**: Generación de playlists M3U, filtros, estadísticas
 - **StreamProxyService**: Proxy de streams, cache de URLs
 - **ContentService**: Gestión unificada de canales, películas y series
+- **PostgresService**: Consultas SQL directas con psycopg2 para operaciones complejas (DISTINCT, GROUP BY) sin límite de 1000 registros
+- **PostgresService**: Consultas SQL directas con psycopg2 (DISTINCT, GROUP BY)
 
 ### Dependencias reutilizables
 
@@ -491,11 +505,14 @@ La configuración centralizada está en `utils/config.py` usando Pydantic Settin
 
 ### v2.1 (2024)
 - **Nuevo**: Endpoints unificados para contenido (`/api/content`)
+- **Nuevo**: Consultas SQL directas con psycopg2 (sin límite de 1000 registros)
+- **Nuevo**: Soporte para DISTINCT y GROUP BY en PostgreSQL
 - **Nuevo**: Paginación estándar con `page`/`page_size`
 - **Nuevo**: Búsqueda por nombre con parámetro `search`
 - **Nuevo**: Excepciones personalizadas para manejo de errores consistente
 - **Nuevo**: Dependencias reutilizables para autenticación
 - **Nuevo**: Endpoint unificado para streams (`/stream/{type}/...`)
+- **Nuevo**: Autenticación Bearer Token para endpoints de contenido
 - **Mejorado**: Estructura de endpoints con prefijos `/api/admin/`
 - **Eliminado**: Endpoints legacy (`/api/channels`, `/api/movies`, `/api/series`, `/live/`, `/movie/`, `/series/`)
 
