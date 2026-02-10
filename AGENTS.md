@@ -187,6 +187,7 @@ postman/        # API collections
 /api/admin/stats         # System stats (admin only)
 /api/admin/content/*     # Content management (admin only)
 /api/content/*           # Public content (requires auth)
+/api/content/stats       # Content stats (requires Bearer Token)
 /playlist/*              # Playlist M3U (public with credentials)
 /stream/*                # Stream proxy (public with credentials)
 /logo                    # Logo proxy (public)
@@ -199,6 +200,7 @@ GET /api/content/groups?content_type=channels|movies|series&countries=US,MX
 GET /api/content/countries?content_type=channels|movies|series
 GET /api/content?content_type=channels|movies|series&page=1&page_size=50
 GET /api/content/{type}/{item_id}
+GET /api/content/stats                          # Totales (requiere Bearer Token)
 ```
 
 ### Stream Endpoints (Unified)

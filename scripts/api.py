@@ -471,6 +471,24 @@ async def get_content_item(
     return item
 
 
+@app.get("/api/content/stats", tags=["Content"])
+async def get_content_stats(
+    auth: AuthResult = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service)
+):
+    """
+    Obtiene el total de canales, películas y series disponibles.
+    Requiere Bearer Token.
+    """
+    counts = content_svc.get_content_count()
+    return {
+        "channels": counts['channels'],
+        "movies": counts['movies'],
+        "series": counts['series'],
+        "total": counts['channels'] + counts['movies'] + counts['series']
+    }
+
+
 # ============================================
 # API: Playlist M3U
 # ============================================

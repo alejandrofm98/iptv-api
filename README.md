@@ -215,6 +215,7 @@ Respuesta de `/api/admin/stats`:
 | GET | `/api/content/countries` | Lista de países disponibles | Bearer Token |
 | GET | `/api/content` | Lista paginada de contenido | Bearer Token |
 | GET | `/api/content/{type}/{id}` | Item específico | Bearer Token |
+| GET | `/api/content/stats` | Estadísticas de contenido (totales) | Bearer Token |
 
 **Nota**: Los endpoints de contenido utilizan **psycopg2** para consultas SQL directas con DISTINCT y GROUP BY, eliminando el límite de 1000 registros de Supabase.
 
@@ -283,6 +284,20 @@ curl "http://localhost/api/content?content_type=series&group=Action&country=US" 
 # Obtener item específico
 curl "http://localhost/api/content/movies/12345" \
   -H "Authorization: Bearer TOKEN"
+
+# Obtener estadísticas de contenido (requiere Bearer Token)
+curl "http://localhost/api/content/stats" \
+  -H "Authorization: Bearer TOKEN"
+```
+
+Respuesta de `/api/content/stats`:
+```json
+{
+  "channels": 2500,
+  "movies": 500,
+  "series": 300,
+  "total": 3300
+}
 ```
 
 Respuesta de lista paginada:
