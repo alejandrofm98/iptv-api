@@ -111,6 +111,7 @@ class AuthResult(BaseModel):
     """Resultado de autenticación"""
     valid: bool
     user_id: Optional[str] = None
+    username: Optional[str] = None
     message: str
     can_connect: bool = False
     current_devices: int = 0

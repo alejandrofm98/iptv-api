@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from supabase import Client
 
 from utils.config import get_settings
+from .postgres_service import get_postgres_service
 
 
 class ContentService:
@@ -513,36 +514,20 @@ class ContentService:
         return self.get_content_item('series', series_id, username, password)
 
     def get_groups(self, content_type: str = 'channels', countries: Optional[List[str]] = None) -> List[str]:
-        """Obtiene lista de grupos disponibles, opcionalmente filtrados por países"""
+        """Obtiene lista de grupos disponibles, opcionalmente filtrados por países usando PostgreSQL directo"""
         table = self.TABLE_MAP.get(content_type, 'channels')
-        column = 'grupo'
         
-        query = self.supabase.table(table).select(column)
-        
-        if countries:
-            query = query.in_('country', countries)
-        
-        result = query.execute()
-        groups = {item[column] for item in (result.data or []) if item.get(column)}
-        
-        return sorted(list(groups))
+        # Usar PostgresService para consulta SQL directa con DISTINCT
+        pg_service = get_postgres_service()
+        return pg_service.get_distinct_groups(table, countries)
 
     def get_countries(self, content_type: str = 'channels') -> List[Dict[str, str]]:
-        """Obtiene lista de países disponibles con código y nombre"""
+        """Obtiene lista de países disponibles con código y nombre usando PostgreSQL directo"""
         table = self.TABLE_MAP.get(content_type, 'channels')
-        column = 'country'
-
-        result = self.supabase.table(table).select(column).execute()
-        country_codes = {item[column] for item in (result.data or []) if item.get(column)}
-
-        countries = []
-        for code in sorted(country_codes):
-            countries.append({
-                "code": code,
-                "name": self.COUNTRY_NAMES.get(code, code)
-            })
-
-        return countries
+        
+        # Usar PostgresService para consulta SQL directa con GROUP BY
+        pg_service = get_postgres_service()
+        return pg_service.get_distinct_countries(table)
 
     def get_content_count(self) -> Dict[str, int]:
         """Obtiene el número total de canales, películas y series"""

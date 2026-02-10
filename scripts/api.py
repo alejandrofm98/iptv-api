@@ -31,7 +31,8 @@ from utils.exceptions import (
 from utils.dependencies import (
     set_services, get_user_service, get_device_service, get_playlist_service,
     get_stream_service, get_content_service, get_current_user, require_admin,
-    require_auth_with_credentials, require_auth_with_session, AuthResult as AuthDep
+    require_auth_with_credentials, require_auth_with_session, require_auth_with_jwt,
+    AuthResult as AuthDep
 )
 
 # Configuración
@@ -357,7 +358,7 @@ async def get_system_stats(
 async def get_groups_public(
     content_type: str = Query('channels', enum=['channels', 'movies', 'series']),
     countries: Optional[str] = Query(None, description="Filtrar por países (separados por coma: US,MX,ES)"),
-    auth: AuthResult = Depends(require_auth_with_session),
+    auth: AuthResult = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
     """
@@ -375,10 +376,10 @@ async def get_groups_public(
 @app.get("/api/content/countries", tags=["Content"])
 async def get_countries_public(
     content_type: str = Query('channels', enum=['channels', 'movies', 'series']),
-    auth: AuthResult = Depends(require_auth_with_session),
+    auth: AuthResult = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
-    """Obtiene países disponibles por tipo de contenido (requiere auth)"""
+    """Obtiene países disponibles por tipo de contenido (requiere Bearer Token)"""
     return {"countries": content_svc.get_countries(content_type)}
 
 @app.post("/api/admin/content/reload", tags=["Admin - Content"])
@@ -410,12 +411,12 @@ async def get_content(
     group: Optional[str] = Query(None, description="Filtrar por grupo"),
     country: Optional[str] = Query(None, description="Filtrar por país"),
     search: Optional[str] = Query(None, description="Buscar por nombre"),
-    auth: AuthDep = Depends(require_auth_with_credentials),
+    auth: AuthResult = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
     """
     Obtiene lista paginada de contenido (canales, películas o series).
-    Endpoint unificado que reemplaza /api/channels, /api/movies, /api/series.
+    Requiere Bearer Token.
     """
     return content_svc.get_content_list(
         content_type=content_type,
@@ -425,7 +426,7 @@ async def get_content(
         country=country,
         search=search,
         username=auth.username,
-        password=''  # No necesitamos password para construir URLs
+        password=''
     )
 
 
@@ -433,12 +434,12 @@ async def get_content(
 async def get_content_item(
     content_type: str,
     item_id: str,
-    auth: AuthDep = Depends(require_auth_with_credentials),
+    auth: AuthResult = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
     """
     Obtiene un item específico de contenido.
-    Endpoint unificado que reemplaza /api/channels/{id}, /api/movies/{id}, /api/series/{id}.
+    Requiere Bearer Token.
     """
     if content_type not in ['channels', 'movies', 'series']:
         raise BadRequestException("Tipo de contenido inválido", {"valid_types": ["channels", "movies", "series"]})

@@ -6,11 +6,14 @@ from .device_service import DeviceService
 from .playlist_service import PlaylistService
 from .stream_service import StreamProxyService
 from .content_service import ContentService
+from .postgres_service import PostgresService, get_postgres_service
 
 __all__ = [
     'UserService',
     'DeviceService',
     'PlaylistService',
     'StreamProxyService',
-    'ContentService'
+    'ContentService',
+    'PostgresService',
+    'get_postgres_service'
 ]

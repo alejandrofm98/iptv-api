@@ -51,6 +51,13 @@ class Settings:
   supabase_url: str = os.getenv(CONSTANTS.SUPABASE_ENV_URL)
   supabase_key: str = os.getenv(CONSTANTS.SUPABASE_ENV_KEY)
 
+  # ===== PostgreSQL (para consultas SQL directas) =====
+  pg_host: str = os.getenv('PG_HOST', '')
+  pg_port: int = int(os.getenv('PG_PORT', '5432'))
+  pg_database: str = os.getenv('PG_DATABASE', 'postgres')
+  pg_user: str = os.getenv('PG_USER', '')
+  pg_password: str = os.getenv('PG_PASSWORD', '')
+
   # ===== API =====
   api_secret_key: str = os.getenv(CONSTANTS.API_SECRET_ENV_KEY)
 
@@ -170,6 +177,20 @@ class Settings:
 
     except Exception as e:
       raise RuntimeError(f"Error al crear cliente Supabase: {e}")
+
+  def get_postgres_connection_string(self) -> str:
+    """Obtiene string de conexión a PostgreSQL"""
+    # Si no hay configuración explícita, extraer de Supabase URL
+    if not self.pg_host and self.supabase_url:
+      # Extraer host de la URL de Supabase
+      # Ej: https://xyz.supabase.co -> xyz.supabase.co
+      from urllib.parse import urlparse
+      parsed = urlparse(self.supabase_url)
+      host = parsed.netloc.replace('.co', '.co:5432')
+      return f"postgresql://postgres:{self.supabase_key}@{host}/postgres"
+    
+    # Usar configuración explícita
+    return f"postgresql://{self.pg_user}:{self.pg_password}@{self.pg_host}:{self.pg_port}/{self.pg_database}"
 
   def validate(self, verbose: bool = True) -> bool:
     errors = []

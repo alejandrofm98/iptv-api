@@ -9,6 +9,7 @@ from jose import JWTError, jwt
 from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService
 from utils.config import get_settings
 from utils.exceptions import UnauthorizedException, ForbiddenException, ServiceUnavailableException
+from utils.models import AuthResult
 
 # Configuración JWT
 settings = get_settings()
@@ -110,15 +111,45 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     return current_user
 
 
-class AuthResult:
-    """Resultado de autenticación con user/pass"""
-    def __init__(self, auth_data):
-        self.valid = auth_data.valid
-        self.user_id = auth_data.user_id
-        self.username = auth_data.username
-        self.can_connect = auth_data.can_connect
-        self.max_devices = auth_data.max_devices
-        self.message = auth_data.message
+async def require_auth_with_jwt(
+    token: str = Depends(oauth2_scheme),
+    user_svc: UserService = Depends(get_user_service)
+) -> AuthResult:
+    """
+    Valida token JWT Bearer y retorna AuthResult.
+    Usado para endpoints de contenido que requieren autenticación.
+    """
+    global user_service
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        
+        if user_id is None:
+            raise UnauthorizedException("Token inválido")
+        
+        # Obtener usuario para verificar estado
+        user = user_svc.get_user(user_id)
+        
+        if user is None:
+            raise UnauthorizedException("Usuario no encontrado")
+        
+        if not user.get("is_active", True):
+            raise ForbiddenException("Usuario desactivado")
+        
+        # Retornar AuthResult con todos los campos requeridos
+        return AuthResult(
+            valid=True,
+            user_id=user_id,
+            username=user.get("username"),
+            message="OK",
+            can_connect=True,
+            current_devices=user.get("active_devices", 0),
+            max_devices=user.get("max_connections", 5)
+        )
+        
+    except JWTError:
+        raise UnauthorizedException("Token inválido o expirado")
 
 
 async def require_auth_with_credentials(
@@ -135,7 +166,15 @@ async def require_auth_with_credentials(
     if not auth.valid:
         raise UnauthorizedException(auth.message)
     
-    return AuthResult(auth)
+    return AuthResult(
+        valid=auth.valid,
+        user_id=auth.user_id,
+        username=auth.username,
+        message=auth.message,
+        can_connect=auth.can_connect,
+        current_devices=auth.current_devices,
+        max_devices=auth.max_devices
+    )
 
 
 async def require_auth_with_session(
@@ -174,4 +213,12 @@ async def require_auth_with_session(
             detail=message
         )
     
-    return AuthResult(auth)
+    return AuthResult(
+        valid=auth.valid,
+        user_id=auth.user_id,
+        username=auth.username,
+        message=auth.message,
+        can_connect=auth.can_connect,
+        current_devices=auth.current_devices,
+        max_devices=auth.max_devices
+    )

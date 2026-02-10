@@ -245,13 +245,6 @@ Respuesta de `/api/content/countries`:
 }
 ```
 
-### Contenido (Público - Query Params)
-
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/content` | Lista paginada de contenido |
-| GET | `/api/content/{type}/{id}` | Item específico |
-
 **Parámetros de `/api/content`**:
 - `content_type`: Tipo de contenido (`channels`, `movies`, `series`)
 - `page`: Número de página (default: 1)
@@ -259,23 +252,25 @@ Respuesta de `/api/content/countries`:
 - `group`: Filtrar por grupo
 - `country`: Filtrar por país
 - `search`: Buscar por nombre (búsqueda parcial, case-insensitive)
-- `username`: Usuario
-- `password`: Contraseña
 
 **Ejemplos**:
 
 ```bash
 # Obtener canales paginados
-curl "http://localhost/api/content?content_type=channels&page=1&page_size=50&username=user&password=pass"
+curl "http://localhost/api/content?content_type=channels&page=1&page_size=50" \
+  -H "Authorization: Bearer TOKEN"
 
 # Buscar películas por nombre
-curl "http://localhost/api/content?content_type=movies&search=Inception&username=user&password=pass"
+curl "http://localhost/api/content?content_type=movies&search=Inception" \
+  -H "Authorization: Bearer TOKEN"
 
 # Filtrar series por grupo y país
-curl "http://localhost/api/content?content_type=series&group=Action&country=US&username=user&password=pass"
+curl "http://localhost/api/content?content_type=series&group=Action&country=US" \
+  -H "Authorization: Bearer TOKEN"
 
 # Obtener item específico
-curl "http://localhost/api/content/movies/12345?username=user&password=pass"
+curl "http://localhost/api/content/movies/12345" \
+  -H "Authorization: Bearer TOKEN"
 ```
 
 Respuesta de lista paginada:
