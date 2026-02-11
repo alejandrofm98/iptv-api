@@ -2,7 +2,8 @@
 Servicio de gestión de contenido (canales, películas, series)
 Con soporte para paginación estándar y métodos genéricos
 """
-from typing import Optional, List, Dict, Any
+import time
+from typing import Optional, List, Dict, Any, Tuple
 from urllib.parse import urlparse
 from supabase import Client
 
@@ -19,6 +20,24 @@ class ContentService:
         'movies': 'movies',
         'series': 'series'
     }
+
+    # Cache estático para countries y groups (TTL: 5 minutos)
+    _cache: Dict[str, Tuple[Any, float]] = {}
+    _CACHE_TTL_SECONDS = 300
+
+    @classmethod
+    def _get_cached(cls, key: str) -> Optional[Any]:
+        """Obtiene valor del cache si no ha expirado"""
+        if key in cls._cache:
+            value, cached_at = cls._cache[key]
+            if time.time() - cached_at < cls._CACHE_TTL_SECONDS:
+                return value
+        return None
+
+    @classmethod
+    def _set_cached(cls, key: str, value: Any):
+        """Guarda valor en cache con timestamp"""
+        cls._cache[key] = (value, time.time())
 
     # Mapeo de códigos de país a nombres completos
     COUNTRY_NAMES = {
@@ -342,7 +361,18 @@ class ContentService:
         Método genérico que reemplaza a _parse_channel, _parse_movie, _parse_series.
         """
         original_url = row.get('url', '')
-        stream_id, _, _ = self._extract_stream_id(original_url)
+        stream_id, extension, content_type_detected = self._extract_stream_id(original_url)
+
+        base_url = self.settings.public_domain.rstrip('/') if username and password else ''
+        if original_url and username and password and stream_id:
+            if content_type_detected == 'live':
+                stream_url = f"{base_url}/{username}/{password}/{stream_id}"
+            elif extension:
+                stream_url = f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}.{extension}"
+            else:
+                stream_url = f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}"
+        else:
+            stream_url = None
 
         base_item = {
             'id': stream_id or '',
@@ -353,7 +383,7 @@ class ContentService:
             'country': row.get('country'),
             'provider_id': row.get('provider_id'),
             'url': original_url,
-            'stream_url': self._build_proxy_url(original_url, username, password) if original_url and username and password else None
+            'stream_url': stream_url
         }
 
         # Campos específicos por tipo
@@ -370,9 +400,11 @@ class ContentService:
         return (page - 1) * page_size
 
     def _build_base_query(self, table: str, group: Optional[str] = None,
-                         country: Optional[str] = None, search: Optional[str] = None):
+                         country: Optional[str] = None, search: Optional[str] = None,
+                         include_count: bool = False):
         """Construye la query base con filtros"""
-        query = self.supabase.table(table).select('*', count='exact')
+        count_param = 'exact' if include_count else None
+        query = self.supabase.table(table).select('*', count=count_param)
 
         if group:
             query = query.ilike('grupo', f'%{group}%')
@@ -412,7 +444,7 @@ class ContentService:
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
-        query = self._build_base_query(table, group, country, search)
+        query = self._build_base_query(table, group, country, search, include_count=True)
         query = query.order('numero', desc=False)
 
         # Calcular rango basado en page y page_size
@@ -516,18 +548,38 @@ class ContentService:
     def get_groups(self, content_type: str = 'channels', countries: Optional[List[str]] = None) -> List[str]:
         """Obtiene lista de grupos disponibles, opcionalmente filtrados por países usando PostgreSQL directo"""
         table = self.TABLE_MAP.get(content_type, 'channels')
-        
+        cache_key = f"groups:{table}:{','.join(sorted(countries)) if countries else 'all'}"
+
+        # Revisar cache primero
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
         # Usar PostgresService para consulta SQL directa con DISTINCT
         pg_service = get_postgres_service()
-        return pg_service.get_distinct_groups(table, countries)
+        result = pg_service.get_distinct_groups(table, countries)
+
+        # Guardar en cache
+        self._set_cached(cache_key, result)
+        return result
 
     def get_countries(self, content_type: str = 'channels') -> List[Dict[str, str]]:
         """Obtiene lista de países disponibles con código y nombre usando PostgreSQL directo"""
         table = self.TABLE_MAP.get(content_type, 'channels')
-        
+        cache_key = f"countries:{table}"
+
+        # Revisar cache primero
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
         # Usar PostgresService para consulta SQL directa con GROUP BY
         pg_service = get_postgres_service()
-        return pg_service.get_distinct_countries(table)
+        result = pg_service.get_distinct_countries(table)
+
+        # Guardar en cache
+        self._set_cached(cache_key, result)
+        return result
 
     def get_content_count(self) -> Dict[str, int]:
         """Obtiene el número total de canales, películas y series"""

@@ -6,6 +6,7 @@ import os
 from typing import List, Dict, Any, Optional
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from psycopg2 import pool
 from contextlib import contextmanager
 
 from utils.config import get_settings
@@ -13,45 +14,50 @@ from utils.config import get_settings
 
 class PostgresService:
     """Servicio para ejecutar consultas SQL directas a PostgreSQL"""
-    
+
+    _pool: Optional[pool.SimpleConnectionPool] = None
+
     def __init__(self):
         self.settings = get_settings()
         self._connection_string = self._build_connection_string()
+        self._init_pool()
     
+    def _init_pool(self):
+        """Inicializa el pool de conexiones"""
+        if PostgresService._pool is None:
+            PostgresService._pool = pool.SimpleConnectionPool(
+                1, 5,
+                self._connection_string
+            )
+
     def _build_connection_string(self) -> str:
         """Construye el string de conexión a PostgreSQL"""
-        # Si hay configuración explícita de PostgreSQL, usarla
         if self.settings.pg_host:
             return (
                 f"postgresql://{self.settings.pg_user}:{self.settings.pg_password}"
                 f"@{self.settings.pg_host}:{self.settings.pg_port}/{self.settings.pg_database}"
             )
-        
-        # Extraer de la URL de Supabase
-        # La URL de Supabase tiene el formato: https://<project>.supabase.co
-        # El host de PostgreSQL es: <project>.supabase.co:5432
+
         supabase_url = self.settings.supabase_url
         if supabase_url:
-            # Quitar https:// y .co al final
             host = supabase_url.replace('https://', '').replace('http://', '').rstrip('/')
             if '.supabase.co' in host:
-                # Usar el mismo host pero con el puerto de PostgreSQL
                 pg_host = host.replace('.co', '.co:5432')
                 return f"postgresql://postgres:{self.settings.supabase_key}@{pg_host}/postgres"
-        
+
         raise ValueError("No se pudo construir string de conexión a PostgreSQL. "
                         "Configura PG_HOST/PG_USER/PG_PASSWORD o SUPABASE_URL/SUPABASE_KEY")
-    
+
     @contextmanager
     def get_connection(self):
-        """Context manager para obtener conexión a PostgreSQL"""
+        """Context manager para obtener conexión del pool"""
         conn = None
         try:
-            conn = psycopg2.connect(self._connection_string)
+            conn = PostgresService._pool.getconn()
             yield conn
         finally:
             if conn:
-                conn.close()
+                PostgresService._pool.putconn(conn)
     
     def execute_query(self, sql: str, params: Optional[tuple] = None) -> List[Dict[str, Any]]:
         """
@@ -230,6 +236,9 @@ class PostgresService:
                 'code': code,
                 'name': country_names.get(code, code)
             })
+        
+        # Ordenar alfabéticamente por nombre
+        countries.sort(key=lambda c: c['name'])
         
         return countries
 

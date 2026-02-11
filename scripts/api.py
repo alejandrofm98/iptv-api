@@ -9,9 +9,14 @@ Cambios principales:
 - Estructura organizada con prefijos claros
 """
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
+
+# Debug: ver las peticiones HTTP que hace supabase-py (URL, params, status)
+# Cambiar a logging.WARNING cuando no se necesite debuguear
+logging.getLogger("httpx").setLevel(logging.DEBUG)
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status, Response
