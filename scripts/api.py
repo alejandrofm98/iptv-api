@@ -698,23 +698,25 @@ async def proxy_logo(
         raise BadRequestException("URL inválida: falta protocolo http:// o https://")
 
     try:
-        client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
-        response = await client.get(original_url, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        })
-        response.raise_for_status()
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            response = await client.get(original_url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            })
+            response.raise_for_status()
 
-        content_type = response.headers.get("content-type", "image/jpeg")
+            content_type = response.headers.get("content-type", "image/jpeg")
 
-        return Response(
-            content=response.content,
-            media_type=content_type,
-            headers={
-                "Cache-Control": "public, max-age=86400",
-                "Access-Control-Allow-Origin": "*"
-            }
-        )
-    except Exception as e:
+            return Response(
+                content=response.content,
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "Access-Control-Allow-Origin": "*"
+                }
+            )
+    except httpx.HTTPStatusError as e:
+        raise BadRequestException(f"Error al obtener imagen: HTTP {e.response.status_code}")
+    except httpx.RequestError as e:
         raise BadRequestException(f"Error al obtener imagen: {str(e)}")
 
 

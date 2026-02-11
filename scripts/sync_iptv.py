@@ -61,6 +61,8 @@ def proxy_logo_url(logo_url: str, public_domain: str) -> str:
   Returns:
       URL transformada usando el proxy HTTPS con query string
   """
+  from urllib.parse import quote
+  
   if not logo_url:
     return CONSTANTS.DEFAULT_LOGO_URL
   
@@ -69,7 +71,8 @@ def proxy_logo_url(logo_url: str, public_domain: str) -> str:
     return logo_url
   
   # Convertir HTTP a HTTPS usando el proxy con query string
-  return f"{public_domain}/logo/?url={logo_url}"
+  # URL-encode para evitar que & y ? en la URL original corrompan el query string
+  return f"{public_domain}/logo?url={quote(logo_url, safe='')}"
 
 
 def extraer_temporada_episodio(nombre):
