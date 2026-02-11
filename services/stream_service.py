@@ -2,8 +2,10 @@
 Servicio de proxy para streams IPTV
 """
 import hashlib
+import time
 import httpx
 from typing import Optional, Dict, Any, AsyncIterator, Tuple
+from urllib.parse import urlparse
 from supabase import Client
 
 import utils.constants as CONSTANTS
@@ -12,54 +14,84 @@ import utils.constants as CONSTANTS
 class StreamProxyService:
     """Servicio para proxificar streams IPTV"""
 
+    # Cache de redirects compartido entre instancias: url -> (final_url, timestamp)
+    _redirect_cache: Dict[str, Tuple[str, float]] = {}
+    # TTL del cache de redirects en segundos (5 minutos)
+    _REDIRECT_CACHE_TTL: float = 300.0
+    # TTL para errores de DNS (60 segundos) - evita reintentos constantes
+    _DNS_ERROR_CACHE_TTL: float = 60.0
+
     def __init__(self, supabase: Client):
         self.supabase = supabase
         # Cache de URLs originales: stream_id -> url original
         self._url_cache: Dict[str, str] = {}
 
-    def resolve_redirects(self, url: str) -> str:
+    async def resolve_redirects(self, url: str) -> str:
         """
-        Resuelve redirects HTTP y devuelve la URL final.
-        
+        Resuelve redirects HTTP y devuelve la URL final (async).
+
         Esto es necesario porque algunos proveedores devuelven 302 redirects
         a URLs HTTP, lo que causa problemas de Mixed Content en clientes HTTPS.
-        
+
+        Incluye cache con TTL para evitar resolver el mismo URL repetidamente,
+        especialmente cuando hay fallos de DNS.
+
         Args:
             url: URL inicial que puede tener redirects
-            
+
         Returns:
             URL final después de seguir todos los redirects, o URL original si hay error
         """
-        import time
+        # Revisar cache primero
+        cached = self._redirect_cache.get(url)
+        if cached:
+            final_url, cached_at = cached
+            ttl = self._REDIRECT_CACHE_TTL
+            # Si el cache devolvió la misma URL (error), usar TTL corto
+            if final_url == url:
+                ttl = self._DNS_ERROR_CACHE_TTL
+            if (time.time() - cached_at) < ttl:
+                return final_url
+
         start_time = time.time()
-        
+        hostname = urlparse(url).hostname or "unknown"
+
         try:
-            # Algunos proveedores no soportan HEAD, usar GET con stream=True
-            # para no descargar todo el contenido
-            with httpx.stream(
-                'GET',
-                url,
+            async with httpx.AsyncClient(
                 follow_redirects=True,
                 headers={'User-Agent': CONSTANTS.DEFAULT_USER_AGENT},
-                timeout=15.0
-            ) as response:
+                timeout=5.0
+            ) as client:
+                response = await client.send(
+                    client.build_request('GET', url),
+                    stream=True
+                )
                 final_url = str(response.url)
                 elapsed = time.time() - start_time
-                
+                await response.aclose()
+
                 if final_url != url:
-                    print(f"🔄 Redirect resuelto: {url[:60]}... -> {final_url[:60]}... ({elapsed:.2f}s)")
-                else:
-                    print(f"✅ Sin redirects: {url[:60]}... ({elapsed:.2f}s)")
-                
+                    print(f"Redirect resuelto: {hostname} ({elapsed:.2f}s)")
+
+                # Guardar en cache
+                self._redirect_cache[url] = (final_url, time.time())
                 return final_url
-                
+
         except httpx.TimeoutException:
-            print(f"⏱️ Timeout resolviendo redirects para {url[:60]}...")
+            elapsed = time.time() - start_time
+            print(f"Timeout resolviendo redirects para {hostname} ({elapsed:.2f}s)")
+            self._redirect_cache[url] = (url, time.time())
+            return url
+        except OSError as e:
+            # Errores de DNS/red: [Errno -2] Name or service not known, etc.
+            elapsed = time.time() - start_time
+            print(f"Error DNS/red resolviendo {hostname} ({elapsed:.2f}s): {e}")
+            self._redirect_cache[url] = (url, time.time())
             return url
         except Exception as e:
             elapsed = time.time() - start_time
-            print(f"⚠️ Error resolviendo redirects ({elapsed:.2f}s): {e}")
-            # Si falla, devolver la URL original
+            print(f"Error resolviendo redirects para {hostname} ({elapsed:.2f}s): {e}")
+            self._redirect_cache[url] = (url, time.time())
             return url
 
     def _hash_url(self, url: str) -> str:

@@ -665,7 +665,7 @@ async def validate_stream(
     if not original_url:
         raise NotFoundException("Stream", provider_id)
 
-    final_url = stream_svc.resolve_redirects(original_url)
+    final_url = await stream_svc.resolve_redirects(original_url)
 
     return PlainTextResponse(
         content="OK",

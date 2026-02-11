@@ -28,6 +28,10 @@ services:
     volumes:
       # Volumen compartido entre todos los servicios
       - iptv-data:/app/data
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
     networks:
       - iptv-network
       - dokploy-network
