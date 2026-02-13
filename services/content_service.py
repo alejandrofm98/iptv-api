@@ -592,3 +592,36 @@ class ContentService:
             'movies': movies.count or 0,
             'series': series.count or 0
         }
+
+    def get_episodes_by_serie_name(
+        self,
+        serie_name: str,
+        username: str = '',
+        password: str = ''
+    ) -> List[Dict[str, Any]]:
+        """
+        Obtiene todos los episodios de una serie por su nombre
+
+        Args:
+            serie_name: Nombre de la serie (ej: "Breaking Bad")
+            username: Username del usuario para construir stream_url
+            password: Password del usuario para construir stream_url
+
+        Returns:
+            Lista de episodios ordenados por temporada y episodio
+        """
+        result = (
+            self.supabase.table('series')
+            .select('*')
+            .eq('serie_name', serie_name)
+            .order('temporada')
+            .order('episodio')
+            .execute()
+        )
+
+        episodes = []
+        for row in result.data:
+            episode = self._parse_content_item(row, 'series', username, password)
+            episodes.append(episode)
+
+        return episodes

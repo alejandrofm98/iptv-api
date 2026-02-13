@@ -50,29 +50,31 @@ def detectar_tipo_contenido(url, nombre):
   return CONSTANTS.CONTENT_TYPE_CHANNEL
 
 
-def proxy_logo_url(logo_url: str, public_domain: str) -> str:
+def proxy_logo_url(logo_url: str, public_domain: str, content_type: str = "channel") -> str:
   """
   Convierte URLs de logos HTTP a HTTPS usando el proxy.
-  
+  Si no hay logo, devuelve el placeholder local.
+
   Args:
       logo_url: URL original del logo (puede ser HTTP)
       public_domain: Dominio público del API (https://iptv.walerike.com)
-  
+      content_type: Tipo de contenido (channel, movie, series)
+
   Returns:
-      URL transformada usando el proxy HTTPS con query string
+      URL transformada usando el proxy HTTPS, o placeholder local
   """
   from urllib.parse import quote
-  
+
   if not logo_url:
-    return CONSTANTS.DEFAULT_LOGO_URL
-  
+    return f"{public_domain}/placeholder/{content_type}.png"
+
   # Si ya es HTTPS o es una URL local, dejarla como está
   if logo_url.startswith('https://') or logo_url.startswith('/'):
     return logo_url
-  
+
   # Convertir HTTP a HTTPS usando el proxy con query string
   # URL-encode para evitar que & y ? en la URL original corrompan el query string
-  return f"{public_domain}/logo?url={quote(logo_url, safe='')}"
+  return f"{public_domain}/logo?url={quote(logo_url, safe='')}&type={content_type}"
 
 
 def extraer_temporada_episodio(nombre):
@@ -90,6 +92,23 @@ def extraer_temporada_episodio(nombre):
     return (temporada, episodio)
 
   return (None, None)
+
+
+def extraer_serie_name(nombre):
+  """
+  Extrae el nombre de la serie del nombre del capítulo
+  Ejemplos:
+    - "ES - Breaking Bad S01 E01" -> "Breaking Bad"
+    - "NL - KING AND CONQUEROR S01 E01" -> "KING AND CONQUEROR"
+    - "US - Game of Thrones S02 E05" -> "Game of Thrones"
+  Returns: nombre de la serie o None
+  """
+  # Patrón: opcionalmente empieza con "XX - " (código de país), luego el nombre, luego SXX EXX
+  match = re.search(r'^(?:[A-Z]{2}\s+-\s+)?(.+?)\s+S\d+\s+E\d+', nombre, re.IGNORECASE)
+  if match:
+    return match.group(1).strip()
+
+  return None
 
 
 def extraer_country(grupo):
@@ -137,7 +156,7 @@ def procesar_item(item, idx, tipo):
   country = extraer_country(item['group'])
 
   # Convertir URL del logo a HTTPS usando el proxy
-  logo_url = proxy_logo_url(item['logo'], settings.public_domain)
+  logo_url = proxy_logo_url(item['logo'], settings.public_domain, tipo)
 
   # Extraer provider_id de la URL
   provider_id = extraer_provider_id(item['url'])
@@ -155,11 +174,13 @@ def procesar_item(item, idx, tipo):
     "tvg_id": item.get('tvg_id', '')
   }
 
-  # Si es serie, añadir temporada y episodio
+  # Si es serie, añadir temporada, episodio y serie_name
   if tipo == CONSTANTS.CONTENT_TYPE_SERIE:
     temporada, episodio = extraer_temporada_episodio(item['name'])
+    serie_name = extraer_serie_name(item['name'])
     data_base['temporada'] = temporada
     data_base['episodio'] = episodio
+    data_base['serie_name'] = serie_name
 
   return data_base
 
@@ -404,7 +425,7 @@ def parsear_m3u(m3u_content: str) -> list:
       logo = ''
       if CONSTANTS.M3U_TVG_LOGO_ATTR in line:
         raw_logo = line.split(CONSTANTS.M3U_TVG_LOGO_ATTR)[1].split('"')[0]
-        logo = proxy_logo_url(raw_logo, settings.public_domain)
+        logo = proxy_logo_url(raw_logo, settings.public_domain, "channel")
 
       tvg_id = ''
       if CONSTANTS.M3U_TVG_ID_ATTR in line:

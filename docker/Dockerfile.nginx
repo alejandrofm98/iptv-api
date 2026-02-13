@@ -5,6 +5,9 @@ FROM nginx:alpine
 # Copiar configuración personalizada desde la carpeta nginx/
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 
+# Copiar imágenes placeholder para servirlas estáticamente
+COPY resources/images/ /app/resources/images/
+
 # Los certificados SSL se montan como volumen, no se copian en la imagen
 # NOTA: No podemos verificar nginx -t aquí porque el upstream iptv-api
 # no existe durante la construcción (solo existe en runtime)

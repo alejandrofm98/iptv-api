@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS series (
     numero INT,
     provider_id VARCHAR(50),  -- ID del proveedor (ej: "1306345" de la URL)
     nombre TEXT NOT NULL,
+    serie_name VARCHAR(255),  -- Nombre de la serie (ej: "Breaking Bad")
     logo TEXT,
     url TEXT NOT NULL,
     grupo TEXT,
@@ -121,6 +122,7 @@ CREATE TABLE IF NOT EXISTS series (
 CREATE INDEX IF NOT EXISTS idx_series_grupo ON series(grupo);
 CREATE INDEX IF NOT EXISTS idx_series_country ON series(country);
 CREATE INDEX IF NOT EXISTS idx_series_provider_id ON series(provider_id);
+CREATE INDEX IF NOT EXISTS idx_series_serie_name ON series(serie_name);
 
 -- ============================================
 -- 6. Tabla de metadata de sincronización

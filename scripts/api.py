@@ -494,6 +494,40 @@ async def get_content_stats(
     }
 
 
+@app.get("/api/series/{serie_name}/episodes", tags=["Content"])
+async def get_serie_episodes(
+    serie_name: str,
+    auth: AuthResult = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service)
+):
+    """
+    Obtiene todos los episodios de una serie por su nombre.
+    Los episodios se ordenan por temporada y número de episodio.
+    Requiere Bearer Token.
+
+    Args:
+        serie_name: Nombre de la serie (ej: "Breaking Bad")
+
+    Returns:
+        Lista de episodios con metadatos
+    """
+    episodes = content_svc.get_episodes_by_serie_name(
+        serie_name=serie_name,
+        username=auth.username,
+        password=''
+    )
+
+    if not episodes:
+        raise NotFoundException("Serie", serie_name)
+
+    return {
+        "serie_name": serie_name,
+        "total_episodes": len(episodes),
+        "seasons": list(set([ep.get('temporada') for ep in episodes if ep.get('temporada')])),
+        "episodes": episodes
+    }
+
+
 # ============================================
 # API: Playlist M3U
 # ============================================
