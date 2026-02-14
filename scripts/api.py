@@ -644,6 +644,16 @@ async def _proxy_stream_handler(
     try:
         status_code, headers, body = await stream_svc.get_stream_response(original_url)
 
+        # Si el body es string (M3U8 procesado), devolverlo directamente
+        if isinstance(body, str):
+            from fastapi.responses import PlainTextResponse
+            return PlainTextResponse(
+                content=body,
+                status_code=status_code,
+                headers=headers,
+                media_type=headers.get('content-type', 'application/vnd.apple.mpegurl')
+            )
+
         return StreamingResponse(
             body,
             status_code=status_code,

@@ -4,8 +4,9 @@ Servicio de proxy para streams IPTV
 import hashlib
 import time
 import httpx
-from typing import Optional, Dict, Any, AsyncIterator, Tuple
-from urllib.parse import urlparse
+import re
+from typing import Optional, Dict, Any, AsyncIterator, Tuple, Union
+from urllib.parse import urlparse, urljoin
 from supabase import Client
 
 import utils.constants as CONSTANTS
@@ -163,16 +164,46 @@ class StreamProxyService:
                 async for chunk in response.aiter_bytes(chunk_size=8192):
                     yield chunk
 
+    def _rewrite_m3u8_url(self, url: str, base_url: str) -> str:
+        """
+        Reescribe URLs dentro de un M3U8 para evitar Mixed Content.
+        Convierte HTTP a HTTPS o las pasa por el proxy si es necesario.
+        """
+        if not url:
+            return url
+
+        # Si ya es HTTPS, dejarlo así
+        if url.startswith('https://'):
+            return url
+
+        # Si es HTTP, convertir a HTTPS si es posible
+        if url.startswith('http://'):
+            # Intentar convertir a HTTPS primero
+            https_url = url.replace('http://', 'https://', 1)
+            return https_url
+
+        # Si es una URL relativa, convertirla a absoluta
+        if url.startswith('/'):
+            parsed_base = urlparse(base_url)
+            return f"{parsed_base.scheme}://{parsed_base.netloc}{url}"
+
+        if not url.startswith('http'):
+            # URL relativa sin slash inicial
+            return urljoin(base_url, url)
+
+        return url
+
     async def get_stream_response(
         self,
         original_url: str,
         headers: Optional[Dict[str, str]] = None
-    ) -> Tuple[int, Dict[str, str], AsyncIterator[bytes]]:
+    ) -> Tuple[int, Dict[str, str], Union[AsyncIterator[bytes], str]]:
         """
-        Obtiene respuesta de stream con headers
+        Obtiene respuesta de stream con headers.
+        Si el contenido es M3U8, lo procesa y reescribe URLs HTTP a HTTPS.
 
         Returns:
-            (status_code, response_headers, body_iterator)
+            (status_code, response_headers, body_iterator o contenido_m3u8)
         """
         default_headers = {
             'User-Agent': CONSTANTS.DEFAULT_USER_AGENT
@@ -194,6 +225,30 @@ class StreamProxyService:
             if header in response.headers:
                 pass_headers[header] = response.headers[header]
 
+        # Detectar si es M3U8 por content-type o extensión
+        content_type = response.headers.get('content-type', '').lower()
+        is_m3u8 = ('mpegurl' in content_type or
+                   'm3u8' in content_type or
+                   original_url.endswith('.m3u8') or
+                   '.m3u8' in original_url.lower())
+
+        if is_m3u8:
+            # Procesar M3U8 y reescribir URLs
+            content = await response.aread()
+            await client.aclose()
+
+            try:
+                m3u8_text = content.decode('utf-8')
+                rewritten = self._process_m3u8(m3u8_text, original_url)
+                pass_headers['content-type'] = 'application/vnd.apple.mpegurl'
+                # Eliminar content-length ya que el tamaño cambió
+                pass_headers.pop('content-length', None)
+                return (response.status_code, pass_headers, rewritten)
+            except Exception as e:
+                print(f"Error procesando M3U8: {e}")
+                # Si falla el procesamiento, devolver el contenido original
+                return (response.status_code, pass_headers, content)
+
         async def body_iterator():
             try:
                 async for chunk in response.aiter_bytes(chunk_size=8192):
@@ -203,6 +258,35 @@ class StreamProxyService:
                 await client.aclose()
 
         return (response.status_code, pass_headers, body_iterator())
+
+    def _process_m3u8(self, content: str, base_url: str) -> str:
+        """
+        Procesa el contenido de un archivo M3U8 y reescribe URLs HTTP a HTTPS.
+        """
+        lines = content.split('\n')
+        processed_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Si la línea es un URL (no empieza con # y no está vacía)
+            if stripped and not stripped.startswith('#'):
+                rewritten_url = self._rewrite_m3u8_url(stripped, base_url)
+                processed_lines.append(rewritten_url)
+            # Si es una línea EXT-X-KEY con URI
+            elif 'URI="' in stripped:
+                # Reescribir URI en tags como #EXT-X-KEY
+                def rewrite_uri(match):
+                    uri = match.group(1)
+                    new_uri = self._rewrite_m3u8_url(uri, base_url)
+                    return f'URI="{new_uri}"'
+
+                processed_line = re.sub(r'URI="([^"]+)"', rewrite_uri, line)
+                processed_lines.append(processed_line)
+            else:
+                processed_lines.append(line)
+
+        return '\n'.join(processed_lines)
 
     def clear_cache(self):
         """Limpia el cache de URLs"""
