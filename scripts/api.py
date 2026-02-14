@@ -26,6 +26,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 
 from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService
+from services.transcode_service import TranscodeService
 from utils.config import get_settings
 from utils.models import UserCreate, UserUpdate, ValidateCredentials, AuthResult, SystemStats, Token
 from utils.constants import JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES
@@ -35,7 +36,7 @@ from utils.exceptions import (
 )
 from utils.dependencies import (
     set_services, get_user_service, get_device_service, get_playlist_service,
-    get_stream_service, get_content_service, get_current_user, require_admin,
+    get_stream_service, get_content_service, get_transcode_service, get_current_user, require_admin,
     require_auth_with_credentials, require_auth_with_session, require_auth_with_jwt,
     AuthResult as AuthDep
 )
@@ -80,9 +81,10 @@ async def lifespan(app: FastAPI):
         playlist_svc = PlaylistService(supabase_client)
         stream_svc = StreamProxyService(supabase_client)
         content_svc = ContentService(supabase_client)
+        transcode_svc = TranscodeService()
 
         # Inicializar servicios globales
-        set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc)
+        set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc, transcode_svc)
 
         stream_svc.preload_cache()
         asyncio.create_task(cleanup_sessions_task())
@@ -603,7 +605,8 @@ async def _proxy_stream_handler(
     request: Request,
     user_svc: UserService,
     device_svc: DeviceService,
-    stream_svc: StreamProxyService
+    stream_svc: StreamProxyService,
+    transcode_svc: TranscodeService = None
 ):
     """
     Handler interno para proxy de streams.
@@ -640,7 +643,30 @@ async def _proxy_stream_handler(
     if not original_url:
         raise NotFoundException("Stream", stream_id)
 
+    # Verificar si la solicitud viene de la web permitida
+    origin = request.headers.get('origin') or request.headers.get('referer', '')
+    allowed_origins = ['https://walactvweb.walerike.com', 'http://localhost:4200']
+    is_from_allowed_web = any(orig in origin for orig in allowed_origins if origin)
+
     try:
+        # Solo transcodificar si viene de la web permitida Y es movie/series
+        if content_type in ['movie', 'series'] and transcode_svc and is_from_allowed_web:
+            range_header = request.headers.get('range')
+            
+            transcode_result = await transcode_svc.get_stream_with_transcode(
+                original_url,
+                range_header=range_header
+            )
+            
+            if transcode_result:
+                status_code, headers, body = transcode_result
+                return StreamingResponse(
+                    body,
+                    status_code=status_code,
+                    headers=headers,
+                    media_type=headers.get('content-type', 'video/x-matroska')
+                )
+
         # Para películas/series, pasar el header Range para soportar seek
         # Para canales en vivo, no usar Range requests
         request_headers = {}

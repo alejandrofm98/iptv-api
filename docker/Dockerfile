@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     curl \
     libpq-dev \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements e instalar dependencias Python

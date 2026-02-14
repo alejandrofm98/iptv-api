@@ -7,6 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
 from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService
+from services.transcode_service import TranscodeService
 from utils.config import get_settings
 from utils.exceptions import UnauthorizedException, ForbiddenException, ServiceUnavailableException
 from utils.models import AuthResult
@@ -26,6 +27,7 @@ device_service: Optional[DeviceService] = None
 playlist_service: Optional[PlaylistService] = None
 stream_service: Optional[StreamProxyService] = None
 content_service: Optional[ContentService] = None
+transcode_service: Optional[TranscodeService] = None
 
 
 def set_services(
@@ -33,15 +35,17 @@ def set_services(
     device_svc: DeviceService,
     playlist_svc: PlaylistService,
     stream_svc: StreamProxyService,
-    content_svc: ContentService
+    content_svc: ContentService,
+    transcode_svc: TranscodeService
 ):
     """Inicializa los servicios globales"""
-    global user_service, device_service, playlist_service, stream_service, content_service
+    global user_service, device_service, playlist_service, stream_service, content_service, transcode_service
     user_service = user_svc
     device_service = device_svc
     playlist_service = playlist_svc
     stream_service = stream_svc
     content_service = content_svc
+    transcode_service = transcode_svc
 
 
 # ============================================
@@ -76,6 +80,12 @@ def get_content_service() -> ContentService:
     if not content_service:
         raise ServiceUnavailableException("Servicio de contenido no disponible")
     return content_service
+
+
+def get_transcode_service() -> TranscodeService:
+    if not transcode_service:
+        raise ServiceUnavailableException("Servicio de transcodificación no disponible")
+    return transcode_service
 
 
 # ============================================
