@@ -606,7 +606,7 @@ async def _proxy_stream_handler(
     user_svc: UserService,
     device_svc: DeviceService,
     stream_svc: StreamProxyService,
-    transcode_svc: TranscodeService = None
+    transcode_svc: TranscodeService
 ):
     """
     Handler interno para proxy de streams.
@@ -673,12 +673,6 @@ async def _proxy_stream_handler(
 
         # Para películas/series, pasar el header Range para soportar seek
         # Para canales en vivo, no usar Range requests
-        request_headers = {}
-        if content_type in ['movie', 'series']:
-            range_header = request.headers.get('range')
-            if range_header:
-                request_headers['Range'] = range_header
-
         status_code, headers, body = await stream_svc.get_stream_response(
             original_url,
             headers=request_headers
@@ -713,7 +707,8 @@ async def proxy_stream_content(
     request: Request,
     user_svc: UserService = Depends(get_user_service),
     device_svc: DeviceService = Depends(get_device_service),
-    stream_svc: StreamProxyService = Depends(get_stream_service)
+    stream_svc: StreamProxyService = Depends(get_stream_service),
+    transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
     """
     Proxy de streams para películas y series.
@@ -730,7 +725,8 @@ async def proxy_stream_content(
         request=request,
         user_svc=user_svc,
         device_svc=device_svc,
-        stream_svc=stream_svc
+        stream_svc=stream_svc,
+        transcode_svc=transcode_svc
     )
 
 
@@ -742,7 +738,8 @@ async def proxy_stream_channel(
     request: Request,
     user_svc: UserService = Depends(get_user_service),
     device_svc: DeviceService = Depends(get_device_service),
-    stream_svc: StreamProxyService = Depends(get_stream_service)
+    stream_svc: StreamProxyService = Depends(get_stream_service),
+    transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
     """
     Proxy de streams para canales en vivo (sin tipo en URL).
@@ -755,7 +752,8 @@ async def proxy_stream_channel(
         request=request,
         user_svc=user_svc,
         device_svc=device_svc,
-        stream_svc=stream_svc
+        stream_svc=stream_svc,
+        transcode_svc=transcode_svc
     )
 
 
