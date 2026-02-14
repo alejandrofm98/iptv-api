@@ -229,13 +229,32 @@ def limpiar_m3u_antiguos(m3u_dir: str, copias_mantener: int = None):
     print(f"  ⚠️  Error al limpiar archivos antiguos: {e}")
 
 
-def crear_template_m3u(contenido_m3u: str) -> str:
+def extraer_provider_base_url(url_source: str) -> str:
+  """
+  Extrae la URL base del proveedor desde la URL de la playlist.
+  
+  Ejemplos:
+    - http://line.8kultradnscloud.ru:80/get.php?username=X&password=Y&type=m3u
+      -> http://line.8kultradnscloud.ru:80
+    - http://servidor.com:8080/playlist.m3u
+      -> http://servidor.com:8080
+  
+  Returns:
+    URL base del proveedor (sin path)
+  """
+  from urllib.parse import urlparse
+  parsed = urlparse(url_source)
+  return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def crear_template_m3u(contenido_m3u: str, provider_url: str) -> str:
   """
   Procesa el M3U original y crea una versión template con placeholders.
   Esto permite generar playlists personalizadas rápidamente sin regex en cada request.
   
   Args:
     contenido_m3u: Contenido del M3U original con credenciales del proveedor
+    provider_url: URL base del proveedor (ej: http://line.8kultradnscloud.ru:80)
     
   Returns:
     M3U con placeholders: {{USERNAME}} y {{PASSWORD}} en lugar de credenciales reales
@@ -243,11 +262,17 @@ def crear_template_m3u(contenido_m3u: str) -> str:
   lines = contenido_m3u.split('\n')
   processed_lines = []
 
+  # Escapar caracteres especiales en la URL del proveedor para regex
+  provider_url_escaped = re.escape(provider_url)
+
   # Compilar regex patterns (solo una vez durante el sync)
   # IMPORTANTE: Soportar tanto .mkv como .mp4
-  pattern_series = re.compile(r'http://PROVIDER_URL/series/[^/]+/[^/]+/(\d+)\.(mkv|mp4)$')
-  pattern_movie = re.compile(r'http://PROVIDER_URL/movie/[^/]+/[^/]+/(\d+)\.(mkv|mp4)$')
-  pattern_live = re.compile(r'http://PROVIDER_URL/[^/]+/[^/]+/(\d+)$')
+  # Series: http://provider/series/user/pass/12345.mkv
+  pattern_series = re.compile(rf'{provider_url_escaped}/series/[^/]+/[^/]+/(\d+)\.(mkv|mp4|ts)')
+  # Movies: http://provider/movie/user/pass/12345.mkv  
+  pattern_movie = re.compile(rf'{provider_url_escaped}/movie/[^/]+/[^/]+/(\d+)\.(mkv|mp4|ts)')
+  # Live: http://provider/user/pass/12345 (sin subdirectorio /live/)
+  pattern_live = re.compile(rf'{provider_url_escaped}/[^/]+/[^/]+/(\d+)(?:\.ts)?')
   
   for line in lines:
     # Limpiar caracteres de control (\r de Windows, espacios al final)
@@ -274,7 +299,7 @@ def crear_template_m3u(contenido_m3u: str) -> str:
   return '\n'.join(processed_lines)
 
 
-def guardar_m3u_local(contenido_m3u: str, m3u_dir: str = None):
+def guardar_m3u_local(contenido_m3u: str, m3u_dir: str = None, provider_url: str = None):
   """
   Guarda el archivo M3U en el servidor local (accesible por Nginx)
   """
@@ -315,7 +340,11 @@ def guardar_m3u_local(contenido_m3u: str, m3u_dir: str = None):
     # Crear versión template con placeholders para procesamiento rápido
     # Usando ATOMIC WRITE para evitar race conditions durante la lectura
     print(f"  🔧 Creando template con placeholders...")
-    template_content = crear_template_m3u(contenido_m3u)
+    if not provider_url:
+        if not settings.iptv_source_url:
+            raise ValueError("No se puede crear template: falta URL del proveedor")
+        provider_url = extraer_provider_base_url(settings.iptv_source_url)
+    template_content = crear_template_m3u(contenido_m3u, provider_url)
     path_template = os.path.join(m3u_dir, "playlist_template.m3u")
     path_template_tmp = os.path.join(m3u_dir, "playlist_template.m3u.tmp")
     
@@ -468,11 +497,58 @@ def sync_to_supabase():
 
   print(f"📋 Configuración cargada:\n{settings}")
 
-  url = settings.iptv_source_url
-
-  if not url:
-    print("❌ Error: URL de playlist IPTV no configurada")
+  # Inicializar Supabase PRIMERO para obtener config
+  try:
+    supabase = init_supabase()
+    print("✅ Conectado a Supabase")
+  except Exception as e:
+    print(f"❌ Error al conectar con Supabase: {e}")
     return
+
+  # Obtener configuración del proveedor desde tabla config
+  provider_url: str = ""
+  provider_username: str = ""
+  provider_password: str = ""
+  playlist_url: str = ""
+
+  try:
+    # Leer los 3 valores de config
+    config_base = supabase.table('config').select('value').eq('key', 'IPTV_BASE_URL').execute()
+    config_user = supabase.table('config').select('value').eq('key', 'IPTV_USERNAME').execute()
+    config_pass = supabase.table('config').select('value').eq('key', 'IPTV_PASSWORD').execute()
+
+    if config_base.data and len(config_base.data) > 0:
+      provider_url = str(config_base.data[0].get('value', ''))
+    if config_user.data and len(config_user.data) > 0:
+      provider_username = str(config_user.data[0].get('value', ''))
+    if config_pass.data and len(config_pass.data) > 0:
+      provider_password = str(config_pass.data[0].get('value', ''))
+
+    if provider_url and provider_username and provider_password:
+      # Construir URL completa para descargar playlist
+      base_url = provider_url.rstrip('/')
+      playlist_url = f"{base_url}/get.php?username={provider_username}&password={provider_password}&type=m3u"
+      print(f"✅ Configuración del proveedor obtenida desde config")
+      print(f"   URL Base: {provider_url}")
+      print(f"   Username: {provider_username}")
+    else:
+      # Fallback: usar iptv_source_url desde settings
+      playlist_url = str(settings.iptv_source_url) if settings.iptv_source_url else ""
+      provider_url = extraer_provider_base_url(playlist_url) if playlist_url else ""
+      print(f"⚠️  Config incompleta en Supabase, usando iptv_source_url")
+
+  except Exception as e:
+    # Fallback: usar iptv_source_url desde settings
+    playlist_url = str(settings.iptv_source_url) if settings.iptv_source_url else ""
+    provider_url = extraer_provider_base_url(playlist_url) if playlist_url else ""
+    print(f"⚠️  Error leyendo config: {e}, usando iptv_source_url")
+
+  if not playlist_url:
+    print("❌ Error: URL del proveedor no configurada (ni en config ni en settings)")
+    return
+
+  # Usar URL completa con credenciales para descargar playlist
+  url = playlist_url
 
   try:
     print("\n📥 FASE 1: Descargando playlist M3U...")
@@ -492,17 +568,9 @@ def sync_to_supabase():
     print(f"❌ Error de conexión: {e}")
     return
 
-  # Inicializar Supabase
-  try:
-    supabase = init_supabase()
-    print("✅ Conectado a Supabase")
-  except Exception as e:
-    print(f"❌ Error al conectar con Supabase: {e}")
-    return
-
   # Guardar archivo M3U
   print("\n" + "=" * 60)
-  m3u_info = guardar_m3u_local(m3u_content)
+  m3u_info = guardar_m3u_local(m3u_content, provider_url=provider_url)
   print("=" * 60 + "\n")
 
   if not m3u_info:
