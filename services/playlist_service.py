@@ -5,11 +5,13 @@ import os
 import re
 import hashlib
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List, Dict, Any, Iterator
 from urllib.parse import urlparse, urlencode
 from supabase import Client
 
 from utils.config import get_settings
+import utils.constants as CONSTANTS
 
 
 class PlaylistService:
@@ -19,8 +21,30 @@ class PlaylistService:
         self.supabase = supabase
         self.settings = get_settings()
         self._template_cache = None
-        self._template_path = "/app/data/m3u/playlist_template.m3u"
+        self._template_path = self._get_template_path()
         self._load_template()
+
+    def _get_template_path(self) -> str:
+        """
+        Determina la ruta del template M3U según el entorno (Docker/Local)
+        """
+        # Detectar si estamos en Docker
+        is_docker = (
+            os.path.exists(CONSTANTS.DOCKER_ENV_PATH) or
+            os.getenv(CONSTANTS.DOCKER_ENV_FLAG) == CONSTANTS.DOCKER_ENV_VALUE
+        )
+
+        # Usar variable de entorno si está definida
+        if os.getenv(CONSTANTS.M3U_DIR_ENV):
+            m3u_dir = os.getenv(CONSTANTS.M3U_DIR_ENV)
+        elif is_docker:
+            m3u_dir = CONSTANTS.M3U_DIR_DOCKER
+        else:
+            # Modo local: ruta relativa al proyecto
+            project_root = Path(__file__).parent.parent
+            m3u_dir = str(project_root / CONSTANTS.M3U_DIR_LOCAL_DEFAULT)
+
+        return os.path.join(m3u_dir, "playlist_template.m3u")
     
     def _load_template(self):
         """Carga el template M3U en memoria para acceso rápido"""
