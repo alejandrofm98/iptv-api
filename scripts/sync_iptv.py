@@ -527,7 +527,7 @@ def sync_to_supabase():
     if provider_url and provider_username and provider_password:
       # Construir URL completa para descargar playlist
       base_url = provider_url.rstrip('/')
-      playlist_url = f"{base_url}/get.php?username={provider_username}&password={provider_password}&type=m3u"
+      playlist_url = f"{base_url}/get.php?username={provider_username}&password={provider_password}&type=m3u_plus&output=ts"
       print(f"✅ Configuración del proveedor obtenida desde config")
       print(f"   URL Base: {provider_url}")
       print(f"   Username: {provider_username}")
