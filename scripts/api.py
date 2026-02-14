@@ -109,8 +109,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://walactvweb.walerike.com",
-        "http://localhost:4200",
-        "*"  # Temporal para debugging
+        "http://localhost:4200"
     ],
     allow_credentials=True,
     allow_methods=["*"],
