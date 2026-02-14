@@ -348,6 +348,7 @@ class ContentService:
 
         base_url = self.settings.public_domain.rstrip('/')
 
+        # Canales (live) no llevan tipo en la URL, solo movie y series
         if content_type == 'live':
             return f"{base_url}/{username}/{password}/{stream_id}"
 
@@ -365,6 +366,7 @@ class ContentService:
 
         base_url = self.settings.public_domain.rstrip('/') if username and password else ''
         if original_url and username and password and stream_id:
+            # Canales (live) no llevan tipo en la URL, solo movie y series
             if content_type_detected == 'live':
                 stream_url = f"{base_url}/{username}/{password}/{stream_id}"
             elif extension:

@@ -110,7 +110,11 @@ class PlaylistService:
 
         base_url = self.settings.public_domain.rstrip('/')
 
-        return f"{base_url}/{content_type}/{username}/{password}/{stream_id}{ext}"
+        # Canales (live) no llevan tipo en la URL, solo movie y series
+        if content_type == 'live':
+            return f"{base_url}/{username}/{password}/{stream_id}{ext}"
+        else:
+            return f"{base_url}/{content_type}/{username}/{password}/{stream_id}{ext}"
 
     def generate_m3u(
         self,

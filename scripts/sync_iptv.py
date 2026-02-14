@@ -288,9 +288,9 @@ def crear_template_m3u(contenido_m3u: str, provider_url: str) -> str:
     elif pattern_movie.search(line):
       line = pattern_movie.sub(r'{{DOMAIN}}/movie/{{USERNAME}}/{{PASSWORD}}/\1.\2', line)
       matched = True
-    # Verificar live (sin subdirectorio /live/)
+    # Verificar live (canales - sin tipo en URL)
     elif pattern_live.search(line):
-      # Live: sin subdirectorio, directo: dominio/user/pass/id
+      # Live: sin tipo, directo: dominio/user/pass/id
       line = pattern_live.sub(r'{{DOMAIN}}/{{USERNAME}}/{{PASSWORD}}/\1', line)
       matched = True
     

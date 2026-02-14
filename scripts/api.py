@@ -596,20 +596,18 @@ async def get_playlist(
 # API: Stream Proxy
 # ============================================
 
-@app.get("/stream/{content_type}/{username}/{password}/{stream_id}", tags=["Stream"])
-async def proxy_stream(
+async def _proxy_stream_handler(
     content_type: str,
     username: str,
     password: str,
     stream_id: str,
     request: Request,
-    user_svc: UserService = Depends(get_user_service),
-    device_svc: DeviceService = Depends(get_device_service),
-    stream_svc: StreamProxyService = Depends(get_stream_service)
+    user_svc: UserService,
+    device_svc: DeviceService,
+    stream_svc: StreamProxyService
 ):
     """
-    Proxy de streams para canales, películas y series.
-    Endpoint unificado que reemplaza /live/, /movie/, /series/.
+    Handler interno para proxy de streams.
     """
     if content_type not in ['live', 'movie', 'series']:
         raise BadRequestException("Tipo de stream inválido", {"valid_types": ["live", "movie", "series"]})
@@ -654,6 +652,61 @@ async def proxy_stream(
         )
     except Exception as e:
         raise BadRequestException(f"Error al obtener stream: {str(e)}")
+
+
+@app.get("/{content_type}/{username}/{password}/{stream_id}", tags=["Stream"])
+async def proxy_stream_content(
+    content_type: str,
+    username: str,
+    password: str,
+    stream_id: str,
+    request: Request,
+    user_svc: UserService = Depends(get_user_service),
+    device_svc: DeviceService = Depends(get_device_service),
+    stream_svc: StreamProxyService = Depends(get_stream_service)
+):
+    """
+    Proxy de streams para películas y series.
+    Debe ir PRIMERO para evitar conflictos con el endpoint de canales.
+    """
+    if content_type not in ['movie', 'series']:
+        raise BadRequestException("Tipo de stream inválido", {"valid_types": ["movie", "series"]})
+
+    return await _proxy_stream_handler(
+        content_type=content_type,
+        username=username,
+        password=password,
+        stream_id=stream_id,
+        request=request,
+        user_svc=user_svc,
+        device_svc=device_svc,
+        stream_svc=stream_svc
+    )
+
+
+@app.get("/{username}/{password}/{stream_id}", tags=["Stream"])
+async def proxy_stream_channel(
+    username: str,
+    password: str,
+    stream_id: str,
+    request: Request,
+    user_svc: UserService = Depends(get_user_service),
+    device_svc: DeviceService = Depends(get_device_service),
+    stream_svc: StreamProxyService = Depends(get_stream_service)
+):
+    """
+    Proxy de streams para canales en vivo (sin tipo en URL).
+    """
+    return await _proxy_stream_handler(
+        content_type='live',
+        username=username,
+        password=password,
+        stream_id=stream_id,
+        request=request,
+        user_svc=user_svc,
+        device_svc=device_svc,
+        stream_svc=stream_svc
+    )
 
 
 # ============================================
