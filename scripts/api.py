@@ -641,7 +641,18 @@ async def _proxy_stream_handler(
         raise NotFoundException("Stream", stream_id)
 
     try:
-        status_code, headers, body = await stream_svc.get_stream_response(original_url)
+        # Para películas/series, pasar el header Range para soportar seek
+        # Para canales en vivo, no usar Range requests
+        request_headers = {}
+        if content_type in ['movie', 'series']:
+            range_header = request.headers.get('range')
+            if range_header:
+                request_headers['Range'] = range_header
+
+        status_code, headers, body = await stream_svc.get_stream_response(
+            original_url,
+            headers=request_headers
+        )
 
         # Si el body es string (M3U8 procesado), devolverlo directamente
         if isinstance(body, str):

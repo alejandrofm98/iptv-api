@@ -201,6 +201,7 @@ class StreamProxyService:
         """
         Obtiene respuesta de stream con headers.
         Si el contenido es M3U8, lo procesa y reescribe URLs HTTP a HTTPS.
+        Soporta Range Requests para permitir seek en videos (VOD).
 
         Returns:
             (status_code, response_headers, body_iterator o contenido_m3u8)
@@ -220,10 +221,19 @@ class StreamProxyService:
         )
 
         # Headers relevantes para pasar al cliente
+        # Incluimos headers necesarios para Range Requests (seek)
         pass_headers = {}
-        for header in ['content-type', 'content-length', 'accept-ranges']:
+        important_headers = [
+            'content-type', 'content-length', 'accept-ranges', 'content-range',
+            'last-modified', 'etag', 'cache-control'
+        ]
+        for header in important_headers:
             if header in response.headers:
                 pass_headers[header] = response.headers[header]
+
+        # Siempre indicar que aceptamos Range Requests (para VOD)
+        if 'accept-ranges' not in pass_headers:
+            pass_headers['accept-ranges'] = 'bytes'
 
         # Detectar si es M3U8 por content-type o extensión
         content_type = response.headers.get('content-type', '').lower()
@@ -243,6 +253,8 @@ class StreamProxyService:
                 pass_headers['content-type'] = 'application/vnd.apple.mpegurl'
                 # Eliminar content-length ya que el tamaño cambió
                 pass_headers.pop('content-length', None)
+                # Eliminar content-range si existe, ya que cambió el contenido
+                pass_headers.pop('content-range', None)
                 return (response.status_code, pass_headers, rewritten)
             except Exception as e:
                 print(f"Error procesando M3U8: {e}")
