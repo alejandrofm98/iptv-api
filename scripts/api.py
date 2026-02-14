@@ -648,24 +648,28 @@ async def _proxy_stream_handler(
     allowed_origins = ['https://walactvweb.walerike.com', 'http://localhost:4200']
     is_from_allowed_web = any(orig in origin for orig in allowed_origins if origin)
 
+    # Para movies/series desde la web, intentar generar HLS
+    use_hls = content_type in ['movie', 'series'] and is_from_allowed_web and transcode_svc
+    
+    # Obtener headers para Range request
+    request_headers = {}
+    if content_type in ['movie', 'series']:
+        range_header = request.headers.get('range')
+        if range_header:
+            request_headers['Range'] = range_header
+
     try:
-        # Solo transcodificar si viene de la web permitida Y es movie/series
-        if content_type in ['movie', 'series'] and transcode_svc and is_from_allowed_web:
-            range_header = request.headers.get('range')
+        if use_hls:
+            hls_stream = transcode_svc.stream_hls(original_url)
             
-            transcode_result = await transcode_svc.get_stream_with_transcode(
-                original_url,
-                range_header=range_header
+            return StreamingResponse(
+                hls_stream,
+                media_type='application/vnd.apple.mpegurl',
+                headers={
+                    'X-Content-Type-Options': 'nosniff',
+                    'X-Transcoded-HLS': 'true'
+                }
             )
-            
-            if transcode_result:
-                status_code, headers, body = transcode_result
-                return StreamingResponse(
-                    body,
-                    status_code=status_code,
-                    headers=headers,
-                    media_type=headers.get('content-type', 'video/x-matroska')
-                )
 
         # Para películas/series, pasar el header Range para soportar seek
         # Para canales en vivo, no usar Range requests
