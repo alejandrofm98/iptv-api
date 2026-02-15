@@ -143,14 +143,15 @@ def extraer_provider_id(url: str) -> str:
     last_part = url.rstrip('/').split('/')[-1]
     # Quitar extensión si existe (.mkv, .mp4, .ts, etc.)
     provider_id = last_part.split('.')[0]
-    return provider_id
+    # Truncar a máximo 50 caracteres (límite de la base de datos)
+    return provider_id[:50]
   except Exception:
     return ""
 
 
 def procesar_item(item, idx, tipo):
   """Procesa un item (canal/movie/serie) según su tipo"""
-  item_id = str(idx)
+  item_id = str(idx)[:50]  # Truncar a máximo 50 caracteres
 
   # Extraer country del grupo
   country = extraer_country(item['group'])
