@@ -18,7 +18,7 @@ API para gestión de usuarios IPTV con autenticación JWT, control de conexiones
 - **Detección de dispositivos**: Identificación automática del tipo de dispositivo
 - **Limpieza automática**: Sesiones inactivas se eliminan automáticamente
 - **Estadísticas del sistema**: Endpoint para monitorear uso del sistema
-- **Sincronización automática**: Scripts para sincronizar contenido desde fuente IPTV
+
 - **Manejo de errores consistente**: Respuestas de error estandarizadas
 
 ## Arquitectura
@@ -40,8 +40,7 @@ API para gestión de usuarios IPTV con autenticación JWT, control de conexiones
 ```
 iptv-api/
 ├── scripts/
-│   ├── api.py              # Aplicación FastAPI principal (v2.1)
-│   └── sync_iptv.py        # Script de sincronización de contenido
+│   └── api.py              # Aplicación FastAPI principal (v2.1)
 ├── services/
 │   ├── __init__.py         # Exporta todos los servicios
 │   ├── user_service.py     # Gestión de usuarios
@@ -92,7 +91,7 @@ cp .env.example .env
 Variables importantes:
 - `SUPABASE_URL` y `SUPABASE_KEY`: Credenciales de Supabase
 - `API_SECRET_KEY`: Clave secreta para JWT
-- `IPTV_SOURCE_URL`: URL de la playlist fuente para sincronización
+
 - `PUBLIC_DOMAIN`: Dominio público para generar URLs
 
 **Configuración PostgreSQL opcional** (para consultas SQL directas):
@@ -389,20 +388,6 @@ curl http://localhost/api/admin/users/{user_id}/devices \
 curl http://localhost/api/admin/stats \
   -H "Authorization: Bearer TOKEN_AQUI"
 ```
-
-## Sincronización de Contenido
-
-Para sincronizar el contenido desde la fuente IPTV:
-
-```bash
-# Desde el contenedor Docker
-docker exec -it iptv-api python scripts/sync_iptv.py
-
-# O manualmente con Python
-python scripts/sync_iptv.py
-```
-
-Este script descarga la playlist fuente y actualiza la base de datos con canales, películas y series.
 
 ## Detección de Dispositivos
 

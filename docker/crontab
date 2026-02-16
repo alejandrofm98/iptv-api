@@ -1,8 +1,0 @@
-# ============================================
-# Crontab para sincronización automática
-# Ejecutar sync_iptv.py cada 2 horas
-# ============================================
-
-# Cada 2 horas (en punto: 00:00, 02:00, 04:00, etc.)
-# Cambiar a /app y ejecutar con PYTHONPATH configurado
-0 */2 * * * cd /app && PYTHONPATH=/app:$PYTHONPATH python scripts/sync_iptv.py >> /var/log/sync.log 2>&1

@@ -148,7 +148,7 @@ class PlaylistService:
             
             if self._template_cache is None:
                 # Fallback: devolver error
-                return "#EXTM3U\n#EXTINF:-1,Error\n# Error: No se encontró el archivo template. Ejecuta sync_iptv.py primero.\n"
+                return "#EXTM3U\n#EXTINF:-1,Error\n# Error: No se encontró el archivo template. El contenido aún no ha sido sincronizado.\n"
         
         # Hacer copia del template y aplicar reemplazos (muy rápido en memoria)
         # Solo 3 operaciones de replace en todo el string de 354MB

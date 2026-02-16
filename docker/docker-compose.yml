@@ -87,36 +87,6 @@ services:
       - "traefik.http.services.iptv-nginx.loadbalancer.server.port=80"
       # NOTA: CORS se maneja en nginx, no en Traefik (para evitar duplicados)
 
-  # ============================================
-  # Sync Scheduler (Supercronic)
-  # Ejecuta sync_iptv.py automáticamente cada 2 horas
-  # ============================================
-  sync-scheduler:
-    build:
-      context: ..  # Contexto desde la raíz del proyecto
-      dockerfile: docker/Dockerfile.sync
-    container_name: iptv-sync-scheduler
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      # Docker flag
-      - DOCKER_CONTAINER=true
-      # M3U
-      - M3U_DIR=/app/data/m3u
-      # Public domain (para URLs en M3U)
-      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-https://localhost}
-    volumes:
-      # Volumen compartido entre todos los servicios (lectura/escritura)
-      - iptv-data:/app/data
-    networks:
-      - iptv-network
-      - dokploy-network
-    depends_on:
-      - iptv-api
-    # No expone puertos, solo ejecuta cron internamente
-    # Logs: docker logs -f iptv-sync-scheduler
-
 # ============================================
 # Networks
 # ============================================

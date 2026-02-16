@@ -146,7 +146,7 @@ async def get_content(
 ## Project Structure
 
 ```
-scripts/        # Main applications (api.py, sync_iptv.py)
+scripts/        # Main applications (api.py)
 services/       # Business logic (UserService, DeviceService, etc.)
 utils/          # Shared utilities (config, models, constants, exceptions, dependencies)
 database/       # SQL schema

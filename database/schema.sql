@@ -61,91 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_device_id ON active_sessions(device_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_last_activity ON active_sessions(last_activity);
 
 -- ============================================
--- 3. Tabla de canales (si no existe)
--- ============================================
-CREATE TABLE IF NOT EXISTS channels (
-    id VARCHAR(50) PRIMARY KEY,
-    numero INT,
-    provider_id VARCHAR(50),  -- ID del proveedor (ej: "176861" de la URL)
-    nombre VARCHAR(255) NOT NULL,
-    logo TEXT,
-    url TEXT NOT NULL,
-    grupo VARCHAR(255),
-    country VARCHAR(10),
-    tvg_id VARCHAR(100),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_channels_grupo ON channels(grupo);
-CREATE INDEX IF NOT EXISTS idx_channels_country ON channels(country);
-CREATE INDEX IF NOT EXISTS idx_channels_provider_id ON channels(provider_id);
--- ============================================
--- 4. Tabla de películas (si no existe)
--- ============================================
-CREATE TABLE IF NOT EXISTS movies (
-    id VARCHAR(50) PRIMARY KEY,
-    numero INT,
-    provider_id VARCHAR(50),  -- ID del proveedor (ej: "2001330" de la URL)
-    nombre TEXT NOT NULL,
-    logo TEXT,
-    url TEXT NOT NULL,
-    grupo TEXT,
-    country VARCHAR(10),
-    tvg_id VARCHAR(100),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_movies_grupo ON movies(grupo);
-CREATE INDEX IF NOT EXISTS idx_movies_country ON movies(country);
-CREATE INDEX IF NOT EXISTS idx_movies_provider_id ON movies(provider_id);
-
-
--- ============================================
--- 5. Tabla de series (si no existe)
--- ============================================
-CREATE TABLE IF NOT EXISTS series (
-    id VARCHAR(50) PRIMARY KEY,
-    numero INT,
-    provider_id VARCHAR(50),  -- ID del proveedor (ej: "1306345" de la URL)
-    nombre TEXT NOT NULL,
-    serie_name VARCHAR(255),  -- Nombre de la serie (ej: "Breaking Bad")
-    logo TEXT,
-    url TEXT NOT NULL,
-    grupo TEXT,
-    country VARCHAR(10),
-    tvg_id VARCHAR(100),
-    temporada VARCHAR(10),
-    episodio VARCHAR(10),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_series_grupo ON series(grupo);
-CREATE INDEX IF NOT EXISTS idx_series_country ON series(country);
-CREATE INDEX IF NOT EXISTS idx_series_provider_id ON series(provider_id);
-CREATE INDEX IF NOT EXISTS idx_series_serie_name ON series(serie_name);
-
--- ============================================
--- 6. Tabla de metadata de sincronización
--- ============================================
-CREATE TABLE IF NOT EXISTS sync_metadata (
-    id VARCHAR(50) PRIMARY KEY,
-    ultima_actualizacion TIMESTAMP WITH TIME ZONE,
-    total_canales INT DEFAULT 0,
-    total_movies INT DEFAULT 0,
-    total_series INT DEFAULT 0,
-    m3u_url TEXT,
-    m3u_size BIGINT,
-    m3u_size_mb DECIMAL(10,2),
-    channels_con_logo INT DEFAULT 0,
-    channels_sin_logo INT DEFAULT 0,
-    movies_con_logo INT DEFAULT 0,
-    movies_sin_logo INT DEFAULT 0,
-    series_con_logo INT DEFAULT 0,
-    series_sin_logo INT DEFAULT 0
-);
-
--- ============================================
--- 7. Función para truncar tablas (optimización)
+-- 3. Función para truncar tablas (optimización)
 -- ============================================
 CREATE OR REPLACE FUNCTION truncate_table(table_name TEXT)
 RETURNS VOID AS $$
@@ -155,7 +71,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================
--- 8. Función para limpiar sesiones inactivas
+-- 4. Función para limpiar sesiones inactivas
 -- ============================================
 CREATE OR REPLACE FUNCTION cleanup_inactive_sessions(timeout_minutes INT DEFAULT 30)
 RETURNS INT AS $$
@@ -171,7 +87,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================
--- 9. Vista de usuarios con dispositivos activos
+-- 5. Vista de usuarios con dispositivos activos
 -- ============================================
 CREATE OR REPLACE VIEW users_with_devices AS
 SELECT
@@ -196,7 +112,7 @@ LEFT JOIN active_sessions s ON u.id = s.user_id
 GROUP BY u.id, u.username, u.max_connections, u.is_active, u.expires_at, u.created_at;
 
 -- ============================================
--- 10. Tabla de configuración
+-- 6. Tabla de configuración
 -- ============================================
 
 CREATE TABLE config (
