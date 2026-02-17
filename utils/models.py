@@ -180,3 +180,35 @@ class UserStats(BaseModel):
 
 # Actualizar forward references
 UserWithDevices.model_rebuild()
+
+
+# ============================================
+# Calendar Models
+# ============================================
+
+class ChannelResolved(BaseModel):
+    """Canal resuelto con su información"""
+    channel_id: str
+    display_name: str
+    quality: str
+    priority: int
+    source_name: str
+
+
+class CalendarEvent(BaseModel):
+    """Evento del calendario con canales resueltos"""
+    id: str
+    fecha: str
+    hora: str
+    competicion: Optional[str]
+    categoria: Optional[str]
+    equipos: str
+    canales_original: List[str]
+    canales_resueltos: List[ChannelResolved]
+
+
+class CalendarDayResponse(BaseModel):
+    """Respuesta de eventos por día"""
+    fecha: str
+    total_eventos: int
+    eventos: List[CalendarEvent]

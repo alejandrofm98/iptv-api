@@ -6,7 +6,7 @@ from fastapi import Depends, Query, Request, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
-from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService
+from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService
 from services.transcode_service import TranscodeService
 from utils.config import get_settings
 from utils.exceptions import UnauthorizedException, ForbiddenException, ServiceUnavailableException
@@ -28,6 +28,7 @@ playlist_service: Optional[PlaylistService] = None
 stream_service: Optional[StreamProxyService] = None
 content_service: Optional[ContentService] = None
 transcode_service: Optional[TranscodeService] = None
+calendar_service: Optional[CalendarService] = None
 
 
 def set_services(
@@ -36,16 +37,18 @@ def set_services(
     playlist_svc: PlaylistService,
     stream_svc: StreamProxyService,
     content_svc: ContentService,
-    transcode_svc: TranscodeService
+    transcode_svc: TranscodeService,
+    calendar_svc: CalendarService
 ):
     """Inicializa los servicios globales"""
-    global user_service, device_service, playlist_service, stream_service, content_service, transcode_service
+    global user_service, device_service, playlist_service, stream_service, content_service, transcode_service, calendar_service
     user_service = user_svc
     device_service = device_svc
     playlist_service = playlist_svc
     stream_service = stream_svc
     content_service = content_svc
     transcode_service = transcode_svc
+    calendar_service = calendar_svc
 
 
 # ============================================
@@ -86,6 +89,12 @@ def get_transcode_service() -> TranscodeService:
     if not transcode_service:
         raise ServiceUnavailableException("Servicio de transcodificación no disponible")
     return transcode_service
+
+
+def get_calendar_service() -> CalendarService:
+    if not calendar_service:
+        raise ServiceUnavailableException("Servicio de calendario no disponible")
+    return calendar_service
 
 
 # ============================================

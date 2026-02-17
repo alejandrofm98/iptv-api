@@ -25,6 +25,18 @@
       "key": "password",
       "value": "admin123",
       "type": "secret"
+    },
+    {
+      "key": "today",
+      "value": "2024-01-15",
+      "type": "text",
+      "description": "Fecha para consultar eventos del calendario (YYYY-MM-DD)"
+    },
+    {
+      "key": "event_id",
+      "value": "",
+      "type": "text",
+      "description": "UUID del evento del calendario"
     }
   ],
   "item": [
@@ -536,6 +548,65 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "admin", "content", "reload"]
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Calendar",
+      "item": [
+        {
+          "name": "Eventos por fecha",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/calendar/{{today}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "calendar", "{{today}}"]
+            },
+            "description": "Obtiene todos los eventos de una fecha específica con sus canales resueltos. Requiere Bearer Token.\n\nFecha debe estar en formato YYYY-MM-DD"
+          }
+        },
+        {
+          "name": "Evento por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/calendar/event/{{event_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "calendar", "event", "{{event_id}}"]
+            },
+            "description": "Obtiene un evento específico por su UUID con canales resueltos. Requiere Bearer Token."
+          }
+        },
+        {
+          "name": "Estadísticas de contenido",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/content/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "content", "stats"]
+            },
+            "description": "Obtiene estadísticas de canales, películas y series. Requiere Bearer Token."
           }
         }
       ]

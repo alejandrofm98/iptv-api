@@ -7,6 +7,7 @@ from .playlist_service import PlaylistService
 from .stream_service import StreamProxyService
 from .content_service import ContentService
 from .postgres_service import PostgresService, get_postgres_service
+from .calendar_service import CalendarService
 
 __all__ = [
     'UserService',
@@ -15,5 +16,6 @@ __all__ = [
     'StreamProxyService',
     'ContentService',
     'PostgresService',
-    'get_postgres_service'
+    'get_postgres_service',
+    'CalendarService'
 ]

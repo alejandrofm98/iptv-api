@@ -25,10 +25,11 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 
-from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService
+from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService
 from services.transcode_service import TranscodeService
+from services.postgres_service import get_postgres_service
 from utils.config import get_settings
-from utils.models import UserCreate, UserUpdate, ValidateCredentials, AuthResult, SystemStats, Token
+from utils.models import UserCreate, UserUpdate, ValidateCredentials, AuthResult, SystemStats, Token, CalendarDayResponse, CalendarEvent
 from utils.constants import JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 from utils.exceptions import (
     NotFoundException, UnauthorizedException, ForbiddenException,
@@ -36,7 +37,7 @@ from utils.exceptions import (
 )
 from utils.dependencies import (
     set_services, get_user_service, get_device_service, get_playlist_service,
-    get_stream_service, get_content_service, get_transcode_service, get_current_user, require_admin,
+    get_stream_service, get_content_service, get_transcode_service, get_calendar_service, get_current_user, require_admin,
     require_auth_with_credentials, require_auth_with_session, require_auth_with_jwt,
     AuthResult as AuthDep
 )
@@ -82,9 +83,13 @@ async def lifespan(app: FastAPI):
         stream_svc = StreamProxyService(supabase_client)
         content_svc = ContentService(supabase_client)
         transcode_svc = TranscodeService()
+        
+        # Inicializar servicio de calendario con PostgreSQL
+        pg_svc = get_postgres_service()
+        calendar_svc = CalendarService(pg_svc)
 
         # Inicializar servicios globales
-        set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc, transcode_svc)
+        set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc, transcode_svc, calendar_svc)
 
         stream_svc.preload_cache()
         asyncio.create_task(cleanup_sessions_task())
@@ -493,6 +498,100 @@ async def get_content_stats(
         "series": counts['series'],
         "total": counts['channels'] + counts['movies'] + counts['series']
     }
+
+
+# ============================================
+# API: Calendar
+# ============================================
+
+@app.get("/api/calendar/{fecha}", response_model=CalendarDayResponse, tags=["Calendar"])
+async def get_calendar_by_date(
+    fecha: str,
+    auth: AuthResult = Depends(require_auth_with_jwt),
+    calendar_svc = Depends(get_calendar_service)
+):
+    """
+    Obtiene todos los eventos deportivos de una fecha específica con sus canales resueltos.
+    Requiere Bearer Token.
+    
+    Args:
+        fecha: Fecha en formato YYYY-MM-DD (ej: 2024-01-15)
+    
+    Returns:
+        Eventos del día con información de canales mapeados
+    """
+    from datetime import datetime
+    
+    try:
+        # Validar formato de fecha
+        datetime.strptime(fecha, "%Y-%m-%d")
+    except ValueError:
+        raise BadRequestException("Formato de fecha inválido. Use YYYY-MM-DD")
+    
+    # Obtener eventos del servicio
+    eventos_raw = calendar_svc.get_events_by_date(fecha)
+    
+    if not eventos_raw:
+        return CalendarDayResponse(
+            fecha=fecha,
+            total_eventos=0,
+            eventos=[]
+        )
+    
+    # Convertir resultados al modelo Pydantic
+    eventos = []
+    for evento in eventos_raw:
+        canales_resueltos = evento.get('canales_resueltos', []) or []
+        eventos.append(CalendarEvent(
+            id=str(evento['id']),
+            fecha=evento['fecha'],
+            hora=evento['hora'],
+            competicion=evento.get('competicion'),
+            categoria=evento.get('categoria'),
+            equipos=evento['equipos'],
+            canales_original=evento.get('canales_original', []) or [],
+            canales_resueltos=canales_resueltos
+        ))
+    
+    return CalendarDayResponse(
+        fecha=fecha,
+        total_eventos=len(eventos),
+        eventos=eventos
+    )
+
+
+@app.get("/api/calendar/event/{event_id}", response_model=CalendarEvent, tags=["Calendar"])
+async def get_calendar_event(
+    event_id: str,
+    auth: AuthResult = Depends(require_auth_with_jwt),
+    calendar_svc = Depends(get_calendar_service)
+):
+    """
+    Obtiene un evento específico por su ID con canales resueltos.
+    Requiere Bearer Token.
+    
+    Args:
+        event_id: UUID del evento
+    
+    Returns:
+        Evento con información completa de canales
+    """
+    evento = calendar_svc.get_event_by_id(event_id)
+    
+    if not evento:
+        raise NotFoundException("Evento", event_id)
+    
+    canales_resueltos = evento.get('canales_resueltos', []) or []
+    return CalendarEvent(
+        id=str(evento['id']),
+        fecha=evento['fecha'],
+        hora=evento['hora'],
+        competicion=evento.get('competicion'),
+        categoria=evento.get('categoria'),
+        equipos=evento['equipos'],
+        canales_original=evento.get('canales_original', []) or [],
+        canales_resueltos=canales_resueltos
+    )
 
 
 @app.get("/api/series/{serie_name}/episodes", tags=["Content"])
