@@ -306,13 +306,22 @@ class StreamProxyService:
             client = None
             try:
                 client = httpx.AsyncClient(
-                    timeout=30.0,
+                    timeout=httpx.Timeout(
+                        connect=10.0,
+                        read=300.0,  # 5 min timeout de lectura
+                        write=10.0,
+                        pool=10.0
+                    ),
                     follow_redirects=True,
                     limits=httpx.Limits(
                         max_keepalive_connections=20,
                         max_connections=50,
-                        keepalive_expiry=30.0
-                    )
+                        keepalive_expiry=60.0
+                    ),
+                    headers={
+                        'Connection': 'keep-alive',
+                        'Keep-Alive': 'timeout=300, max=100'
+                    }
                 )
 
                 response = await client.send(

@@ -939,6 +939,59 @@ async def validate_stream(
 
 
 # ============================================
+# API: Internal Stream URL (for Nginx direct proxy)
+# ============================================
+
+@app.get("/internal/stream-url", tags=["Internal"])
+async def get_stream_url_internal(
+    request: Request,
+    user: str = Query(...),
+    password: str = Query(...),
+    id: str = Query(...),
+    user_svc: UserService = Depends(get_user_service),
+    device_svc: DeviceService = Depends(get_device_service),
+    stream_svc: StreamProxyService = Depends(get_stream_service)
+):
+    """
+    Endpoint interno para obtener URL de stream.
+    Devuelve la URL en header X-Stream-Url para que nginx haga proxy directo.
+    """
+    # Validar credenciales
+    auth = user_svc.validate_credentials(user, password)
+    
+    if not auth.valid or not auth.can_connect:
+        raise UnauthorizedException("Credenciales inválidas")
+    
+    # Registrar sesión
+    user_agent = request.headers.get('User-Agent', 'Unknown')
+    ip_address = request.client.host if request.client else 'Unknown'
+    
+    success, message, _ = device_svc.register_or_update_session(
+        user_id=auth.user_id,
+        user_agent=user_agent,
+        ip_address=ip_address,
+        max_connections=auth.max_devices
+    )
+    
+    if not success:
+        raise TooManyRequestsException(message)
+    
+    # Obtener URL original
+    clean_id = id.split('.')[0]
+    original_url = stream_svc.get_original_url(clean_id, 'live')
+
+    if not original_url:
+        raise NotFoundException("Stream", id)
+
+    # Resolver redirects (sin reintentos para no bloquear)
+    final_url = await stream_svc.resolve_redirects(original_url)
+
+    # Devolver redirect 307 al stream del proveedor
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=final_url, status_code=307)
+
+
+# ============================================
 # API: Logo/Image Proxy
 # ============================================
 
