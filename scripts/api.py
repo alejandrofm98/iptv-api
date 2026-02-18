@@ -13,9 +13,15 @@ import logging
 from contextlib import asynccontextmanager
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
+# Reducir ruido de httpx
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("hpack").setLevel(logging.WARNING)
+
 logger = logging.getLogger("iptv-api")
 from datetime import datetime, timedelta
 from typing import Optional
@@ -753,6 +759,8 @@ async def _proxy_stream_handler(
 
     clean_stream_id = stream_id.split('.')[0]
     original_url = stream_svc.get_original_url(clean_stream_id, content_type)
+
+    logger.info(f"🎬 STREAM REQUEST: type={content_type}, user={username}, stream_id={clean_stream_id}, url={original_url[:60] if original_url else 'NOT FOUND'}...")
 
     if not original_url:
         raise NotFoundException("Stream", stream_id)
