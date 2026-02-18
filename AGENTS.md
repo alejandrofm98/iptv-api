@@ -188,6 +188,7 @@ postman/        # API collections
 /api/admin/content/*     # Content management (admin only)
 /api/content/*           # Public content (requires auth)
 /api/content/stats       # Content stats (requires Bearer Token)
+/api/calendar/*          # Calendar events (requires Bearer Token)
 /playlist/*              # Playlist M3U (public with credentials)
 /stream/*                # Stream proxy (public with credentials)
 /logo                    # Logo proxy (public)
@@ -202,6 +203,19 @@ GET /api/content?content_type=channels|movies|series&page=1&page_size=50
 GET /api/content/{type}/{item_id}
 GET /api/content/stats                          # Totales (requiere Bearer Token)
 ```
+
+### Calendar Endpoints
+```
+GET /api/calendar/{fecha}                       # Eventos del día (YYYY-MM-DD)
+GET /api/calendar/event/{event_id}              # Evento específico por UUID
+```
+
+**Models:**
+- `CalendarDayResponse`: Respuesta con lista de eventos del día
+- `CalendarEvent`: Evento individual con canales resueltos
+- `ChannelResolved`: Canal mapeado con channel_id, display_name, quality, priority
+
+**Servicio:** `CalendarService` usa PostgreSQL directamente para consultar las tablas del proyecto walactv-scrapper (`calendario`, `channel_mappings`, `channel_variants`).
 
 ### Stream Endpoints (Unified)
 ```
@@ -246,6 +260,19 @@ Servicio para consultas SQL directas con psycopg2:
 - `get_distinct_groups()` - Obtener grupos distintos con DISTINCT
 - `get_distinct_countries()` - Obtener países distintos con GROUP BY
 - Conexión directa a PostgreSQL sin límite de 1000 registros de Supabase
+
+### services/calendar_service.py
+Servicio para consultar eventos del calendario deportivo:
+- `get_events_by_date(fecha)` - Obtiene eventos de una fecha con canales resueltos
+- `get_event_by_id(event_id)` - Obtiene un evento específico por UUID
+- Convierte automáticamente objetos `date` a strings ISO
+- Usa las funciones SQL `get_eventos_fecha_con_channels()` y `get_evento_con_channels()`
+- Requiere conexión a la base de datos del proyecto walactv-scrapper
+
+**Tablas utilizadas:**
+- `calendario` - Eventos deportivos con array de canales
+- `channel_mappings` - Mapeo de nombres de canales
+- `channel_variants` - Variantes de calidad por canal (FHD, HD, etc.)
 
 ## Migration Notes (v2.0 → v2.1)
 

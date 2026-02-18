@@ -322,6 +322,58 @@ Respuesta de lista paginada:
 }
 ```
 
+### Calendario Deportivo (Requiere Bearer Token)
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-------------|------|
+| GET | `/api/calendar/{fecha}` | Eventos del día con canales resueltos | Bearer Token |
+| GET | `/api/calendar/event/{id}` | Evento específico por UUID | Bearer Token |
+
+**Parámetros de `/api/calendar/{fecha}`**:
+- `fecha`: Fecha en formato `YYYY-MM-DD` (ej: `2024-01-15`)
+
+**Ejemplos**:
+
+```bash
+# Obtener eventos del día
+curl "http://localhost/api/calendar/2024-01-15" \
+  -H "Authorization: Bearer TOKEN"
+
+# Obtener evento específico por ID
+curl "http://localhost/api/calendar/event/123e4567-e89b-12d3-a456-426614174000" \
+  -H "Authorization: Bearer TOKEN"
+```
+
+Respuesta de `/api/calendar/{fecha}`:
+```json
+{
+  "fecha": "2024-01-15",
+  "total_eventos": 3,
+  "eventos": [
+    {
+      "id": "uuid-del-evento",
+      "fecha": "2024-01-15",
+      "hora": "20:00",
+      "competicion": "La Liga",
+      "categoria": "Fútbol",
+      "equipos": "Real Madrid vs Barcelona",
+      "canales_original": ["M+ LaLiga", "DAZN LaLiga"],
+      "canales_resueltos": [
+        {
+          "channel_id": "12345",
+          "display_name": "M+ LaLiga",
+          "quality": "FHD",
+          "priority": 0,
+          "source_name": "M+ LaLiga"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Nota**: Los endpoints de calendario utilizan la base de datos del proyecto walactv-scrapper con las tablas `calendario`, `channel_mappings` y `channel_variants`.
+
 ### Playlist y Streams (Público - Autenticado por URL)
 
 | Endpoint | Descripción |
