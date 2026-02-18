@@ -1,15 +1,17 @@
 """
-Servicio de proxy para streams IPTV
+Servicio de proxy para streams IPTV con resiliencia
 """
 import hashlib
 import time
 import httpx
 import re
+import asyncio
 from typing import Optional, Dict, Any, AsyncIterator, Tuple, Union
 from urllib.parse import urlparse, urljoin
 from supabase import Client
 
 import utils.constants as CONSTANTS
+from services.resilience_service import ResilienceService, StreamBuffer
 
 
 class StreamProxyService:
@@ -26,6 +28,8 @@ class StreamProxyService:
         self.supabase = supabase
         # Cache de URLs originales: stream_id -> url original
         self._url_cache: Dict[str, str] = {}
+        # Servicio de resiliencia: circuit breaker + retry + buffering
+        self._resilience = ResilienceService()
 
     async def resolve_redirects(self, url: str) -> str:
         """
@@ -58,6 +62,11 @@ class StreamProxyService:
         hostname = urlparse(url).hostname or "unknown"
 
         try:
+            # Verificar circuit breaker
+            if not await self._resilience.circuit_breaker.can_execute(url):
+                print(f"⚠️ Circuit breaker OPEN para {hostname}, usando URL original")
+                return url
+
             async with httpx.AsyncClient(
                 follow_redirects=True,
                 headers={'User-Agent': CONSTANTS.DEFAULT_USER_AGENT},
@@ -68,29 +77,22 @@ class StreamProxyService:
                     stream=True
                 )
                 final_url = str(response.url)
-                elapsed = time.time() - start_time
                 await response.aclose()
 
-                if final_url != url:
-                    print(f"Redirect resuelto: {hostname} ({elapsed:.2f}s)")
+            # Registrar éxito
+            await self._resilience.circuit_breaker.record_success(url)
 
-                # Guardar en cache
-                self._redirect_cache[url] = (final_url, time.time())
-                return final_url
+            elapsed = time.time() - start_time
+            if final_url != url:
+                print(f"Redirect resuelto: {hostname} ({elapsed:.2f}s)")
 
-        except httpx.TimeoutException:
-            elapsed = time.time() - start_time
-            print(f"Timeout resolviendo redirects para {hostname} ({elapsed:.2f}s)")
-            self._redirect_cache[url] = (url, time.time())
-            return url
-        except OSError as e:
-            # Errores de DNS/red: [Errno -2] Name or service not known, etc.
-            elapsed = time.time() - start_time
-            print(f"Error DNS/red resolviendo {hostname} ({elapsed:.2f}s): {e}")
-            self._redirect_cache[url] = (url, time.time())
-            return url
+            # Guardar en cache
+            self._redirect_cache[url] = (final_url, time.time())
+            return final_url
+
         except Exception as e:
             elapsed = time.time() - start_time
+            await self._resilience.circuit_breaker.record_failure(url)
             print(f"Error resolviendo redirects para {hostname} ({elapsed:.2f}s): {e}")
             self._redirect_cache[url] = (url, time.time())
             return url
@@ -139,14 +141,16 @@ class StreamProxyService:
     async def proxy_stream(
         self,
         original_url: str,
-        headers: Optional[Dict[str, str]] = None
+        headers: Optional[Dict[str, str]] = None,
+        use_buffer: bool = True
     ) -> AsyncIterator[bytes]:
         """
-        Proxifica un stream IPTV
+        Proxifica un stream IPTV con retry logic, circuit breaker y pre-buffering.
 
         Args:
             original_url: URL original del stream
             headers: Headers adicionales para la solicitud
+            use_buffer: Si True, usa pre-buffering para estabilidad
 
         Yields:
             Chunks de bytes del stream
@@ -158,11 +162,76 @@ class StreamProxyService:
         if headers:
             default_headers.update(headers)
 
-        async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
-            async with client.stream('GET', original_url, headers=default_headers) as response:
-                response.raise_for_status()
-                async for chunk in response.aiter_bytes(chunk_size=8192):
-                    yield chunk
+        # Verificar circuit breaker
+        if not await self._resilience.circuit_breaker.can_execute(original_url):
+            raise Exception(f"Circuit breaker OPEN para {original_url}")
+
+        buffer = self._resilience.create_buffer() if use_buffer else None
+        last_error = None
+
+        # Intentar con retry
+        for attempt in range(self._resilience.retry_service.config.max_attempts):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=30.0,
+                    follow_redirects=True,
+                    limits=httpx.Limits(
+                        max_keepalive_connections=20,
+                        max_connections=50,
+                        keepalive_expiry=30.0
+                    )
+                ) as client:
+                    async with client.stream('GET', original_url, headers=default_headers) as response:
+                        response.raise_for_status()
+
+                        # Registrar éxito del circuit breaker
+                        await self._resilience.circuit_breaker.record_success(original_url)
+
+                        if buffer:
+                            # Modo con buffer: alimentar buffer primero
+                            async def _buffer_task():
+                                async for chunk in response.aiter_bytes(chunk_size=8192):
+                                    await buffer.feed(chunk)
+                                buffer.mark_complete()
+
+                            # Iniciar buffer en background
+                            buffer_task = asyncio.create_task(_buffer_task())
+
+                            # Esperar a tener suficiente buffer
+                            start_wait = time.time()
+                            while not await buffer.should_start_streaming():
+                                await asyncio.sleep(0.1)
+                                if time.time() - start_wait > 10.0:  # Timeout de buffer
+                                    break
+
+                            # Empezar a servir desde buffer
+                            while True:
+                                chunk = await buffer.get_chunk()
+                                if chunk is None:
+                                    break
+                                yield chunk
+
+                            await buffer_task
+                        else:
+                            # Modo sin buffer: stream directo
+                            async for chunk in response.aiter_bytes(chunk_size=8192):
+                                yield chunk
+
+                        return  # Éxito, salir
+
+            except Exception as e:
+                last_error = e
+                await self._resilience.circuit_breaker.record_failure(original_url)
+
+                if attempt < self._resilience.retry_service.config.max_attempts - 1:
+                    delay = self._resilience.retry_service._calculate_delay(attempt)
+                    print(f"🔄 Retry {attempt + 1} tras error: {e}. Esperando {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                else:
+                    break
+
+        print(f"❌ Stream falló tras {self._resilience.retry_service.config.max_attempts} intentos: {last_error}")
+        raise last_error or Exception("Stream failed")
 
     def _rewrite_m3u8_url(self, url: str, base_url: str) -> str:
         """
@@ -196,12 +265,20 @@ class StreamProxyService:
     async def get_stream_response(
         self,
         original_url: str,
-        headers: Optional[Dict[str, str]] = None
+        headers: Optional[Dict[str, str]] = None,
+        use_resilience: bool = True
     ) -> Tuple[int, Dict[str, str], Union[AsyncIterator[bytes], str]]:
         """
         Obtiene respuesta de stream con headers.
         Si el contenido es M3U8, lo procesa y reescribe URLs HTTP a HTTPS.
         Soporta Range Requests para permitir seek en videos (VOD).
+        
+        Ahora con resiliencia: circuit breaker + retry logic.
+
+        Args:
+            original_url: URL del stream
+            headers: Headers adicionales
+            use_resilience: Si True, usa circuit breaker y retry
 
         Returns:
             (status_code, response_headers, body_iterator o contenido_m3u8)
@@ -213,63 +290,110 @@ class StreamProxyService:
         if headers:
             default_headers.update(headers)
 
-        client = httpx.AsyncClient(timeout=None, follow_redirects=True)
+        # Verificar circuit breaker antes de intentar
+        if use_resilience and not await self._resilience.circuit_breaker.can_execute(original_url):
+            print(f"⚠️ Circuit breaker OPEN para {original_url}")
+            raise Exception(f"Servicio no disponible - circuit breaker abierto")
 
-        response = await client.send(
-            client.build_request('GET', original_url, headers=default_headers),
-            stream=True
-        )
+        last_error = None
+        max_attempts = self._resilience.retry_service.config.max_attempts if use_resilience else 1
 
-        # Headers relevantes para pasar al cliente
-        # Incluimos headers necesarios para Range Requests (seek)
-        pass_headers = {}
-        important_headers = [
-            'content-type', 'content-length', 'accept-ranges', 'content-range',
-            'last-modified', 'etag', 'cache-control'
-        ]
-        for header in important_headers:
-            if header in response.headers:
-                pass_headers[header] = response.headers[header]
-
-        # Siempre indicar que aceptamos Range Requests (para VOD)
-        if 'accept-ranges' not in pass_headers:
-            pass_headers['accept-ranges'] = 'bytes'
-
-        # Detectar si es M3U8 por content-type o extensión
-        content_type = response.headers.get('content-type', '').lower()
-        is_m3u8 = ('mpegurl' in content_type or
-                   'm3u8' in content_type or
-                   original_url.endswith('.m3u8') or
-                   '.m3u8' in original_url.lower())
-
-        if is_m3u8:
-            # Procesar M3U8 y reescribir URLs
-            content = await response.aread()
-            await client.aclose()
-
+        for attempt in range(max_attempts):
+            client = None
             try:
-                m3u8_text = content.decode('utf-8')
-                rewritten = self._process_m3u8(m3u8_text, original_url)
-                pass_headers['content-type'] = 'application/vnd.apple.mpegurl'
-                # Eliminar content-length ya que el tamaño cambió
-                pass_headers.pop('content-length', None)
-                # Eliminar content-range si existe, ya que cambió el contenido
-                pass_headers.pop('content-range', None)
-                return (response.status_code, pass_headers, rewritten)
+                client = httpx.AsyncClient(
+                    timeout=30.0,
+                    follow_redirects=True,
+                    limits=httpx.Limits(
+                        max_keepalive_connections=20,
+                        max_connections=50,
+                        keepalive_expiry=30.0
+                    )
+                )
+
+                response = await client.send(
+                    client.build_request('GET', original_url, headers=default_headers),
+                    stream=True
+                )
+
+                # Registrar éxito en circuit breaker
+                if use_resilience:
+                    await self._resilience.circuit_breaker.record_success(original_url)
+
+                # Headers relevantes para pasar al cliente
+                pass_headers = {}
+                important_headers = [
+                    'content-type', 'content-length', 'accept-ranges', 'content-range',
+                    'last-modified', 'etag', 'cache-control'
+                ]
+                for header in important_headers:
+                    if header in response.headers:
+                        pass_headers[header] = response.headers[header]
+
+                # Siempre indicar que aceptamos Range Requests (para VOD)
+                if 'accept-ranges' not in pass_headers:
+                    pass_headers['accept-ranges'] = 'bytes'
+
+                # Detectar si es M3U8 por content-type o extensión
+                content_type = response.headers.get('content-type', '').lower()
+                is_m3u8 = ('mpegurl' in content_type or
+                           'm3u8' in content_type or
+                           original_url.endswith('.m3u8') or
+                           '.m3u8' in original_url.lower())
+
+                if is_m3u8:
+                    # Procesar M3U8 y reescribir URLs
+                    content = await response.aread()
+                    await client.aclose()
+
+                    try:
+                        m3u8_text = content.decode('utf-8')
+                        rewritten = self._process_m3u8(m3u8_text, original_url)
+                        pass_headers['content-type'] = 'application/vnd.apple.mpegurl'
+                        pass_headers.pop('content-length', None)
+                        pass_headers.pop('content-range', None)
+                        return (response.status_code, pass_headers, rewritten)
+                    except Exception as e:
+                        print(f"Error procesando M3U8: {e}")
+                        return (response.status_code, pass_headers, content)
+
+                # Para streams de video (TS), usar el proxy con iterador
+                async def body_iterator():
+                    try:
+                        async for chunk in response.aiter_bytes(chunk_size=8192):
+                            yield chunk
+                    finally:
+                        await response.aclose()
+                        if client:
+                            await client.aclose()
+
+                return (response.status_code, pass_headers, body_iterator())
+
             except Exception as e:
-                print(f"Error procesando M3U8: {e}")
-                # Si falla el procesamiento, devolver el contenido original
-                return (response.status_code, pass_headers, content)
+                last_error = e
+                
+                # Registrar fallo en circuit breaker
+                if use_resilience:
+                    await self._resilience.circuit_breaker.record_failure(original_url)
 
-        async def body_iterator():
-            try:
-                async for chunk in response.aiter_bytes(chunk_size=8192):
-                    yield chunk
-            finally:
-                await response.aclose()
-                await client.aclose()
+                # Limpiar cliente si existe
+                if client:
+                    try:
+                        await client.aclose()
+                    except:
+                        pass
 
-        return (response.status_code, pass_headers, body_iterator())
+                # Decidir si reintentar
+                if attempt < max_attempts - 1:
+                    delay = self._resilience.retry_service._calculate_delay(attempt)
+                    print(f"🔄 Retry {attempt + 1}/{max_attempts} tras error: {e}. Esperando {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                else:
+                    break
+
+        # Todos los intentos fallaron
+        print(f"❌ Stream falló tras {max_attempts} intentos: {last_error}")
+        raise last_error or Exception("Stream failed")
 
     def _process_m3u8(self, content: str, base_url: str) -> str:
         """
@@ -321,3 +445,7 @@ class StreamProxyService:
                     self._url_cache[cache_key] = url
 
         print(f"✅ Cache precargado: {len(self._url_cache)} URLs")
+
+    def get_resilience_status(self) -> Dict[str, Any]:
+        """Obtiene el estado de resiliencia del servicio"""
+        return self._resilience.get_status()

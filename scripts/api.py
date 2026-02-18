@@ -374,6 +374,15 @@ async def get_system_stats(
     )
 
 
+@app.get("/api/admin/resilience", tags=["Admin - Stats"])
+async def get_resilience_status(
+    _: dict = Depends(require_admin),
+    stream_svc: StreamProxyService = Depends(get_stream_service)
+):
+    """Obtiene el estado de resiliencia de streams (circuit breaker, retry, buffer)"""
+    return stream_svc.get_resilience_status()
+
+
 # ============================================
 # API: Contenido (Público)
 # ============================================
