@@ -320,6 +320,23 @@ class StreamProxyService:
                     stream=True
                 )
 
+                # Verificar status code - reintentar en errores temporales
+                retryable_codes = {401, 403, 502, 503, 504, 511, 520, 521, 522, 523, 524}
+                if response.status_code >= 500 or response.status_code in retryable_codes:
+                    await client.aclose()
+                    error_msg = f"HTTP {response.status_code} from provider"
+                    logger.warning(f"⚠️ Server error {response.status_code}, will retry...")
+                    if use_resilience:
+                        await self._resilience.circuit_breaker.record_failure(original_url)
+                    
+                    if attempt < max_attempts - 1:
+                        delay = self._resilience.retry_service._calculate_delay(attempt)
+                        logger.warning(f"🔄 Retry {attempt + 1}/{max_attempts}: {error_msg}. Waiting {delay:.1f}s...")
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        raise Exception(error_msg)
+
                 # Registrar éxito en circuit breaker
                 if use_resilience:
                     await self._resilience.circuit_breaker.record_success(original_url)
