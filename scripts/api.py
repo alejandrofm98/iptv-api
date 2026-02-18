@@ -653,20 +653,21 @@ async def get_serie_episodes(
 # API: Playlist M3U
 # ============================================
 
-@app.get("/playlist/{username}/{password}.m3u", tags=["Playlist"])
-async def get_playlist(
-    username: str,
-    password: str,
+@app.get("/get.php", tags=["Playlist"])
+async def get_playlist_standard(
     request: Request,
-    content_type: Optional[str] = Query(None, enum=['channels', 'movies', 'series'], description="Tipo de contenido (omitir para todos)"),
+    username: str = Query(..., description="Usuario"),
+    password: str = Query(..., description="Contraseña"),
+    type: Optional[str] = Query(None, description="Tipo: m3u, m3u_plus"),
+    output: Optional[str] = Query(None, description="Output: ts, m3u8"),
     group: Optional[str] = Query(None, description="Filtrar por grupo"),
     country: Optional[str] = Query(None, description="Filtrar por país"),
     user_svc: UserService = Depends(get_user_service),
     device_svc: DeviceService = Depends(get_device_service),
     playlist_svc: PlaylistService = Depends(get_playlist_service)
 ):
-    """Genera playlist M3U para el usuario autenticado"""
-    # Validar credenciales desde path params
+    """Genera playlist M3U - Formato estándar de proveedores IPTV"""
+    # Validar credenciales desde query params
     auth = user_svc.validate_credentials(username, password)
     
     if not auth.valid:
@@ -689,6 +690,15 @@ async def get_playlist(
     if not success:
         raise TooManyRequestsException(message)
     
+    # Determinar tipo de contenido a incluir
+    content_type = None
+    if type == 'channels':
+        content_type = 'channels'
+    elif type == 'movies':
+        content_type = 'movies'
+    elif type == 'series':
+        content_type = 'series'
+    
     include_channels = content_type is None or content_type == 'channels'
     include_movies = content_type is None or content_type == 'movies'
     include_series = content_type is None or content_type == 'series'
@@ -705,11 +715,7 @@ async def get_playlist(
 
     return PlainTextResponse(
         content=m3u_content,
-        media_type="application/vnd.apple.mpegurl; charset=utf-8",
-        headers={
-            "Content-Disposition": f'attachment; filename="{username}_playlist.m3u"',
-            "Cache-Control": "no-cache, no-store, must-revalidate"
-        }
+        media_type="application/vnd.apple.mpegurl"
     )
 
 
