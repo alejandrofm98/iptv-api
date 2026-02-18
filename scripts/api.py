@@ -834,21 +834,11 @@ async def proxy_stream_content(
 ):
     """
     Proxy de streams para películas y series.
-    Debe ir PRIMERO para evitar conflictos con el endpoint de canales.
+    DEPRECATED: Ahora usa redirect directo via nginx.
     """
-    if content_type not in ['movie', 'series']:
-        raise BadRequestException("Tipo de stream inválido", {"valid_types": ["movie", "series"]})
-
-    return await _proxy_stream_handler(
-        content_type=content_type,
-        username=username,
-        password=password,
-        stream_id=stream_id,
-        request=request,
-        user_svc=user_svc,
-        device_svc=device_svc,
-        stream_svc=stream_svc,
-        transcode_svc=transcode_svc
+    # Ya no se usa - nginx redirige a /internal/stream-url
+    raise BadRequestException(
+        "Este endpoint ya no está activo. Usa el endpoint directo: /{live|movie|series}/username/password/stream_id"
     )
 
 
@@ -948,13 +938,14 @@ async def get_stream_url_internal(
     user: str = Query(...),
     password: str = Query(...),
     id: str = Query(...),
+    type: str = Query("live", description="Tipo de contenido: live, movie, series"),
     user_svc: UserService = Depends(get_user_service),
     device_svc: DeviceService = Depends(get_device_service),
     stream_svc: StreamProxyService = Depends(get_stream_service)
 ):
     """
     Endpoint interno para obtener URL de stream.
-    Devuelve la URL en header X-Stream-Url para que nginx haga proxy directo.
+    Devuelve redirect 307 al stream del proveedor para proxy directo via nginx.
     """
     # Validar credenciales
     auth = user_svc.validate_credentials(user, password)
@@ -976,9 +967,18 @@ async def get_stream_url_internal(
     if not success:
         raise TooManyRequestsException(message)
     
-    # Obtener URL original
+    # Obtener URL original según tipo
     clean_id = id.split('.')[0]
-    original_url = stream_svc.get_original_url(clean_id, 'live')
+    
+    # Mapear tipo
+    content_type_map = {
+        "live": "live",
+        "movie": "movie", 
+        "series": "series"
+    }
+    content_type = content_type_map.get(type, "live")
+    
+    original_url = stream_svc.get_original_url(clean_id, content_type)
 
     if not original_url:
         raise NotFoundException("Stream", id)
