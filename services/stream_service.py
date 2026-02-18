@@ -6,12 +6,16 @@ import time
 import httpx
 import re
 import asyncio
+import logging
 from typing import Optional, Dict, Any, AsyncIterator, Tuple, Union
 from urllib.parse import urlparse, urljoin
 from supabase import Client
 
 import utils.constants as CONSTANTS
 from services.resilience_service import ResilienceService, StreamBuffer
+
+logger = logging.getLogger("stream_service")
+logger.setLevel(logging.DEBUG)
 
 
 class StreamProxyService:
@@ -292,7 +296,7 @@ class StreamProxyService:
 
         # Verificar circuit breaker antes de intentar
         if use_resilience and not await self._resilience.circuit_breaker.can_execute(original_url):
-            print(f"⚠️ Circuit breaker OPEN para {original_url}")
+            logger.warning(f"⚠️ Circuit breaker OPEN para {original_url[:80]}")
             raise Exception(f"Servicio no disponible - circuit breaker abierto")
 
         last_error = None
@@ -319,6 +323,8 @@ class StreamProxyService:
                 # Registrar éxito en circuit breaker
                 if use_resilience:
                     await self._resilience.circuit_breaker.record_success(original_url)
+                
+                logger.info(f"📺 Stream started: {original_url[:60]}...")
 
                 # Headers relevantes para pasar al cliente
                 pass_headers = {}
@@ -386,13 +392,13 @@ class StreamProxyService:
                 # Decidir si reintentar
                 if attempt < max_attempts - 1:
                     delay = self._resilience.retry_service._calculate_delay(attempt)
-                    print(f"🔄 Retry {attempt + 1}/{max_attempts} tras error: {e}. Esperando {delay:.1f}s...")
+                    logger.warning(f"🔄 Retry {attempt + 1}/{max_attempts}: {e}. Esperando {delay:.1f}s...")
                     await asyncio.sleep(delay)
                 else:
                     break
 
         # Todos los intentos fallaron
-        print(f"❌ Stream falló tras {max_attempts} intentos: {last_error}")
+        logger.error(f"❌ Stream falló tras {max_attempts} intentos: {last_error}")
         raise last_error or Exception("Stream failed")
 
     def _process_m3u8(self, content: str, base_url: str) -> str:

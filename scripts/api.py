@@ -11,6 +11,12 @@ Cambios principales:
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("iptv-api")
 from datetime import datetime, timedelta
 from typing import Optional
 

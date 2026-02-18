@@ -4,11 +4,15 @@ Servicios de resiliencia para streams: Circuit Breaker, Retry y Buffering
 import asyncio
 import random
 import time
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, TypeVar
 from urllib.parse import urlparse
 import httpx
+
+logger = logging.getLogger("resilience")
+logger.setLevel(logging.DEBUG)
 
 T = TypeVar('T')
 
@@ -75,7 +79,7 @@ class CircuitBreakerService:
                     if elapsed >= self.config.recovery_timeout:
                         metrics.state = CircuitState.HALF_OPEN
                         metrics.half_open_calls = 0
-                        print(f"🔓 Circuit Breaker HALF_OPEN para {hostname}")
+                        logger.info(f"🔓 Circuit HALF_OPEN: {hostname}")
                         return True
                 return False
             
@@ -101,7 +105,7 @@ class CircuitBreakerService:
                 if metrics.successes >= self.config.success_threshold:
                     metrics.state = CircuitState.CLOSED
                     metrics.half_open_calls = 0
-                    print(f"✅ Circuit Breaker CLOSED para {hostname}")
+                    logger.info(f"✅ Circuit CLOSED: {hostname}")
     
     async def record_failure(self, url: str):
         """Registra un fallo"""
@@ -120,11 +124,11 @@ class CircuitBreakerService:
             if metrics.state == CircuitState.HALF_OPEN:
                 # Fallo en half-open, volver a OPEN
                 metrics.state = CircuitState.OPEN
-                print(f"❌ Circuit Breaker OPEN (fallo en half-open) para {hostname}")
+                logger.warning(f"❌ Circuit OPEN (half-open fail): {hostname}")
             elif metrics.failures >= self.config.failure_threshold:
                 # Umbral de fallos alcanzado
                 metrics.state = CircuitState.OPEN
-                print(f"❌ Circuit Breaker OPEN ({metrics.failures} fallos) para {hostname}")
+                logger.warning(f"❌ Circuit OPEN ({metrics.failures} failures): {hostname}")
     
     def get_status(self, url: str) -> Dict[str, Any]:
         """Obtiene el estado del circuit breaker para una URL"""
@@ -229,10 +233,10 @@ class RetryService:
                 
                 if attempt < self.config.max_attempts - 1:
                     delay = self._calculate_delay(attempt)
-                    print(f"🔄 Retry {attempt + 1}/{self.config.max_attempts} tras error: {e}. Esperando {delay:.1f}s...")
+                    logger.warning(f"🔄 Retry {attempt + 1}/{self.config.max_attempts}: {e}. Waiting {delay:.1f}s")
                     await asyncio.sleep(delay)
                 else:
-                    print(f"❌ Agotados reintentos tras {self.config.max_attempts} intentos")
+                    logger.error(f"❌ Retry exhausted after {self.config.max_attempts} attempts")
                     raise last_exception
             except Exception:
                 # Excepción no retryable, propagar inmediatamente
@@ -296,7 +300,7 @@ class StreamBuffer:
         
         if min_chunks_met and time_met:
             self._streaming_started = True
-            print(f"▶️ Stream iniciado tras {self._buffered_chunks} chunks ({self._buffered_bytes/1024:.1f}KB)")
+            logger.info(f"▶️ Buffer ready: {self._buffered_chunks} chunks ({self._buffered_bytes/1024:.1f}KB)")
             return True
         
         return False
