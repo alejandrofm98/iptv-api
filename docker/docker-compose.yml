@@ -77,7 +77,7 @@ services:
       - iptv-network
       - dokploy-network
     labels:
-      # Traefik: Todo EXCEPTO /api/* va a nginx - Con HTTPS
+      # Traefik: enable
       - "traefik.enable=true"
       # Router HTTPS
       - "traefik.http.routers.iptv-https.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
@@ -88,7 +88,7 @@ services:
       - "traefik.http.routers.iptv-https.service=iptv-service"
       # Router HTTP (puerto 80) - sin redirect a HTTPS
       - "traefik.http.routers.iptv-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
-      - "traefik.http.routers.iptv-http.entrypoints=web"
+      - "traefik.http.routers.iptv-http.entrypoints=http"
       - "traefik.http.routers.iptv-http.priority=20"
       - "traefik.http.routers.iptv-http.service=iptv-service"
       # Servicio único para ambos
