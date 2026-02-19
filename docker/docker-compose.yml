@@ -101,4 +101,4 @@ networks:
 # ============================================
 volumes:
   iptv-data:
-    driver: local
+    external: true
