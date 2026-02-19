@@ -85,6 +85,11 @@ services:
       - "traefik.http.routers.iptv-nginx.tls.certresolver=letsencrypt"
       - "traefik.http.routers.iptv-nginx.priority=10"
       - "traefik.http.services.iptv-nginx.loadbalancer.server.port=80"
+      # Router HTTP (puerto 80) - sin redirect a HTTPS
+      - "traefik.http.routers.iptv-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
+      - "traefik.http.routers.iptv-http.entrypoints=web"
+      - "traefik.http.routers.iptv-http.priority=20"
+      - "traefik.http.services.iptv-http.loadbalancer.server.port=80"
       # NOTA: CORS se maneja en nginx, no en Traefik (para evitar duplicados)
 
 # ============================================
