@@ -715,7 +715,7 @@ async def get_playlist_standard(
 
     return PlainTextResponse(
         content=m3u_content,
-        media_type="application/vnd.apple.mpegurl"
+        media_type="application/x-mpegurl"
     )
 
 
