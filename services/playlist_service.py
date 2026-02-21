@@ -45,7 +45,7 @@ class PlaylistService:
             m3u_dir = str(project_root / CONSTANTS.M3U_DIR_LOCAL_DEFAULT)
 
         return os.path.join(m3u_dir, "playlist_template.m3u")
-    
+
     def _load_template(self):
         """Carga el template M3U en memoria para acceso rápido"""
         try:
@@ -59,21 +59,16 @@ class PlaylistService:
         except Exception as e:
             print(f"❌ Error cargando template: {e}")
             self._template_cache = None
-    
+
     def reload_template(self):
         """Recarga el template (útil después de sincronización)"""
         self._load_template()
 
     def _extract_stream_id(self, url: str) -> str:
         """
-        Extrae un ID único del stream a partir de la URL original
-
-        La URL original puede ser algo como:
-        http://servidor.com/live/admin/pass123/12345.ts
-
-        Retornamos un hash corto para usarlo como identificador
+        Extrae un ID único del stream a partir de la URL original.
+        Retorna un hash corto para usarlo como identificador.
         """
-        # Crear hash de la URL
         return hashlib.md5(url.encode()).hexdigest()[:16]
 
     def _build_proxy_url(
@@ -84,7 +79,7 @@ class PlaylistService:
         content_type: str = 'live'
     ) -> str:
         """
-        Construye la URL proxificada para el stream
+        Construye la URL proxificada para el stream.
 
         Args:
             original_url: URL original del stream
@@ -97,7 +92,6 @@ class PlaylistService:
         """
         stream_id = self._extract_stream_id(original_url)
 
-        # Determinar extensión
         parsed = urlparse(original_url)
         path = parsed.path.lower()
 
@@ -106,11 +100,10 @@ class PlaylistService:
         elif '.ts' in path:
             ext = '.ts'
         else:
-            ext = '.ts'  # Default
+            ext = '.ts'
 
         base_url = self.settings.public_domain.rstrip('/')
 
-        # Canales (live) no llevan tipo en la URL, solo movie y series
         if content_type == 'live':
             return f"{base_url}/{username}/{password}/{stream_id}{ext}"
         else:
@@ -129,39 +122,136 @@ class PlaylistService:
         """
         Genera playlist M3U usando template pre-procesado con placeholders.
         Ultra-rápido: usa template cacheado en memoria + string.replace()
-        
+
         Args:
             username: Nombre de usuario del cliente
             password: Contraseña del cliente
-            include_channels, include_movies, include_series: Parámetros obsoletos (mantenidos por compatibilidad)
-            group_filter, country_filter: Parámetros obsoletos (mantenidos por compatibilidad)
-        
+            include_channels, include_movies, include_series: Mantenidos por compatibilidad
+            group_filter, country_filter: Mantenidos por compatibilidad
+
         Returns:
-            Contenido M3U completo como string (mucho más rápido que streaming)
+            Contenido M3U completo como string
         """
         public_domain = self.settings.public_domain.rstrip('/')
-        
-        # Verificar que el template está cargado
+
         if self._template_cache is None:
-            # Intentar recargar por si acaso
             self._load_template()
-            
+
             if self._template_cache is None:
-                # Fallback: devolver error
                 return "#EXTM3U\n#EXTINF:-1,Error\n# Error: No se encontró el archivo template. El contenido aún no ha sido sincronizado.\n"
-        
-        # Hacer copia del template y aplicar reemplazos (muy rápido en memoria)
-        # Solo 3 operaciones de replace en todo el string de 354MB
+
         content = self._template_cache
         content = content.replace('{{DOMAIN}}', public_domain)
         content = content.replace('{{USERNAME}}', username)
         content = content.replace('{{PASSWORD}}', password)
-        
+
         return content
+
+    def generate_m3u_filtered(
+        self,
+        username: str,
+        password: str,
+        group_filter: Optional[str] = None,
+        country_filter: Optional[str] = None,
+        search_filter: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Iterator[str]:
+        """
+        Genera playlist M3U con filtrado real, procesando línea a línea.
+        Usa streaming para no cargar todo en memoria — ideal para reproductores limitados.
+
+        Si no hay ningún filtro activo, delega al método rápido generate_m3u().
+
+        Args:
+            username: Nombre de usuario del cliente
+            password: Contraseña del cliente
+            group_filter: Filtrar por group-title exacto (ej: "ES| ESPAÑOL")
+            country_filter: Filtrar por país en group-title o tvg-id (ej: "ES")
+            search_filter: Buscar substring en nombre de canal (case-insensitive)
+            limit: Número máximo de entradas a devolver
+
+        Yields:
+            Fragmentos de texto del M3U filtrado
+        """
+        public_domain = self.settings.public_domain.rstrip('/')
+
+        if self._template_cache is None:
+            self._load_template()
+
+        if self._template_cache is None:
+            yield "#EXTM3U\n#EXTINF:-1,Error\n# Template no encontrado\n"
+            return
+
+        # Sin filtros: usar el replace rápido de siempre (evita iterar 2.6M líneas)
+        if not any([group_filter, country_filter, search_filter, limit]):
+            content = self._template_cache
+            content = content.replace('{{DOMAIN}}', public_domain)
+            content = content.replace('{{USERNAME}}', username)
+            content = content.replace('{{PASSWORD}}', password)
+            yield content
+            return
+
+        # Con filtros: procesar línea a línea
+        yield "#EXTM3U\n"
+
+        lines = self._template_cache.splitlines()
+        count = 0
+        i = 0
+
+        # Saltar la primera línea #EXTM3U del template
+        if lines and lines[0].startswith('#EXTM3U'):
+            i = 1
+
+        while i < len(lines):
+            line = lines[i]
+
+            if not line.startswith('#EXTINF'):
+                i += 1
+                continue
+
+            url_line = lines[i + 1] if i + 1 < len(lines) else ''
+            include = True
+
+            # Filtro por group-title exacto
+            if group_filter and f'group-title="{group_filter}"' not in line:
+                include = False
+
+            # Filtro por país (busca en toda la línea EXTINF, case-insensitive)
+            if country_filter and include:
+                if country_filter.upper() not in line.upper():
+                    include = False
+
+            # Filtro de búsqueda por nombre (el nombre está tras la última coma en EXTINF)
+            if search_filter and include:
+                if search_filter.lower() not in line.lower():
+                    include = False
+
+            if include:
+                extinf = (
+                    line
+                    .replace('{{DOMAIN}}', public_domain)
+                    .replace('{{USERNAME}}', username)
+                    .replace('{{PASSWORD}}', password)
+                )
+                url = (
+                    url_line
+                    .replace('{{DOMAIN}}', public_domain)
+                    .replace('{{USERNAME}}', username)
+                    .replace('{{PASSWORD}}', password)
+                )
+
+                yield extinf + '\n'
+                yield url + '\n'
+                count += 1
+
+                if limit and count >= limit:
+                    break
+
+            i += 2
 
     def _build_extinf(self, item: Dict[str, Any], content_type: str) -> str:
         """
-        Construye la línea #EXTINF para un item
+        Construye la línea #EXTINF para un item.
 
         Args:
             item: Datos del canal/película/serie
@@ -170,13 +260,11 @@ class PlaylistService:
         Returns:
             Línea #EXTINF formateada
         """
-        # Extraer datos
         name = item.get('nombre', 'Unknown')
         logo = item.get('logo', '')
         group = item.get('grupo', '')
         tvg_id = item.get('tvg_id', '')
 
-        # Construir atributos
         attrs = []
 
         if tvg_id:
