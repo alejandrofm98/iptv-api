@@ -53,7 +53,7 @@ from utils.dependencies import (
     require_auth_with_credentials, require_auth_with_session, require_auth_with_jwt,
     AuthResult as AuthDep
 )
-from xtream_router import router as xtream_router
+from scripts.xtream_router import router as xtream_router
 
 # Configuración
 settings = get_settings()
