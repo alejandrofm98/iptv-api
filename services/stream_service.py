@@ -79,20 +79,25 @@ class StreamProxyService:
                 redirect_count = 0
 
                 while redirect_count < max_redirects:
-                    # Usar HEAD para no descargar el stream completo
                     try:
-                        response = await client.head(current_url)
+                        # Usar GET con stream para no descargar el body
+                        # HEAD no funciona en todos los servidores IPTV
+                        async with client.stream("GET",
+                                                 current_url) as response:
+                            # Solo necesitamos los headers, cerramos inmediatamente
+                            status = response.status_code
+                            location = response.headers.get('Location')
                     except Exception:
-                        # Algunos servidores no soportan HEAD, fallback a GET sin leer body
-                        response = await client.get(current_url)
+                        break
 
-                    if response.status_code in (301, 302, 307, 308):
-                        location = response.headers.get('Location')
+                    if status in (301, 302, 307, 308):
                         if not location:
                             break
                         if not location.startswith('http'):
-                            location = urllib.parse.urljoin(current_url, location)
-                        logger.debug(f"  Redirect {redirect_count + 1}: {current_url[:60]} -> {location[:60]}")
+                            location = urllib.parse.urljoin(current_url,
+                                                            location)
+                        logger.debug(
+                            f"  Redirect {redirect_count + 1}: {current_url[:60]} -> {location[:60]}")
                         current_url = location
                         redirect_count += 1
                     else:
