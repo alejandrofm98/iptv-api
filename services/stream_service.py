@@ -37,13 +37,13 @@ class StreamProxyService:
 
     async def resolve_redirects(self, url: str) -> str:
         """
-        Resuelve redirects HTTP y devuelve la URL final (async).
+        Resuelve redirects HTTP manualmente para mantener la misma conexión TCP.
 
         Esto es necesario porque algunos proveedores devuelven 302 redirects
-        a URLs HTTP, lo que causa problemas de Mixed Content en clientes HTTPS.
+        y bloquean IPs que cambian entre redirects. Al seguir los redirects
+        manualmente en la misma conexión, la IP de origen permanece constante.
 
-        Incluye cache con TTL para evitar resolver el mismo URL repetidamente,
-        especialmente cuando hay fallos de DNS.
+        Incluye cache con TTL para evitar resolver el mismo URL repetidamente.
 
         Args:
             url: URL inicial que puede tener redirects
@@ -51,12 +51,12 @@ class StreamProxyService:
         Returns:
             URL final después de seguir todos los redirects, o URL original si hay error
         """
-        # Revisar cache primero
+        import urllib.parse
+
         cached = self._redirect_cache.get(url)
         if cached:
             final_url, cached_at = cached
             ttl = self._REDIRECT_CACHE_TTL
-            # Si el cache devolvió la misma URL (error), usar TTL corto
             if final_url == url:
                 ttl = self._DNS_ERROR_CACHE_TTL
             if (time.time() - cached_at) < ttl:
@@ -66,31 +66,41 @@ class StreamProxyService:
         hostname = urlparse(url).hostname or "unknown"
 
         try:
-            # Verificar circuit breaker
             if not await self._resilience.circuit_breaker.can_execute(url):
                 print(f"⚠️ Circuit breaker OPEN para {hostname}, usando URL original")
                 return url
 
             async with httpx.AsyncClient(
-                follow_redirects=True,
+                follow_redirects=False,
                 headers={'User-Agent': CONSTANTS.DEFAULT_USER_AGENT},
-                timeout=5.0
+                timeout=10.0
             ) as client:
-                response = await client.send(
-                    client.build_request('GET', url),
-                    stream=True
-                )
-                final_url = str(response.url)
-                await response.aclose()
+                current_url = url
+                max_redirects = 10
+                redirect_count = 0
 
-            # Registrar éxito
+                while redirect_count < max_redirects:
+                    response = await client.get(current_url)
+
+                    if response.status_code in (301, 302):
+                        location = response.headers.get('Location')
+                        if not location:
+                            break
+                        if not location.startswith('http'):
+                            location = urllib.parse.urljoin(current_url, location)
+                        current_url = location
+                        redirect_count += 1
+                    else:
+                        break
+
+                final_url = current_url
+
             await self._resilience.circuit_breaker.record_success(url)
 
             elapsed = time.time() - start_time
             if final_url != url:
-                print(f"Redirect resuelto: {hostname} ({elapsed:.2f}s)")
+                print(f"Redirect resuelto: {hostname} -> {final_url[:80]}... ({elapsed:.2f}s, {redirect_count} redirects)")
 
-            # Guardar en cache
             self._redirect_cache[url] = (final_url, time.time())
             return final_url
 
