@@ -12,6 +12,8 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+from starlette.responses import RedirectResponse
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -983,17 +985,23 @@ async def get_stream_url_internal(
         "series": "series"
     }
     content_type = content_type_map.get(type, "live")
-    
+
     original_url = stream_svc.get_original_url(clean_id, content_type)
 
     if not original_url:
         raise NotFoundException("Stream", id)
 
-    # Resolver redirects (sin reintentos para no bloquear)
-    final_url = await stream_svc.resolve_redirects(original_url)
+    # DEBUG TEMPORAL
+    print(f"[DEBUG] original_url: {original_url}")
 
-    # Devolver redirect 307 al stream del proveedor
-    from fastapi.responses import RedirectResponse
+    use_cache = content_type != "live"
+    final_url = await stream_svc.resolve_redirects(original_url,
+                                                   use_cache=use_cache)
+
+    # DEBUG TEMPORAL
+    print(f"[DEBUG] final_url: {final_url}")
+    print(f"[DEBUG] son_iguales: {original_url == final_url}")
+
     return RedirectResponse(url=final_url, status_code=307)
 
 
