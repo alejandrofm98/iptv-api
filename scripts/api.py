@@ -33,7 +33,8 @@ logging.getLogger("httpx").setLevel(logging.DEBUG)
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, StreamingResponse
+# ✏️ CAMBIO 1: añadido FileResponse para servir ficheros HLS
+from fastapi.responses import PlainTextResponse, StreamingResponse, FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 
@@ -63,6 +64,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
+# ✏️ CAMBIO 2: constante con los origins permitidos (reutilizada en _proxy_stream_handler)
+ALLOWED_WEB_ORIGINS = ['https://walactvweb.walerike.com', 'http://localhost:4200']
+
 
 # ============================================
 # Ciclo de Vida
@@ -79,6 +83,18 @@ async def cleanup_sessions_task():
                 print(f"🧹 Limpiadas {cleaned} sesiones inactivas")
         except Exception as e:
             print(f"❌ Error en limpieza de sesiones: {e}")
+
+
+# ✏️ CAMBIO 3: nueva tarea de limpieza de sesiones HLS
+async def cleanup_hls_task():
+    """Tarea periódica para limpiar sesiones HLS expiradas (cada 2 min)"""
+    while True:
+        try:
+            await asyncio.sleep(120)
+            transcode_svc = get_transcode_service()
+            await transcode_svc.cleanup_expired()
+        except Exception as e:
+            print(f"❌ Error en limpieza HLS: {e}")
 
 
 @asynccontextmanager
@@ -104,11 +120,18 @@ async def lifespan(app: FastAPI):
 
         stream_svc.preload_cache()
         asyncio.create_task(cleanup_sessions_task())
+        asyncio.create_task(cleanup_hls_task())  # ✏️ CAMBIO 3b: arrancar tarea HLS
         print("✅ IPTV API iniciada correctamente")
 
     yield
 
     print("🛑 Cerrando IPTV API...")
+    # ✏️ CAMBIO 3c: parar todos los procesos ffmpeg al cerrar
+    try:
+        transcode_svc = get_transcode_service()
+        await transcode_svc.stop_all()
+    except Exception:
+        pass
 
 
 # ============================================
@@ -618,7 +641,6 @@ async def get_playlist_standard(
     Devuelve Content-Length y headers idénticos al proveedor original
     para compatibilidad máxima con reproductores antiguos.
     """
-    # Validar credenciales
     auth = user_svc.validate_credentials(username, password)
 
     if not auth.valid:
@@ -627,7 +649,6 @@ async def get_playlist_standard(
     if not auth.can_connect:
         raise ForbiddenException(auth.message)
 
-    # Registrar sesión del dispositivo
     user_agent = request.headers.get('User-Agent', 'Unknown')
     ip_address = request.client.host if request.client else 'Unknown'
 
@@ -645,7 +666,6 @@ async def get_playlist_standard(
 
     m3u_content = playlist_svc.generate_m3u(username=username, password=password)
 
-    # Calcular tamaño real en bytes (igual que hace el proveedor)
     content_bytes = m3u_content.encode('utf-8')
     content_length = len(content_bytes)
 
@@ -659,6 +679,54 @@ async def get_playlist_standard(
             "Cache-Control": "must-revalidate",
             "Pragma": "public",
             "Expires": "0",
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
+
+
+# ============================================
+# ✏️ CAMBIO 4: Endpoints HLS — sirven ficheros generados por ffmpeg
+# ============================================
+
+@app.get("/hls/{session_id}/playlist.m3u8", tags=["HLS"])
+async def hls_playlist(
+    session_id: str,
+    transcode_svc: TranscodeService = Depends(get_transcode_service)
+):
+    """Sirve el playlist .m3u8 de una sesión HLS activa."""
+    file_path = transcode_svc.get_file_path(session_id, "playlist.m3u8")
+    if not file_path:
+        raise NotFoundException("Sesión HLS", session_id)
+
+    return FileResponse(
+        path=file_path,
+        media_type="application/vnd.apple.mpegurl",
+        headers={
+            "Cache-Control": "no-cache, no-store",
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
+
+
+@app.get("/hls/{session_id}/{segment}", tags=["HLS"])
+async def hls_segment(
+    session_id: str,
+    segment: str,
+    transcode_svc: TranscodeService = Depends(get_transcode_service)
+):
+    """Sirve un segmento .ts de una sesión HLS activa."""
+    if not segment.endswith(".ts") or "/" in segment or ".." in segment:
+        raise BadRequestException("Segmento inválido")
+
+    file_path = transcode_svc.get_file_path(session_id, segment)
+    if not file_path:
+        raise NotFoundException("Segmento", segment)
+
+    return FileResponse(
+        path=file_path,
+        media_type="video/mp2t",
+        headers={
+            "Cache-Control": "no-cache",
             "Access-Control-Allow-Origin": "*",
         }
     )
@@ -712,12 +780,19 @@ async def _proxy_stream_handler(
     if not original_url:
         raise NotFoundException("Stream", stream_id)
 
+    # ✏️ CAMBIO 5: lógica HLS correcta — sesión ffmpeg en disco + redirect al playlist
     origin = request.headers.get('origin') or request.headers.get('referer', '')
-    allowed_origins = ['https://walactvweb.walerike.com', 'http://localhost:4200']
-    is_from_allowed_web = any(orig in origin for orig in allowed_origins if origin)
+    is_from_allowed_web = any(orig in origin for orig in ALLOWED_WEB_ORIGINS if origin)
 
-    use_hls = content_type in ['live', 'movie', 'series'] and is_from_allowed_web and transcode_svc
+    if is_from_allowed_web and transcode_svc:
+        session = await transcode_svc.get_or_create_session(username, clean_stream_id, original_url)
+        ready = await transcode_svc.wait_for_playlist(session)
+        if not ready:
+            raise BadRequestException("El stream no está disponible o tardó demasiado en arrancar")
+        logger.info(f"🎬 HLS redirect: session={session.session_id}")
+        return RedirectResponse(url=f"/hls/{session.session_id}/playlist.m3u8", status_code=302)
 
+    # Desde reproductores externos: proxy directo (sin cambios)
     request_headers = {}
     if content_type in ['movie', 'series']:
         range_header = request.headers.get('range')
@@ -725,18 +800,6 @@ async def _proxy_stream_handler(
             request_headers['Range'] = range_header
 
     try:
-        if use_hls:
-            hls_stream = transcode_svc.stream_hls(original_url)
-
-            return StreamingResponse(
-                hls_stream,
-                media_type='application/vnd.apple.mpegurl',
-                headers={
-                    'X-Content-Type-Options': 'nosniff',
-                    'X-Transcoded-HLS': 'true'
-                }
-            )
-
         status_code, headers, body = await stream_svc.get_stream_response(
             original_url,
             headers=request_headers

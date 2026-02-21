@@ -1,135 +1,191 @@
 """
 Servicio de transcodificación para HLS con hls.js
-Convierte streams a HLS para compatibilidad con hls.js en navegadores
+
+Arquitectura:
+- ffmpeg escribe segmentos .ts y playlist .m3u8 a disco (/tmp/hls/{session_id}/)
+- La API sirve esos ficheros con los endpoints /hls/{session_id}/playlist.m3u8 y /hls/{session_id}/{segment}.ts
+- hls.js los consume directamente
+- Limpieza automática de sesiones inactivas cada 2 minutos
 """
 import asyncio
-import subprocess
-from typing import Optional, Tuple, AsyncIterator, Dict, Any
-import hashlib
+import shutil
+import os
 import time
 import logging
-import os
+from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
+
+HLS_BASE_DIR = "/tmp/hls"
+SEGMENT_DURATION = 4        # segundos por segmento
+HLS_LIST_SIZE = 6           # segmentos en ventana deslizante
+SESSION_TIMEOUT = 120       # segundos sin actividad para limpiar sesión
+PLAYLIST_READY_TIMEOUT = 15 # segundos esperando el primer playlist
+
+
+class HlsSession:
+    """Representa una sesión de transcodificación HLS activa"""
+
+    def __init__(self, session_id: str, url: str, output_dir: str):
+        self.session_id = session_id
+        self.url = url
+        self.output_dir = output_dir
+        self.playlist_path = os.path.join(output_dir, "playlist.m3u8")
+        self.process: Optional[asyncio.subprocess.Process] = None
+        self.created_at = time.time()
+        self.last_accessed = time.time()
+
+    def touch(self):
+        self.last_accessed = time.time()
+
+    def is_expired(self) -> bool:
+        return (time.time() - self.last_accessed) > SESSION_TIMEOUT
+
+    def playlist_exists(self) -> bool:
+        return os.path.exists(self.playlist_path)
+
+    async def stop(self):
+        if self.process:
+            try:
+                self.process.terminate()
+                await asyncio.wait_for(self.process.wait(), timeout=5)
+            except Exception:
+                try:
+                    self.process.kill()
+                except Exception:
+                    pass
+        if os.path.exists(self.output_dir):
+            shutil.rmtree(self.output_dir, ignore_errors=True)
 
 
 class TranscodeService:
     """
-    Servicio para transcodificar streams a HLS para compatibilidad con hls.js.
+    Gestiona sesiones HLS activas.
+    Cada sesión es un proceso ffmpeg que escribe segmentos a disco.
     """
 
-    _codec_cache: Dict[str, Tuple[str, float]] = {}
+    # Mantenidos por compatibilidad con código anterior
+    _codec_cache: Dict = {}
     _CODEC_CACHE_TTL: float = 3600.0
-
     UNSUPPORTED_CODECS = {'eac3', 'ac3', 'truehd', 'dts', 'flac'}
     _known_transcode_urls: set = set()
 
     def __init__(self):
-        pass
+        self._sessions: Dict[str, HlsSession] = {}
+        os.makedirs(HLS_BASE_DIR, exist_ok=True)
 
-    def _hash_url(self, url: str) -> str:
-        return hashlib.md5(url.encode()).hexdigest()[:16]
+    async def get_or_create_session(self, username: str, stream_id: str, original_url: str) -> HlsSession:
+        """
+        Devuelve sesión activa existente para este usuario+stream, o crea una nueva.
+        """
+        # Buscar sesión activa reutilizable
+        for sid, session in list(self._sessions.items()):
+            if session.url == original_url:
+                if not session.is_expired() and session.process and session.process.returncode is None:
+                    session.touch()
+                    return session
+                else:
+                    await session.stop()
+                    del self._sessions[sid]
+                    break
 
-    async def detect_audio_codec(self, url: str) -> Optional[str]:
-        url_hash = self._hash_url(url)
-        cached = self._codec_cache.get(url_hash)
-        
-        if cached:
-            codec, cached_at = cached
-            if (time.time() - cached_at) < self._CODEC_CACHE_TTL:
-                return codec
+        # Crear nueva sesión
+        session_id = f"{username}_{stream_id}_{int(time.time())}"
+        output_dir = os.path.join(HLS_BASE_DIR, session_id)
+        os.makedirs(output_dir, exist_ok=True)
+
+        session = HlsSession(session_id=session_id, url=original_url, output_dir=output_dir)
+        self._sessions[session_id] = session
+
+        await self._start_ffmpeg(session)
+        return session
+
+    async def _start_ffmpeg(self, session: HlsSession):
+        """Arranca ffmpeg para generar los segmentos HLS en disco"""
+        segment_pattern = os.path.join(session.output_dir, "segment%d.ts")
+
+        cmd = [
+            "ffmpeg",
+            "-loglevel", "warning",
+            "-re",                              # leer a velocidad real
+            "-i", session.url,
+            "-c:v", "copy",                     # video sin recodificar
+            "-c:a", "aac",                      # audio siempre a AAC (compatible hls.js)
+            "-b:a", "128k",
+            "-f", "hls",
+            "-hls_time", str(SEGMENT_DURATION),
+            "-hls_list_size", str(HLS_LIST_SIZE),
+            "-hls_flags", "delete_segments+append_list",
+            "-hls_segment_filename", segment_pattern,
+            "-hls_segment_type", "mpegts",
+            session.playlist_path
+        ]
 
         try:
-            cmd = [
-                'ffprobe', '-v', 'error',
-                '-show_entries', 'stream=codec_name',
-                '-select_streams', 'a:0',
-                '-of', 'default=noprint_wrappers=1:nokey=1',
-                url
-            ]
-
-            proc = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            session.process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE
             )
-            
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
-            output = stdout.decode('utf-8', errors='ignore').strip()
-            
-            if output:
-                if output in self.UNSUPPORTED_CODECS:
-                    self._codec_cache[url_hash] = (output, time.time())
-                    self._known_transcode_urls.add(url_hash)
-                else:
-                    self._codec_cache[url_hash] = (output, time.time())
-                return output
-
+            logger.info(f"🎬 HLS session started: {session.session_id}, pid={session.process.pid}")
+            asyncio.create_task(self._log_ffmpeg_stderr(session))
         except Exception as e:
-            logger.error(f"Error detectando codec: {e}")
+            logger.error(f"❌ Error arrancando ffmpeg: {e}")
 
-        return None
+    async def _log_ffmpeg_stderr(self, session: HlsSession):
+        if not session.process or not session.process.stderr:
+            return
+        try:
+            async for line in session.process.stderr:
+                text = line.decode('utf-8', errors='ignore').strip()
+                if text:
+                    logger.debug(f"[ffmpeg:{session.session_id}] {text}")
+        except Exception:
+            pass
+
+    async def wait_for_playlist(self, session: HlsSession) -> bool:
+        """Espera hasta que ffmpeg genere el primer playlist.m3u8"""
+        deadline = time.time() + PLAYLIST_READY_TIMEOUT
+        while time.time() < deadline:
+            if session.playlist_exists():
+                return True
+            if session.process and session.process.returncode is not None:
+                logger.warning(f"ffmpeg terminó antes de generar playlist: {session.session_id}")
+                return False
+            await asyncio.sleep(0.3)
+        return False
+
+    def get_session(self, session_id: str) -> Optional[HlsSession]:
+        session = self._sessions.get(session_id)
+        if session:
+            session.touch()
+        return session
+
+    def get_file_path(self, session_id: str, filename: str) -> Optional[str]:
+        """Devuelve ruta de un fichero HLS si existe"""
+        session = self.get_session(session_id)
+        if not session:
+            return None
+        path = os.path.join(session.output_dir, filename)
+        return path if os.path.exists(path) else None
+
+    async def cleanup_expired(self):
+        """Limpia sesiones expiradas"""
+        expired = [sid for sid, s in self._sessions.items() if s.is_expired()]
+        for sid in expired:
+            session = self._sessions.pop(sid)
+            await session.stop()
+            logger.info(f"🧹 HLS session cleaned: {sid}")
+
+    async def stop_all(self):
+        for session in list(self._sessions.values()):
+            await session.stop()
+        self._sessions.clear()
+
+    # ── Compatibilidad con código anterior ──────────────────────────
 
     def needs_transcode(self, codec: Optional[str]) -> bool:
-        if not codec:
-            return False
-        return codec.lower() in self.UNSUPPORTED_CODECS
-
-    async def stream_hls(
-        self,
-        original_url: str
-    ) -> AsyncIterator[bytes]:
-        """
-        Genera un stream HLS transcodificando a AAC si es necesario.
-        Yield chunks del playlist HLS y segmentos.
-        """
-        url_hash = self._hash_url(original_url)
-        
-        audio_codec = None
-        if url_hash not in self._known_transcode_urls:
-            audio_codec = await self.detect_audio_codec(original_url)
-            if audio_codec:
-                if audio_codec in self.UNSUPPORTED_CODECS:
-                    self._known_transcode_urls.add(url_hash)
-
-        needs_audio_transcode = self.needs_transcode(audio_codec)
-        audio_codec_arg = 'aac' if needs_audio_transcode else 'copy'
-        
-        cmd = [
-            'ffmpeg', '-re', '-i', original_url,
-            '-c:v', 'copy',
-            '-c:a', audio_codec_arg,
-        ]
-        
-        if needs_audio_transcode:
-            cmd.extend(['-b:a', '128k'])
-        
-        cmd.extend([
-            '-f', 'hls',
-            '-hls_time', '4',
-            '-hls_list_size', '4',
-            '-hls_flags', 'delete_segments',
-            '-hls_segment_filename', '/tmp/hls/%s-segment%d.ts' % (url_hash, int(time.time())),
-            '-start_number', '1',
-            '-'
-        ])
-
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        try:
-            while True:
-                chunk = await proc.stdout.read(8192)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            proc.terminate()
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=5)
-            except asyncio.TimeoutError:
-                proc.kill()
+        return True
 
     def clear_cache(self):
         self._codec_cache.clear()
