@@ -716,7 +716,7 @@ async def _proxy_stream_handler(
     allowed_origins = ['https://walactvweb.walerike.com', 'http://localhost:4200']
     is_from_allowed_web = any(orig in origin for orig in allowed_origins if origin)
 
-    use_hls = content_type in ['movie', 'series'] and is_from_allowed_web and transcode_svc
+    use_hls = content_type in ['live', 'movie', 'series'] and is_from_allowed_web and transcode_svc
 
     request_headers = {}
     if content_type in ['movie', 'series']:
