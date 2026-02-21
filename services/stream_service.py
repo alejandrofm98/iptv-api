@@ -35,39 +35,38 @@ class StreamProxyService:
         # Servicio de resiliencia: circuit breaker + retry + buffering
         self._resilience = ResilienceService()
 
-    async def resolve_redirects(self, url: str) -> str:
+    async def resolve_redirects(self, url: str, use_cache: bool = True) -> str:
         """
-        Resuelve redirects HTTP manualmente para mantener la misma conexión TCP.
+        Resuelve redirects HTTP manualmente usando HEAD requests para no descargar el stream.
 
-        Esto es necesario porque algunos proveedores devuelven 302 redirects
-        y bloquean IPs que cambian entre redirects. Al seguir los redirects
-        manualmente en la misma conexión, la IP de origen permanece constante.
-
-        Incluye cache con TTL para evitar resolver el mismo URL repetidamente.
+        Sigue redirects 301, 302, 307 y 308.
+        Incluye cache con TTL configurable (deshabilitable para streams live).
 
         Args:
             url: URL inicial que puede tener redirects
+            use_cache: Si False, ignora y no escribe en cache (recomendado para live)
 
         Returns:
             URL final después de seguir todos los redirects, o URL original si hay error
         """
         import urllib.parse
 
-        cached = self._redirect_cache.get(url)
-        if cached:
-            final_url, cached_at = cached
-            ttl = self._REDIRECT_CACHE_TTL
-            if final_url == url:
-                ttl = self._DNS_ERROR_CACHE_TTL
-            if (time.time() - cached_at) < ttl:
-                return final_url
+        if use_cache:
+            cached = self._redirect_cache.get(url)
+            if cached:
+                final_url, cached_at = cached
+                ttl = self._REDIRECT_CACHE_TTL
+                if final_url == url:
+                    ttl = self._DNS_ERROR_CACHE_TTL
+                if (time.time() - cached_at) < ttl:
+                    return final_url
 
         start_time = time.time()
         hostname = urlparse(url).hostname or "unknown"
 
         try:
             if not await self._resilience.circuit_breaker.can_execute(url):
-                print(f"⚠️ Circuit breaker OPEN para {hostname}, usando URL original")
+                logger.warning(f"⚠️ Circuit breaker OPEN para {hostname}, usando URL original")
                 return url
 
             async with httpx.AsyncClient(
@@ -80,14 +79,20 @@ class StreamProxyService:
                 redirect_count = 0
 
                 while redirect_count < max_redirects:
-                    response = await client.get(current_url)
+                    # Usar HEAD para no descargar el stream completo
+                    try:
+                        response = await client.head(current_url)
+                    except Exception:
+                        # Algunos servidores no soportan HEAD, fallback a GET sin leer body
+                        response = await client.get(current_url)
 
-                    if response.status_code in (301, 302):
+                    if response.status_code in (301, 302, 307, 308):
                         location = response.headers.get('Location')
                         if not location:
                             break
                         if not location.startswith('http'):
                             location = urllib.parse.urljoin(current_url, location)
+                        logger.debug(f"  Redirect {redirect_count + 1}: {current_url[:60]} -> {location[:60]}")
                         current_url = location
                         redirect_count += 1
                     else:
@@ -99,16 +104,24 @@ class StreamProxyService:
 
             elapsed = time.time() - start_time
             if final_url != url:
-                print(f"Redirect resuelto: {hostname} -> {final_url[:80]}... ({elapsed:.2f}s, {redirect_count} redirects)")
+                logger.info(
+                    f"✅ Redirect resuelto: {hostname} -> {final_url[:80]}... "
+                    f"({elapsed:.2f}s, {redirect_count} redirects)"
+                )
+            else:
+                logger.debug(f"ℹ️ Sin redirects para {hostname} ({elapsed:.2f}s)")
 
-            self._redirect_cache[url] = (final_url, time.time())
+            if use_cache:
+                self._redirect_cache[url] = (final_url, time.time())
+
             return final_url
 
         except Exception as e:
             elapsed = time.time() - start_time
             await self._resilience.circuit_breaker.record_failure(url)
-            print(f"Error resolviendo redirects para {hostname} ({elapsed:.2f}s): {e}")
-            self._redirect_cache[url] = (url, time.time())
+            logger.error(f"❌ Error resolviendo redirects para {hostname} ({elapsed:.2f}s): {e}")
+            if use_cache:
+                self._redirect_cache[url] = (url, time.time())
             return url
 
     def _hash_url(self, url: str) -> str:
@@ -239,12 +252,12 @@ class StreamProxyService:
 
                 if attempt < self._resilience.retry_service.config.max_attempts - 1:
                     delay = self._resilience.retry_service._calculate_delay(attempt)
-                    print(f"🔄 Retry {attempt + 1} tras error: {e}. Esperando {delay:.1f}s...")
+                    logger.warning(f"🔄 Retry {attempt + 1} tras error: {e}. Esperando {delay:.1f}s...")
                     await asyncio.sleep(delay)
                 else:
                     break
 
-        print(f"❌ Stream falló tras {self._resilience.retry_service.config.max_attempts} intentos: {last_error}")
+        logger.error(f"❌ Stream falló tras {self._resilience.retry_service.config.max_attempts} intentos: {last_error}")
         raise last_error or Exception("Stream failed")
 
     def _rewrite_m3u8_url(self, url: str, base_url: str) -> str:
@@ -261,7 +274,6 @@ class StreamProxyService:
 
         # Si es HTTP, convertir a HTTPS si es posible
         if url.startswith('http://'):
-            # Intentar convertir a HTTPS primero
             https_url = url.replace('http://', 'https://', 1)
             return https_url
 
@@ -286,8 +298,6 @@ class StreamProxyService:
         Obtiene respuesta de stream con headers.
         Si el contenido es M3U8, lo procesa y reescribe URLs HTTP a HTTPS.
         Soporta Range Requests para permitir seek en videos (VOD).
-        
-        Ahora con resiliencia: circuit breaker + retry logic.
 
         Args:
             original_url: URL del stream
@@ -347,7 +357,7 @@ class StreamProxyService:
                     logger.warning(f"⚠️ Server error {response.status_code}, will retry...")
                     if use_resilience:
                         await self._resilience.circuit_breaker.record_failure(original_url)
-                    
+
                     if attempt < max_attempts - 1:
                         delay = self._resilience.retry_service._calculate_delay(attempt)
                         logger.warning(f"🔄 Retry {attempt + 1}/{max_attempts}: {error_msg}. Waiting {delay:.1f}s...")
@@ -359,7 +369,7 @@ class StreamProxyService:
                 # Registrar éxito en circuit breaker
                 if use_resilience:
                     await self._resilience.circuit_breaker.record_success(original_url)
-                
+
                 logger.info(f"📺 Stream started: {original_url[:60]}...")
 
                 # Headers relevantes para pasar al cliente
@@ -396,7 +406,7 @@ class StreamProxyService:
                         pass_headers.pop('content-range', None)
                         return (response.status_code, pass_headers, rewritten)
                     except Exception as e:
-                        print(f"Error procesando M3U8: {e}")
+                        logger.error(f"Error procesando M3U8: {e}")
                         return (response.status_code, pass_headers, content)
 
                 # Para streams de video (TS), usar el proxy con iterador
@@ -413,19 +423,16 @@ class StreamProxyService:
 
             except Exception as e:
                 last_error = e
-                
-                # Registrar fallo en circuit breaker
+
                 if use_resilience:
                     await self._resilience.circuit_breaker.record_failure(original_url)
 
-                # Limpiar cliente si existe
                 if client:
                     try:
                         await client.aclose()
-                    except:
+                    except Exception:
                         pass
 
-                # Decidir si reintentar
                 if attempt < max_attempts - 1:
                     delay = self._resilience.retry_service._calculate_delay(attempt)
                     logger.warning(f"🔄 Retry {attempt + 1}/{max_attempts}: {e}. Esperando {delay:.1f}s...")
@@ -433,7 +440,6 @@ class StreamProxyService:
                 else:
                     break
 
-        # Todos los intentos fallaron
         logger.error(f"❌ Stream falló tras {max_attempts} intentos: {last_error}")
         raise last_error or Exception("Stream failed")
 
@@ -453,7 +459,6 @@ class StreamProxyService:
                 processed_lines.append(rewritten_url)
             # Si es una línea EXT-X-KEY con URI
             elif 'URI="' in stripped:
-                # Reescribir URI en tags como #EXT-X-KEY
                 def rewrite_uri(match):
                     uri = match.group(1)
                     new_uri = self._rewrite_m3u8_url(uri, base_url)
@@ -486,7 +491,7 @@ class StreamProxyService:
                     cache_key = f"{content_type}:{stream_id}"
                     self._url_cache[cache_key] = url
 
-        print(f"✅ Cache precargado: {len(self._url_cache)} URLs")
+        logger.info(f"✅ Cache precargado: {len(self._url_cache)} URLs")
 
     def get_resilience_status(self) -> Dict[str, Any]:
         """Obtiene el estado de resiliencia del servicio"""
