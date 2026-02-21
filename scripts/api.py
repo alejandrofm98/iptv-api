@@ -703,7 +703,6 @@ async def hls_playlist(
         media_type="application/vnd.apple.mpegurl",
         headers={
             "Cache-Control": "no-cache, no-store",
-            "Access-Control-Allow-Origin": "*",
         }
     )
 
@@ -727,7 +726,6 @@ async def hls_segment(
         media_type="video/mp2t",
         headers={
             "Cache-Control": "no-cache",
-            "Access-Control-Allow-Origin": "*",
         }
     )
 
