@@ -2,12 +2,10 @@
 Servicio de generación de playlists M3U dinámicas
 """
 import os
-import re
 import hashlib
-from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Iterator
-from urllib.parse import urlparse, urlencode
+from typing import Optional, List, Dict, Any
+from urllib.parse import urlparse
 from supabase import Client
 
 from utils.config import get_settings
@@ -28,19 +26,16 @@ class PlaylistService:
         """
         Determina la ruta del template M3U según el entorno (Docker/Local)
         """
-        # Detectar si estamos en Docker
         is_docker = (
             os.path.exists(CONSTANTS.DOCKER_ENV_PATH) or
             os.getenv(CONSTANTS.DOCKER_ENV_FLAG) == CONSTANTS.DOCKER_ENV_VALUE
         )
 
-        # Usar variable de entorno si está definida
         if os.getenv(CONSTANTS.M3U_DIR_ENV):
             m3u_dir = os.getenv(CONSTANTS.M3U_DIR_ENV)
         elif is_docker:
             m3u_dir = CONSTANTS.M3U_DIR_DOCKER
         else:
-            # Modo local: ruta relativa al proyecto
             project_root = Path(__file__).parent.parent
             m3u_dir = str(project_root / CONSTANTS.M3U_DIR_LOCAL_DEFAULT)
 
@@ -65,10 +60,7 @@ class PlaylistService:
         self._load_template()
 
     def _extract_stream_id(self, url: str) -> str:
-        """
-        Extrae un ID único del stream a partir de la URL original.
-        Retorna un hash corto para usarlo como identificador.
-        """
+        """Extrae un ID único del stream a partir de la URL original"""
         return hashlib.md5(url.encode()).hexdigest()[:16]
 
     def _build_proxy_url(
@@ -78,18 +70,7 @@ class PlaylistService:
         password: str,
         content_type: str = 'live'
     ) -> str:
-        """
-        Construye la URL proxificada para el stream.
-
-        Args:
-            original_url: URL original del stream
-            username: Usuario IPTV
-            password: Contraseña del usuario
-            content_type: 'live', 'movie' o 'series'
-
-        Returns:
-            URL proxificada: http://domain/live/user/pass/stream_id.ts
-        """
+        """Construye la URL proxificada para el stream"""
         stream_id = self._extract_stream_id(original_url)
 
         parsed = urlparse(original_url)
@@ -109,25 +90,10 @@ class PlaylistService:
         else:
             return f"{base_url}/{content_type}/{username}/{password}/{stream_id}{ext}"
 
-    def generate_m3u(
-        self,
-        username: str,
-        password: str,
-        include_channels: bool = True,
-        include_movies: bool = True,
-        include_series: bool = True,
-        group_filter: Optional[str] = None,
-        country_filter: Optional[str] = None
-    ) -> str:
+    def generate_m3u(self, username: str, password: str) -> str:
         """
         Genera playlist M3U usando template pre-procesado con placeholders.
         Ultra-rápido: usa template cacheado en memoria + string.replace()
-
-        Args:
-            username: Nombre de usuario del cliente
-            password: Contraseña del cliente
-            include_channels, include_movies, include_series: Mantenidos por compatibilidad
-            group_filter, country_filter: Mantenidos por compatibilidad
 
         Returns:
             Contenido M3U completo como string
@@ -138,7 +104,7 @@ class PlaylistService:
             self._load_template()
 
             if self._template_cache is None:
-                return "#EXTM3U\n#EXTINF:-1,Error\n# Error: No se encontró el archivo template. El contenido aún no ha sido sincronizado.\n"
+                return "#EXTM3U\n#EXTINF:-1,Error\n# Error: No se encontró el archivo template.\n"
 
         content = self._template_cache
         content = content.replace('{{DOMAIN}}', public_domain)
@@ -147,119 +113,8 @@ class PlaylistService:
 
         return content
 
-    def generate_m3u_filtered(
-        self,
-        username: str,
-        password: str,
-        group_filter: Optional[str] = None,
-        country_filter: Optional[str] = None,
-        search_filter: Optional[str] = None,
-        limit: Optional[int] = None,
-    ) -> Iterator[str]:
-        """
-        Genera playlist M3U con filtrado real, procesando línea a línea.
-        Usa streaming para no cargar todo en memoria — ideal para reproductores limitados.
-
-        Si no hay ningún filtro activo, delega al método rápido generate_m3u().
-
-        Args:
-            username: Nombre de usuario del cliente
-            password: Contraseña del cliente
-            group_filter: Filtrar por group-title exacto (ej: "ES| ESPAÑOL")
-            country_filter: Filtrar por país en group-title o tvg-id (ej: "ES")
-            search_filter: Buscar substring en nombre de canal (case-insensitive)
-            limit: Número máximo de entradas a devolver
-
-        Yields:
-            Fragmentos de texto del M3U filtrado
-        """
-        public_domain = self.settings.public_domain.rstrip('/')
-
-        if self._template_cache is None:
-            self._load_template()
-
-        if self._template_cache is None:
-            yield "#EXTM3U\n#EXTINF:-1,Error\n# Template no encontrado\n"
-            return
-
-        # Sin filtros: usar el replace rápido de siempre (evita iterar 2.6M líneas)
-        if not any([group_filter, country_filter, search_filter, limit]):
-            content = self._template_cache
-            content = content.replace('{{DOMAIN}}', public_domain)
-            content = content.replace('{{USERNAME}}', username)
-            content = content.replace('{{PASSWORD}}', password)
-            yield content
-            return
-
-        # Con filtros: procesar línea a línea
-        yield "#EXTM3U\n"
-
-        lines = self._template_cache.splitlines()
-        count = 0
-        i = 0
-
-        # Saltar la primera línea #EXTM3U del template
-        if lines and lines[0].startswith('#EXTM3U'):
-            i = 1
-
-        while i < len(lines):
-            line = lines[i]
-
-            if not line.startswith('#EXTINF'):
-                i += 1
-                continue
-
-            url_line = lines[i + 1] if i + 1 < len(lines) else ''
-            include = True
-
-            # Filtro por group-title exacto
-            if group_filter and f'group-title="{group_filter}"' not in line:
-                include = False
-
-            # Filtro por país (busca en toda la línea EXTINF, case-insensitive)
-            if country_filter and include:
-                if country_filter.upper() not in line.upper():
-                    include = False
-
-            # Filtro de búsqueda por nombre (el nombre está tras la última coma en EXTINF)
-            if search_filter and include:
-                if search_filter.lower() not in line.lower():
-                    include = False
-
-            if include:
-                extinf = (
-                    line
-                    .replace('{{DOMAIN}}', public_domain)
-                    .replace('{{USERNAME}}', username)
-                    .replace('{{PASSWORD}}', password)
-                )
-                url = (
-                    url_line
-                    .replace('{{DOMAIN}}', public_domain)
-                    .replace('{{USERNAME}}', username)
-                    .replace('{{PASSWORD}}', password)
-                )
-
-                yield extinf + '\n'
-                yield url + '\n'
-                count += 1
-
-                if limit and count >= limit:
-                    break
-
-            i += 2
-
     def _build_extinf(self, item: Dict[str, Any], content_type: str) -> str:
-        """
-        Construye la línea #EXTINF para un item.
-
-        Args:
-            item: Datos del canal/película/serie
-            content_type: 'channel', 'movie' o 'series'
-
-        Returns:
-            Línea #EXTINF formateada
-        """
+        """Construye la línea #EXTINF para un item"""
         name = item.get('nombre', 'Unknown')
         logo = item.get('logo', '')
         group = item.get('grupo', '')
@@ -284,15 +139,9 @@ class PlaylistService:
 
     def get_playlist_stats(self) -> Dict[str, int]:
         """Obtiene estadísticas de contenido disponible"""
-        channels = self.supabase.table('channels').select(
-            'id', count='exact'
-        ).execute()
-        movies = self.supabase.table('movies').select(
-            'id', count='exact'
-        ).execute()
-        series = self.supabase.table('series').select(
-            'id', count='exact'
-        ).execute()
+        channels = self.supabase.table('channels').select('id', count='exact').execute()
+        movies = self.supabase.table('movies').select('id', count='exact').execute()
+        series = self.supabase.table('series').select('id', count='exact').execute()
 
         return {
             'total_channels': channels.count or 0,
