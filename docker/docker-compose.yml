@@ -76,6 +76,9 @@ services:
     labels:
       - "traefik.enable=true"
 
+      # ── Middleware vacío para evitar heredar el redirect HTTP→HTTPS de Dokploy ──
+      - "traefik.http.middlewares.iptv-no-redirect.headers.customrequestheaders.X-Placeholder=1"
+
       # ── Router HTTPS (general) ─────────────────────────────────────
       - "traefik.http.routers.iptv-https.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
       - "traefik.http.routers.iptv-https.entrypoints=websecure"
@@ -84,19 +87,20 @@ services:
       - "traefik.http.routers.iptv-https.priority=10"
       - "traefik.http.routers.iptv-https.service=iptv-service"
 
-      # ── Router HTTP general (prioridad baja, puede ser interceptado por Dokploy) ──
+      # ── Router HTTP general (prioridad baja) ──────────────────────
       - "traefik.http.routers.iptv-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
       - "traefik.http.routers.iptv-http.entrypoints=web"
       - "traefik.http.routers.iptv-http.priority=20"
       - "traefik.http.routers.iptv-http.service=iptv-service"
 
-      # ── Rutas IPTV: HTTP sin redirect (prioridad 200, supera al router de Dokploy) ──
-      # get.php, /live/, /movie/, /series/ nunca redirigen a HTTPS
+      # ── Rutas IPTV: HTTP sin redirect (prioridad 200) ─────────────
+      # /get.php, /live/, /movie/, /series/ nunca redirigen a HTTPS
+      # El middleware iptv-no-redirect evita heredar el redirect global de Dokploy
       - "traefik.http.routers.iptv-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (Path(`/get.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
       - "traefik.http.routers.iptv-streams-http.entrypoints=web"
       - "traefik.http.routers.iptv-streams-http.priority=200"
       - "traefik.http.routers.iptv-streams-http.service=iptv-service"
-      # Sin middlewares declarados = sin redirect
+      - "traefik.http.routers.iptv-streams-http.middlewares=iptv-no-redirect@docker"
 
       # ── Servicio compartido ────────────────────────────────────────
       - "traefik.http.services.iptv-service.loadbalancer.server.port=80"
