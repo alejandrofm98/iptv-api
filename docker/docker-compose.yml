@@ -104,6 +104,7 @@ services:
 
       # ── Servicio compartido ────────────────────────────────────────
       - "traefik.http.services.iptv-service.loadbalancer.server.port=80"
+      - "traefik.http.routers.iptv-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (Path(`/get.php`) || Path(`/player_api.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
 
 # ============================================
 # Networks
