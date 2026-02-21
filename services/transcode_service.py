@@ -83,15 +83,26 @@ class TranscodeService:
         """
         url_hash = self._hash_url(original_url)
         
+        audio_codec = None
         if url_hash not in self._known_transcode_urls:
             audio_codec = await self.detect_audio_codec(original_url)
-            if not self.needs_transcode(audio_codec):
-                return
+            if audio_codec:
+                if audio_codec in self.UNSUPPORTED_CODECS:
+                    self._known_transcode_urls.add(url_hash)
 
+        needs_audio_transcode = self.needs_transcode(audio_codec)
+        audio_codec_arg = 'aac' if needs_audio_transcode else 'copy'
+        
         cmd = [
             'ffmpeg', '-re', '-i', original_url,
             '-c:v', 'copy',
-            '-c:a', 'aac', '-b:a', '128k',
+            '-c:a', audio_codec_arg,
+        ]
+        
+        if needs_audio_transcode:
+            cmd.extend(['-b:a', '128k'])
+        
+        cmd.extend([
             '-f', 'hls',
             '-hls_time', '4',
             '-hls_list_size', '4',
@@ -99,7 +110,7 @@ class TranscodeService:
             '-hls_segment_filename', '/tmp/hls/%s-segment%d.ts' % (url_hash, int(time.time())),
             '-start_number', '1',
             '-'
-        ]
+        ])
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
