@@ -381,6 +381,37 @@ Respuesta de `/api/calendar/{fecha}`:
 | `/playlist/{user}/{pass}.m3u` | Playlist M3U personalizada |
 | `/stream/{type}/{user}/{pass}/{stream_id}` | Stream proxy unificado |
 
+### Proxy de Logos con Fallback
+
+El endpoint `/logo` permite cargar imágenes de logos de forma segura (evita problemas de mixed content) y tiene un sistema de fallback automático:
+
+```
+GET /logo?url=<URL_ENCODED>&type=channel|movie|series
+```
+
+**Parámetros**:
+- `url`: URL de la imagen original (debe estar codificada)
+- `type`: Tipo de contenido (`channel`, `movie`, `series`)
+
+**Características**:
+- **Timeout**: 5 segundos para cargar la imagen original
+- **Fallback automático**: Si la imagen no carga (timeout, 404, error HTTP), devuelve el placeholder correspondiente
+- **Placeholders disponibles**:
+  - `/placeholder/channels.png` - Para canales
+  - `/placeholder/movies.png` - Para películas
+  - `/placeholder/series.png` - Para series
+
+**Ejemplos**:
+
+```bash
+# Logo de canal
+curl "http://localhost/logo?url=http://ejemplo.com/logo.png&type=channel"
+
+# Logo de película
+curl "http://localhost/logo?url=http://ejemplo.com/pelicula.png&type=movie"
+```
+| `/logo?url=<encoded_url>&type=channel\|movie\|series` | Proxy de logos con fallback |
+
 **Parámetros de playlist**:
 - `content_type`: Filtrar por tipo (`channels`, `movies`, `series`)
 - `group`: Filtrar por grupo
@@ -554,6 +585,12 @@ Los modelos Pydantic están en `utils/models.py`:
 La configuración centralizada está en `utils/config.py` usando Pydantic Settings.
 
 ## Changelog
+
+### v2.2 (2026)
+- **Nuevo**: Logo proxy con timeout de 5 segundos
+- **Nuevo**: Fallback automático a placeholders cuando la imagen no carga
+- **Fix**: Volumen de recursos en Docker para placeholders de nginx
+- **Fix**: COPY resources/ en Dockerfile de API
 
 ### v2.1 (2024)
 - **Nuevo**: Endpoints unificados para contenido (`/api/content`)
