@@ -666,12 +666,14 @@ async def get_playlist_standard(
 
     m3u_content = playlist_svc.generate_m3u(username=username, password=password)
 
-    content_bytes = m3u_content.encode('utf-8')
+    m3u_content = m3u_content.replace('\r\n', '\n').replace('\n', '\r\n')
+
+    content_bytes = b'\xef\xbb\xbf' + m3u_content.encode('utf-8')
     content_length = len(content_bytes)
 
     return Response(
         content=content_bytes,
-        media_type="application/octet-stream",
+        media_type="application/x-mpegURL",
         headers={
             "Content-Length": str(content_length),
             "Content-Disposition": f'attachment; filename="playlist_{username}.m3u"',
@@ -679,6 +681,7 @@ async def get_playlist_standard(
             "Cache-Control": "must-revalidate",
             "Pragma": "public",
             "Expires": "0",
+            "Access-Control-Allow-Origin": "*",
         }
     )
 
