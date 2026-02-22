@@ -993,10 +993,13 @@ async def proxy_logo(
     from urllib.parse import unquote
     import httpx
 
-    original_url = unquote(url)
+    try:
+        original_url = unquote(url)
+    except Exception:
+        original_url = url
 
     if not original_url.startswith('http'):
-        raise BadRequestException("URL inválida: falta protocolo http:// o https://")
+        original_url = f"http://{original_url}"
 
     placeholder_map = {
         "movie": "movies.png",
@@ -1021,7 +1024,7 @@ async def proxy_logo(
                     "Cache-Control": "public, max-age=86400",
                 }
             )
-    except (httpx.HTTPStatusError, httpx.RequestError, httpx.TimeoutException):
+    except Exception:
         pass
 
     from pathlib import Path
@@ -1038,7 +1041,10 @@ async def proxy_logo(
             }
         )
 
-    raise BadRequestException("Imagen no disponible y placeholder no encontrado")
+    return Response(
+        content=b"",
+        status_code=204
+    )
 
 
 # ============================================
