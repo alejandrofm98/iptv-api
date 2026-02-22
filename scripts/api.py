@@ -679,7 +679,6 @@ async def get_playlist_standard(
             "Cache-Control": "must-revalidate",
             "Pragma": "public",
             "Expires": "0",
-            "Access-Control-Allow-Origin": "*",
         }
     )
 
@@ -1012,7 +1011,6 @@ async def proxy_logo(
                 media_type=content_type,
                 headers={
                     "Cache-Control": "public, max-age=86400",
-                    "Access-Control-Allow-Origin": "*"
                 }
             )
     except httpx.HTTPStatusError as e:
