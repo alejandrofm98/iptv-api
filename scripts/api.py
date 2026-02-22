@@ -687,7 +687,7 @@ async def get_playlist_standard(
 
     return Response(
         content=content_bytes,
-        media_type="application/x-mpegURL",
+        media_type="application/octet-stream",
         headers={
             "Content-Length": str(content_length),
             "Content-Disposition": f'attachment; filename="{filename}"',
@@ -695,7 +695,6 @@ async def get_playlist_standard(
             "Cache-Control": "must-revalidate",
             "Pragma": "public",
             "Expires": "0",
-            "Access-Control-Allow-Origin": "*",
         }
     )
 
