@@ -29,6 +29,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY services/ /app/services/
 COPY utils/ /app/utils/
 COPY scripts/ /app/scripts/
+COPY resources/ /app/resources/
 
 # Crear directorios necesarios
 RUN mkdir -p /app/data/m3u
