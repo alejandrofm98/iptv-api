@@ -986,6 +986,7 @@ async def get_stream_url_internal(
 @app.get("/logo", tags=["Logo"])
 async def proxy_logo(
     url: str = Query(..., description="URL original del logo"),
+    type: str = Query("channel", description="Tipo: channel, movie, series"),
     stream_svc: StreamProxyService = Depends(get_stream_service)
 ):
     """Proxy de imágenes/logos para resolver Mixed Content."""
@@ -997,8 +998,15 @@ async def proxy_logo(
     if not original_url.startswith('http'):
         raise BadRequestException("URL inválida: falta protocolo http:// o https://")
 
+    placeholder_map = {
+        "movie": "movies.png",
+        "series": "series.png",
+        "channel": "channels.png",
+    }
+    placeholder_filename = placeholder_map.get(type, "channels.png")
+
     try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
             response = await client.get(original_url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             })
@@ -1013,10 +1021,24 @@ async def proxy_logo(
                     "Cache-Control": "public, max-age=86400",
                 }
             )
-    except httpx.HTTPStatusError as e:
-        raise BadRequestException(f"Error al obtener imagen: HTTP {e.response.status_code}")
-    except httpx.RequestError as e:
-        raise BadRequestException(f"Error al obtener imagen: {str(e)}")
+    except (httpx.HTTPStatusError, httpx.RequestError, httpx.TimeoutException):
+        pass
+
+    from pathlib import Path
+    placeholder_path = Path(__file__).parent.parent / "resources" / "images" / placeholder_filename
+    if placeholder_path.exists():
+        with open(placeholder_path, "rb") as f:
+            placeholder_content = f.read()
+        return Response(
+            content=placeholder_content,
+            media_type="image/png",
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "X-Fallback": "true",
+            }
+        )
+
+    raise BadRequestException("Imagen no disponible y placeholder no encontrado")
 
 
 # ============================================
