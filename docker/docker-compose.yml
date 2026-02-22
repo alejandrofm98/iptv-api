@@ -67,6 +67,8 @@ services:
       # Volumen compartido (solo lectura) y SSL
       - iptv-data:/app/data:ro
       - ../nginx/ssl:/etc/nginx/ssl:ro
+      # Placeholder images
+      - ../resources/images:/app/resources/images:ro
     depends_on:
       iptv-api:
         condition: service_healthy
