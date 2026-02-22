@@ -452,13 +452,16 @@ async def reload_template(
     _: dict = Depends(require_admin),
     playlist_svc: PlaylistService = Depends(get_playlist_service)
 ):
-    """Recarga el template M3U en memoria"""
+    """Recarga los templates M3U en memoria"""
     playlist_svc.reload_template()
-    if playlist_svc._template_cache is not None:
+    templates = playlist_svc._templates
+    if templates.get('full'):
         return {
             "status": "success",
-            "message": "Template recargado correctamente",
-            "size": len(playlist_svc._template_cache)
+            "message": "Templates recargados correctamente",
+            "templates": {
+                k: len(v) if v else 0 for k, v in templates.items()
+            }
         }
     else:
         raise BadRequestException("No se pudo recargar el template. Verifica que playlist_template.m3u exista.")
@@ -632,15 +635,26 @@ async def get_playlist_standard(
     password: str = Query(..., description="Contraseña"),
     type: Optional[str] = Query(None, description="Tipo: m3u, m3u_plus"),
     output: Optional[str] = Query(None, description="Output: ts, m3u8"),
+    content: str = Query('full', description="Contenido: full, live, movie, series"),
     user_svc: UserService = Depends(get_user_service),
     device_svc: DeviceService = Depends(get_device_service),
     playlist_svc: PlaylistService = Depends(get_playlist_service)
 ):
     """
     Genera playlist M3U — Formato estándar de proveedores IPTV.
-    Devuelve Content-Length y headers idénticos al proveedor original
-    para compatibilidad máxima con reproductores antiguos.
+    
+    Parámetro 'content':
+        - full: Todo el contenido (por defecto)
+        - live: Solo canales en vivo
+        - movie: Solo películas
+        - series: Solo series
+    
+    Nota: Para reproductores móviles, usar content=live reduce significativamente el tamaño.
     """
+    valid_content = ['full', 'live', 'movie', 'series']
+    if content not in valid_content:
+        content = 'full'
+    
     auth = user_svc.validate_credentials(username, password)
 
     if not auth.valid:
@@ -662,21 +676,21 @@ async def get_playlist_standard(
     if not success:
         raise TooManyRequestsException(message)
 
-    logger.info(f"📋 Playlist solicitada: user={username}, ua={user_agent[:50]}")
+    logger.info(f"📋 Playlist solicitada: user={username}, content={content}, ua={user_agent[:50]}")
 
-    m3u_content = playlist_svc.generate_m3u(username=username, password=password)
+    m3u_content = playlist_svc.generate_m3u(username=username, password=password, content_type=content)
 
-    m3u_content = m3u_content.replace('\r\n', '\n').replace('\n', '\r\n')
-
-    content_bytes = b'\xef\xbb\xbf' + m3u_content.encode('utf-8')
+    content_bytes = m3u_content.encode('utf-8')
     content_length = len(content_bytes)
+
+    filename = f"playlist_{username}_{content}.m3u" if content != 'full' else f"playlist_{username}.m3u"
 
     return Response(
         content=content_bytes,
         media_type="application/x-mpegURL",
         headers={
             "Content-Length": str(content_length),
-            "Content-Disposition": f'attachment; filename="playlist_{username}.m3u"',
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Description": "File Transfer",
             "Cache-Control": "must-revalidate",
             "Pragma": "public",
@@ -837,11 +851,19 @@ async def proxy_stream_content(
     transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
     """
-    Proxy de streams para películas y series.
-    DEPRECATED: Ahora usa redirect directo via nginx.
+    Proxy de streams para live, movie y series.
+    Formato: /{live|movie|series}/{username}/{password}/{stream_id}
     """
-    raise BadRequestException(
-        "Este endpoint ya no está activo. Usa el endpoint directo: /{live|movie|series}/username/password/stream_id"
+    return await _proxy_stream_handler(
+        content_type=content_type,
+        username=username,
+        password=password,
+        stream_id=stream_id,
+        request=request,
+        user_svc=user_svc,
+        device_svc=device_svc,
+        stream_svc=stream_svc,
+        transcode_svc=transcode_svc
     )
 
 

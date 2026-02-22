@@ -4,12 +4,14 @@ Servicio de generación de playlists M3U dinámicas
 import os
 import hashlib
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from urllib.parse import urlparse
 from supabase import Client
 
 from utils.config import get_settings
 import utils.constants as CONSTANTS
+
+ContentType = Literal['full', 'live', 'movie', 'series']
 
 
 class PlaylistService:
@@ -18,49 +20,56 @@ class PlaylistService:
     def __init__(self, supabase: Client):
         self.supabase = supabase
         self.settings = get_settings()
-        self._template_cache = None
-        self._template_path = self._get_template_path()
-        self._load_template()
+        self._templates: Dict[str, Optional[str]] = {
+            'full': None,
+            'live': None,
+            'movie': None,
+            'series': None
+        }
+        self._m3u_dir = self._get_m3u_dir()
+        self._load_templates()
 
-    def _get_template_path(self) -> str:
-        """
-        Determina la ruta del template M3U según el entorno (Docker/Local)
-        """
+    def _get_m3u_dir(self) -> str:
         is_docker = (
             os.path.exists(CONSTANTS.DOCKER_ENV_PATH) or
             os.getenv(CONSTANTS.DOCKER_ENV_FLAG) == CONSTANTS.DOCKER_ENV_VALUE
         )
 
         if os.getenv(CONSTANTS.M3U_DIR_ENV):
-            m3u_dir = os.getenv(CONSTANTS.M3U_DIR_ENV)
+            return os.getenv(CONSTANTS.M3U_DIR_ENV)
         elif is_docker:
-            m3u_dir = CONSTANTS.M3U_DIR_DOCKER
+            return CONSTANTS.M3U_DIR_DOCKER
         else:
             project_root = Path(__file__).parent.parent
-            m3u_dir = str(project_root / CONSTANTS.M3U_DIR_LOCAL_DEFAULT)
+            return str(project_root / CONSTANTS.M3U_DIR_LOCAL_DEFAULT)
 
-        return os.path.join(m3u_dir, "playlist_template.m3u")
-
-    def _load_template(self):
-        """Carga el template M3U en memoria para acceso rápido"""
-        try:
-            if os.path.exists(self._template_path):
-                with open(self._template_path, 'r', encoding='utf-8') as f:
-                    self._template_cache = f.read()
-                print(f"✅ Template M3U cargado en memoria: {len(self._template_cache):,} caracteres")
-            else:
-                print(f"⚠️  Template no encontrado: {self._template_path}")
-                self._template_cache = None
-        except Exception as e:
-            print(f"❌ Error cargando template: {e}")
-            self._template_cache = None
+    def _load_templates(self):
+        """Carga todos los templates M3U en memoria"""
+        template_files = {
+            'full': 'playlist_template.m3u',
+            'live': 'playlist_template_live.m3u',
+            'movie': 'playlist_template_movie.m3u',
+            'series': 'playlist_template_series.m3u'
+        }
+        
+        for key, filename in template_files.items():
+            path = os.path.join(self._m3u_dir, filename)
+            try:
+                if os.path.exists(path):
+                    with open(path, 'r', encoding='utf-8') as f:
+                        self._templates[key] = f.read()
+                    size_mb = len(self._templates[key]) / 1024 / 1024
+                    print(f"✅ Template '{key}' cargado: {size_mb:.2f} MB")
+                else:
+                    print(f"⚠️  Template '{key}' no encontrado: {path}")
+            except Exception as e:
+                print(f"❌ Error cargando template '{key}': {e}")
 
     def reload_template(self):
-        """Recarga el template (útil después de sincronización)"""
-        self._load_template()
+        """Recarga todos los templates"""
+        self._load_templates()
 
     def _extract_stream_id(self, url: str) -> str:
-        """Extrae un ID único del stream a partir de la URL original"""
         return hashlib.md5(url.encode()).hexdigest()[:16]
 
     def _build_proxy_url(
@@ -70,7 +79,6 @@ class PlaylistService:
         password: str,
         content_type: str = 'live'
     ) -> str:
-        """Construye la URL proxificada para el stream"""
         stream_id = self._extract_stream_id(original_url)
 
         parsed = urlparse(original_url)
@@ -90,23 +98,30 @@ class PlaylistService:
         else:
             return f"{base_url}/{content_type}/{username}/{password}/{stream_id}{ext}"
 
-    def generate_m3u(self, username: str, password: str) -> str:
+    def generate_m3u(self, username: str, password: str, content_type: ContentType = 'full') -> str:
         """
-        Genera playlist M3U usando template pre-procesado con placeholders.
-        Ultra-rápido: usa template cacheado en memoria + string.replace()
-
+        Genera playlist M3U usando template pre-procesado.
+        
+        Args:
+            username: Nombre de usuario
+            password: Contraseña
+            content_type: Tipo de contenido ('full', 'live', 'movie', 'series')
+        
         Returns:
-            Contenido M3U completo como string
+            Contenido M3U como string
         """
         public_domain = self.settings.public_domain.rstrip('/')
-
-        if self._template_cache is None:
-            self._load_template()
-
-            if self._template_cache is None:
+        
+        template = self._templates.get(content_type) or self._templates.get('full')
+        
+        if template is None:
+            self._load_templates()
+            template = self._templates.get(content_type) or self._templates.get('full')
+            
+            if template is None:
                 return "#EXTM3U\n#EXTINF:-1,Error\n# Error: No se encontró el archivo template.\n"
 
-        content = self._template_cache
+        content = template
         content = content.replace('{{DOMAIN}}', public_domain)
         content = content.replace('{{USERNAME}}', username)
         content = content.replace('{{PASSWORD}}', password)
@@ -114,7 +129,6 @@ class PlaylistService:
         return content
 
     def _build_extinf(self, item: Dict[str, Any], content_type: str) -> str:
-        """Construye la línea #EXTINF para un item"""
         name = item.get('nombre', 'Unknown')
         logo = item.get('logo', '')
         group = item.get('grupo', '')
@@ -138,7 +152,6 @@ class PlaylistService:
         return f'#EXTINF:-1 {attrs_str},{name}'
 
     def get_playlist_stats(self) -> Dict[str, int]:
-        """Obtiene estadísticas de contenido disponible"""
         channels = self.supabase.table('channels').select('id', count='exact').execute()
         movies = self.supabase.table('movies').select('id', count='exact').execute()
         series = self.supabase.table('series').select('id', count='exact').execute()
@@ -150,7 +163,6 @@ class PlaylistService:
         }
 
     def get_available_groups(self) -> List[str]:
-        """Obtiene lista de grupos disponibles"""
         result = self.supabase.table('channels').select('grupo').execute()
         groups = set()
 
@@ -161,7 +173,6 @@ class PlaylistService:
         return sorted(list(groups))
 
     def get_available_countries(self) -> List[str]:
-        """Obtiene lista de países disponibles"""
         result = self.supabase.table('channels').select('country').execute()
         countries = set()
 
