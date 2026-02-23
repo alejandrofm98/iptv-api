@@ -11,14 +11,18 @@ LANGUAGES = ['EN', 'ENG', 'ES', 'LA', 'LAT']
 
 def contains_language(extinf_line: str) -> bool:
     """
-    Busca prefijos de idioma en group-title Y en tvg-name.
-    Patrones: |EN|, |ENG|, |ES|, |LA|, |LAT| o al inicio del nombre: EN -, ES -, LA -
+    Busca prefijos de idioma SOLO en group-title.
+    Solo incluye si el group-title tiene el idioma (|EN|, |ENG|, |ES|, |LA|, |LAT|)
     """
-    for lang in LANGUAGES:
-        if f'|{lang}|' in extinf_line:
-            return True
-        if extinf_line.startswith(f'#EXTINF') and f'{lang} -' in extinf_line:
-            return True
+    import re
+    
+    group_title_match = re.search(r'group-title="([^"]+)"', extinf_line)
+    if group_title_match:
+        group_title = group_title_match.group(1)
+        for lang in LANGUAGES:
+            if f'|{lang}|' in group_title:
+                return True
+    
     return False
 
 def split_template(input_path: str, output_dir: str):
