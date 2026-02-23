@@ -126,6 +126,9 @@ class PlaylistService:
         content = content.replace('{{USERNAME}}', username)
         content = content.replace('{{PASSWORD}}', password)
 
+        while content.startswith('#EXTM3U\n#EXTM3U'):
+            content = content.replace('#EXTM3U\n#EXTM3U', '#EXTM3U', 1)
+
         return content
 
     def _build_extinf(self, item: Dict[str, Any], content_type: str) -> str:
