@@ -9,6 +9,7 @@ Cambios principales:
 - Estructura organizada con prefijos claros
 """
 import asyncio
+import gzip
 import logging
 from contextlib import asynccontextmanager
 
@@ -681,21 +682,36 @@ async def get_playlist_standard(
     m3u_content = playlist_svc.generate_m3u(username=username, password=password, content_type=content)
 
     content_bytes = m3u_content.encode('utf-8')
+    
+    content_length = len(content_bytes)
+    
+    SIZE_THRESHOLD = 5 * 1024 * 1024
+    if content_length > SIZE_THRESHOLD:
+        content_bytes = gzip.compress(content_bytes, compresslevel=6)
+        is_gzip = True
+    else:
+        is_gzip = False
+    
     content_length = len(content_bytes)
 
     filename = f"playlist_{username}_{content}.m3u" if content != 'full' else f"playlist_{username}.m3u"
 
+    headers = {
+        "Content-Length": str(content_length),
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Description": "File Transfer",
+        "Cache-Control": "must-revalidate",
+        "Pragma": "public",
+        "Expires": "0",
+    }
+    
+    if is_gzip:
+        headers["Content-Encoding"] = "gzip"
+
     return Response(
         content=content_bytes,
         media_type="application/octet-stream",
-        headers={
-            "Content-Length": str(content_length),
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Description": "File Transfer",
-            "Cache-Control": "must-revalidate",
-            "Pragma": "public",
-            "Expires": "0",
-        }
+        headers=headers
     )
 
 
