@@ -34,8 +34,9 @@ def split_template(input_path: str, output_dir: str):
     live_lines = ['#EXTM3U']
     movie_lines = ['#EXTM3U']
     series_lines = ['#EXTM3U']
+    full_lines = ['#EXTM3U']
     
-    counts = {'live': 0, 'movie': 0, 'series': 0}
+    counts = {'live': 0, 'movie': 0, 'series': 0, 'full': 0}
     filtered = {'movie': 0, 'series': 0}
     
     current_extinf = None
@@ -63,23 +64,32 @@ def split_template(input_path: str, output_dir: str):
         
         if content_type and current_extinf:
             should_include = True
+            include_in_full = True
             
             if content_type in ['movie', 'series']:
                 if not contains_language(current_extinf):
                     should_include = False
                     filtered[content_type] += 1
+                    include_in_full = False
             
             if should_include:
                 counts[content_type] += 1
+                counts['full'] += 1
                 if content_type == 'live':
                     live_lines.append(current_extinf)
                     live_lines.append(line)
+                    full_lines.append(current_extinf)
+                    full_lines.append(line)
                 elif content_type == 'movie':
                     movie_lines.append(current_extinf)
                     movie_lines.append(line)
+                    full_lines.append(current_extinf)
+                    full_lines.append(line)
                 elif content_type == 'series':
                     series_lines.append(current_extinf)
                     series_lines.append(line)
+                    full_lines.append(current_extinf)
+                    full_lines.append(line)
         
         current_extinf = None
     
@@ -93,6 +103,7 @@ def split_template(input_path: str, output_dir: str):
         return path
     
     print("💾 Generando templates separados (filtro: EN, ENG, ES, LA, LAT):")
+    write_file(full_lines, 'playlist_template.m3u')
     write_file(live_lines, 'playlist_template_live.m3u')
     write_file(movie_lines, 'playlist_template_movie.m3u')
     write_file(series_lines, 'playlist_template_series.m3u')
