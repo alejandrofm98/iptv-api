@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
 """
 Genera templates M3U separados por tipo de contenido desde un template existente.
-Filtra movies y series por idiomas: ES, EN, LA
+Filtra movies y series por idiomas: EN, ENG, ES, LA, LAT
 """
 import os
 import re
 from pathlib import Path
 
-LANGUAGES = ['ES', 'EN', 'LA']
+LANGUAGES = ['EN', 'ENG', 'ES', 'LA', 'LAT']
+
+def contains_language(extinf_line: str) -> bool:
+    """
+    Busca prefijos de idioma en group-title Y en tvg-name.
+    Patrones: |EN|, |ENG|, |ES|, |LA|, |LAT| o al inicio del nombre: EN -, ES -, LA -
+    """
+    for lang in LANGUAGES:
+        if f'|{lang}|' in extinf_line:
+            return True
+        if extinf_line.startswith(f'#EXTINF') and f'{lang} -' in extinf_line:
+            return True
+    return False
 
 def split_template(input_path: str, output_dir: str):
     with open(input_path, 'r', encoding='utf-8') as f:
@@ -49,12 +61,9 @@ def split_template(input_path: str, output_dir: str):
             should_include = True
             
             if content_type in ['movie', 'series']:
-                should_include = False
-                for lang in LANGUAGES:
-                    if f'|{lang}|' in current_extinf:
-                        should_include = True
-                        filtered[content_type] += 1
-                        break
+                if not contains_language(current_extinf):
+                    should_include = False
+                    filtered[content_type] += 1
             
             if should_include:
                 counts[content_type] += 1
@@ -79,7 +88,7 @@ def split_template(input_path: str, output_dir: str):
         print(f"  ✅ {filename}: {size_mb:.2f} MB ({len(lines)//2:,} items)")
         return path
     
-    print("💾 Generando templates separados (filtro: ES, EN, LA):")
+    print("💾 Generando templates separados (filtro: EN, ENG, ES, LA, LAT):")
     write_file(live_lines, 'playlist_template_live.m3u')
     write_file(movie_lines, 'playlist_template_movie.m3u')
     write_file(series_lines, 'playlist_template_series.m3u')
