@@ -1,6 +1,6 @@
 # IPTV API
 
-API FastAPI para gestión de usuarios IPTV, catálogo de contenido, compatibilidad Xtream Codes y proxy de streams.
+API FastAPI para gestión de usuarios IPTV, catálogo de contenido y proxy de streams.
 
 ## Qué incluye
 
@@ -8,7 +8,7 @@ API FastAPI para gestión de usuarios IPTV, catálogo de contenido, compatibilid
 - Gestión de usuarios y sesiones/dispositivos por cuenta
 - Catálogo unificado de contenido (`channels`, `movies`, `series`) con paginación `page/page_size`
 - Endpoints de calendario deportivo con canales resueltos
-- Compatibilidad Xtream con `/player_api.php` y playlist vía `/get.php`
+- Playlist vía `/get.php`
 - Proxy de streams (`/live`, `/movie`, `/series`) con control de conexiones
 - Transcodificación HLS bajo demanda para clientes web permitidos
 - Proxy de logos con fallback automático a placeholders
@@ -24,7 +24,7 @@ API FastAPI para gestión de usuarios IPTV, catálogo de contenido, compatibilid
 
 ```text
 iptv-api/
-├── scripts/           # API principal (api.py) y router Xtream
+├── scripts/           # API principal (api.py)
 ├── services/          # Lógica de negocio (usuarios, streams, contenido, calendario, etc.)
 ├── utils/             # Configuración, modelos, constantes, excepciones, dependencias
 ├── docker/            # Dockerfile, compose, env de Docker
@@ -54,7 +54,7 @@ Variables opcionales PostgreSQL (si no se definen, se infieren desde Supabase):
 
 Variables importantes de runtime:
 
-- `PUBLIC_DOMAIN` (usado para construir URLs Xtream)
+- `PUBLIC_DOMAIN` (usado para construir URLs de streams)
 - `M3U_DIR` (directorio de salida M3U)
 
 ## Ejecutar local
@@ -95,10 +95,9 @@ curl http://localhost:3010/api/admin/users \
   -H "Authorization: Bearer <TOKEN>"
 ```
 
-### 2) Credenciales en URL (Xtream/players)
+### 2) Credenciales en URL (players)
 
 - Playlist: `/get.php?username=...&password=...`
-- Xtream API: `/player_api.php?username=...&password=...&action=...`
 - Streams: `/live/{user}/{pass}/{id}`, `/movie/{user}/{pass}/{id}`, `/series/{user}/{pass}/{id}`
 
 ## Endpoints principales
@@ -141,9 +140,8 @@ curl http://localhost:3010/api/admin/users \
 - `GET /api/calendar/{fecha}`
 - `GET /api/calendar/event/{event_id}`
 
-### Xtream y streaming
+### Streaming
 
-- `GET /player_api.php`
 - `GET /get.php`
 - `GET /{live|movie|series}/{username}/{password}/{stream_id}`
 - `GET /{username}/{password}/{stream_id}` (atajo para `live`)
@@ -165,16 +163,10 @@ curl "http://localhost:3010/api/content/groups?content_type=channels" \
   -H "Authorization: Bearer <TOKEN>"
 ```
 
-Playlist estándar Xtream:
+Playlist estándar:
 
 ```bash
 curl "http://localhost:3010/get.php?username=<USER>&password=<PASS>&type=m3u_plus&output=ts"
-```
-
-Xtream login/check:
-
-```bash
-curl "http://localhost:3010/player_api.php?username=<USER>&password=<PASS>"
 ```
 
 Stream en vivo:
@@ -226,7 +218,7 @@ Docs interactivas:
 
 - No subas `.env` al repositorio
 - Cambia `API_SECRET_KEY` y `JWT_SECRET` en producción
-- Mantén `PUBLIC_DOMAIN` correcto para URLs Xtream
+- Mantén `PUBLIC_DOMAIN` correcto para URLs de stream
 
 ## Licencia
 

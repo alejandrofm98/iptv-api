@@ -4,9 +4,8 @@ Guia para agentes de codigo que trabajen en este proyecto FastAPI.
 
 ## Contexto rapido
 
-- Proyecto: API IPTV con JWT, gestion de usuarios/dispositivos, compatibilidad Xtream, proxy de streams y HLS.
+- Proyecto: API IPTV con JWT, gestion de usuarios/dispositivos, proxy de streams y HLS.
 - App principal: `scripts/api.py`
-- Router Xtream: `scripts/xtream_router.py`
 - Puerto local por defecto: `3010`
 
 ## Comandos clave
@@ -47,7 +46,7 @@ mypy scripts services utils
 ## Arquitectura del proyecto
 
 ```text
-scripts/          # Entrypoints y rutas (api.py, xtream_router.py)
+scripts/          # Entrypoints y rutas (api.py)
 services/         # Logica de negocio
 utils/            # Config, modelos, dependencias, excepciones, constantes
 docker/           # Dockerfile y compose
@@ -62,7 +61,7 @@ data/m3u/         # Plantillas y cache M3U
 2. Para errores de negocio, usar excepciones de `utils/exceptions.py`.
 3. En endpoints administrativos, exigir `require_admin`.
 4. En endpoints de catalogo, usar `require_auth_with_jwt`.
-5. En endpoints de stream/xtream, usar validacion por credenciales + registro de sesion.
+5. En endpoints de stream, usar validacion por credenciales + registro de sesion.
 6. Mantener paginacion `page/page_size` (evitar `skip/limit`).
 7. Para consultas complejas de contenido, preferir `PostgresService`.
 
@@ -72,7 +71,6 @@ data/m3u/         # Plantillas y cache M3U
 - Admin: `/api/admin/users*`, `/api/admin/sessions`, `/api/admin/stats`, `/api/admin/resilience`, `/api/admin/content/reload`
 - Contenido: `/api/content*`, `/api/series/{serie_name}/episodes`
 - Calendario: `/api/calendar/{fecha}`, `/api/calendar/event/{event_id}`
-- Xtream: `/player_api.php`, `/get.php`
 - Streams: `/live/{u}/{p}/{id}`, `/movie/{u}/{p}/{id}`, `/series/{u}/{p}/{id}`
 - HLS: `/hls/{session_id}/playlist.m3u8`, `/hls/{session_id}/{segment}`
 - Logo proxy: `/logo`
@@ -81,12 +79,10 @@ data/m3u/         # Plantillas y cache M3U
 
 - Variables minimas: `SUPABASE_URL`, `SUPABASE_KEY`, `API_SECRET_KEY`, `JWT_SECRET`.
 - Variables PG opcionales: `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`.
-- Variable clave para URLs Xtream: `PUBLIC_DOMAIN`.
 - Nunca commitear `.env` o credenciales.
 
 ## Criterios para cambios
 
-- Mantener compatibilidad con clientes Xtream (`/player_api.php`, `/get.php`).
 - No romper flujos de sesiones/dispositivos al tocar streams.
 - Si se modifican rutas o contratos, actualizar `README.md` y coleccion Postman.
 - Evitar cambios de estilo no relacionados en archivos no tocados.

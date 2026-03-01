@@ -55,7 +55,6 @@ from utils.dependencies import (
     require_auth_with_credentials, require_auth_with_session, require_auth_with_jwt,
     AuthResult as AuthDep
 )
-from scripts.xtream_router import router as xtream_router
 
 # Configuración
 settings = get_settings()
@@ -145,9 +144,6 @@ app = FastAPI(
     version="2.1.0",
     lifespan=lifespan
 )
-
-# Xtream Codes API (compatibilidad con reproductores IPTV)
-app.include_router(xtream_router)
 
 # CORS
 app.add_middleware(
