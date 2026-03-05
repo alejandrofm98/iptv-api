@@ -21,6 +21,8 @@ SEGMENT_DURATION = 4        # segundos por segmento
 HLS_LIST_SIZE = 6           # segmentos en ventana deslizante
 SESSION_TIMEOUT = 120       # segundos sin actividad para limpiar sesión
 PLAYLIST_READY_TIMEOUT = 15 # segundos esperando el primer playlist
+FFMPEG_START_MAX_ATTEMPTS = 3
+FFMPEG_RETRY_DELAY = 1.0
 
 
 class HlsSession:
@@ -132,6 +134,20 @@ class TranscodeService:
         except Exception as e:
             logger.error(f"❌ Error arrancando ffmpeg: {e}")
 
+    @staticmethod
+    def _clean_session_output(session: HlsSession):
+        """Elimina artefactos parciales antes de reintentar ffmpeg."""
+        if not os.path.exists(session.output_dir):
+            return
+        for filename in os.listdir(session.output_dir):
+            if filename == "playlist.m3u8" or filename.startswith("segment"):
+                file_path = os.path.join(session.output_dir, filename)
+                if os.path.isfile(file_path):
+                    try:
+                        os.remove(file_path)
+                    except OSError:
+                        pass
+
     async def _log_ffmpeg_stderr(self, session: HlsSession):
         if not session.process or not session.process.stderr:
             return
@@ -146,12 +162,35 @@ class TranscodeService:
     async def wait_for_playlist(self, session: HlsSession) -> bool:
         """Espera hasta que ffmpeg genere el primer playlist.m3u8"""
         deadline = time.time() + PLAYLIST_READY_TIMEOUT
+        attempts = 1
+
         while time.time() < deadline:
             if session.playlist_exists():
                 return True
-            if session.process and session.process.returncode is not None:
-                logger.warning(f"ffmpeg terminó antes de generar playlist: {session.session_id}")
+
+            if not session.process:
+                logger.warning(f"ffmpeg no pudo iniciarse para sesión HLS: {session.session_id}")
                 return False
+
+            if session.process and session.process.returncode is not None:
+                if attempts >= FFMPEG_START_MAX_ATTEMPTS:
+                    logger.warning(
+                        f"ffmpeg terminó antes de generar playlist: {session.session_id} "
+                        f"(reintentos agotados: {attempts}/{FFMPEG_START_MAX_ATTEMPTS})"
+                    )
+                    return False
+
+                attempts += 1
+                delay = FFMPEG_RETRY_DELAY * (attempts - 1)
+                logger.warning(
+                    f"ffmpeg terminó antes de generar playlist: {session.session_id}. "
+                    f"Reintentando ({attempts}/{FFMPEG_START_MAX_ATTEMPTS}) en {delay:.1f}s"
+                )
+                self._clean_session_output(session)
+                await asyncio.sleep(delay)
+                await self._start_ffmpeg(session)
+                continue
+
             await asyncio.sleep(0.3)
         return False
 
