@@ -771,7 +771,6 @@ async def _proxy_stream_handler(
     device_svc: DeviceService,
     stream_svc: StreamProxyService,
     transcode_svc: TranscodeService,
-    use_bootstrap_proxy_for_live: bool = False,
     force_hls_for_live: bool = False
 ):
     """Handler interno para proxy de streams."""
@@ -812,7 +811,7 @@ async def _proxy_stream_handler(
     is_from_allowed_web = any(orig in origin for orig in ALLOWED_WEB_ORIGINS if origin)
     logger.info(
         f"🌐 Stream routing: type={content_type}, user={username}, "
-        f"allowed_web={is_from_allowed_web}, bootstrap_proxy_live={use_bootstrap_proxy_for_live}, "
+        f"allowed_web={is_from_allowed_web}, bootstrap_proxy_all=true, "
         f"origin={origin[:100] if origin else 'none'}"
     )
 
@@ -838,19 +837,20 @@ async def _proxy_stream_handler(
         logger.info(f"🎬 HLS redirect: session={session.session_id}")
         return RedirectResponse(url=f"/hls/{session.session_id}/playlist.m3u8", status_code=302)
 
-    # Desde reproductores externos: proxy directo (sin cambios)
-    stream_url = original_url
-    if content_type == 'live' and use_bootstrap_proxy_for_live:
-        resolved_url = await stream_svc.resolve_redirects(
-            original_url,
-            use_cache=False,
-            use_proxy=True
+    # Desde reproductores externos: bootstrap de redirects con proxy y stream directo
+    use_cache_for_redirect = content_type != 'live'
+    stream_url = await stream_svc.resolve_redirects(
+        original_url,
+        use_cache=use_cache_for_redirect,
+        use_proxy=True
+    )
+    if stream_url != original_url:
+        logger.info(
+            f"🎯 Bootstrap con proxy aplicado ({content_type}): "
+            f"{original_url[:60]}... -> {stream_url[:60]}..."
         )
-        if resolved_url != original_url:
-            logger.info(f"🎯 Bootstrap con proxy aplicado: {original_url[:60]}... -> {resolved_url[:60]}...")
-        else:
-            logger.info(f"🎯 Bootstrap con proxy sin cambio: {original_url[:60]}...")
-        stream_url = resolved_url
+    else:
+        logger.info(f"🎯 Bootstrap con proxy sin cambio ({content_type}): {original_url[:60]}...")
 
     request_headers = {}
     if content_type in ['movie', 'series']:
@@ -909,7 +909,6 @@ async def proxy_stream_content(
         device_svc=device_svc,
         stream_svc=stream_svc,
         transcode_svc=transcode_svc,
-        use_bootstrap_proxy_for_live=False,
         force_hls_for_live=False
     )
 
@@ -936,7 +935,6 @@ async def proxy_stream_channel(
         device_svc=device_svc,
         stream_svc=stream_svc,
         transcode_svc=transcode_svc,
-        use_bootstrap_proxy_for_live=True,
         force_hls_for_live=True
     )
 
@@ -984,7 +982,11 @@ async def validate_stream(
     if not original_url:
         raise NotFoundException("Stream", provider_id)
 
-    final_url = await stream_svc.resolve_redirects(original_url)
+    final_url = await stream_svc.resolve_redirects(
+        original_url,
+        use_cache=content_type != 'live',
+        use_proxy=True
+    )
 
     return PlainTextResponse(
         content="OK",
@@ -1045,7 +1047,11 @@ async def get_stream_url_internal(
     print(f"[DEBUG] original_url: {original_url}")
 
     use_cache = content_type != "live"
-    final_url = await stream_svc.resolve_redirects(original_url, use_cache=use_cache)
+    final_url = await stream_svc.resolve_redirects(
+        original_url,
+        use_cache=use_cache,
+        use_proxy=True
+    )
 
     print(f"[DEBUG] final_url: {final_url}")
     print(f"[DEBUG] son_iguales: {original_url == final_url}")
