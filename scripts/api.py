@@ -770,7 +770,8 @@ async def _proxy_stream_handler(
     user_svc: UserService,
     device_svc: DeviceService,
     stream_svc: StreamProxyService,
-    transcode_svc: TranscodeService
+    transcode_svc: TranscodeService,
+    use_bootstrap_proxy_for_live: bool = False
 ):
     """Handler interno para proxy de streams."""
     if content_type not in ['live', 'movie', 'series']:
@@ -818,6 +819,17 @@ async def _proxy_stream_handler(
         return RedirectResponse(url=f"/hls/{session.session_id}/playlist.m3u8", status_code=302)
 
     # Desde reproductores externos: proxy directo (sin cambios)
+    stream_url = original_url
+    if content_type == 'live' and use_bootstrap_proxy_for_live:
+        resolved_url = await stream_svc.resolve_redirects(
+            original_url,
+            use_cache=False,
+            use_proxy=True
+        )
+        if resolved_url != original_url:
+            logger.info(f"🎯 Bootstrap con proxy aplicado: {original_url[:60]}... -> {resolved_url[:60]}...")
+        stream_url = resolved_url
+
     request_headers = {}
     if content_type in ['movie', 'series']:
         range_header = request.headers.get('range')
@@ -826,7 +838,7 @@ async def _proxy_stream_handler(
 
     try:
         status_code, headers, body = await stream_svc.get_stream_response(
-            original_url,
+            stream_url,
             headers=request_headers
         )
 
@@ -874,7 +886,8 @@ async def proxy_stream_content(
         user_svc=user_svc,
         device_svc=device_svc,
         stream_svc=stream_svc,
-        transcode_svc=transcode_svc
+        transcode_svc=transcode_svc,
+        use_bootstrap_proxy_for_live=False
     )
 
 
@@ -899,7 +912,8 @@ async def proxy_stream_channel(
         user_svc=user_svc,
         device_svc=device_svc,
         stream_svc=stream_svc,
-        transcode_svc=transcode_svc
+        transcode_svc=transcode_svc,
+        use_bootstrap_proxy_for_live=True
     )
 
 

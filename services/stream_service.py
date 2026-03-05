@@ -7,8 +7,8 @@ import httpx
 import re
 import asyncio
 import logging
-from typing import Optional, Dict, Any, AsyncIterator, Tuple, Union
-from urllib.parse import urlparse, urljoin
+from typing import Optional, Dict, Any, AsyncIterator, Tuple, Union, cast
+from urllib.parse import urlparse, urljoin, quote
 from supabase import Client
 
 import utils.constants as CONSTANTS
@@ -27,6 +27,9 @@ class StreamProxyService:
     _REDIRECT_CACHE_TTL: float = 300.0
     # TTL para errores de DNS (60 segundos) - evita reintentos constantes
     _DNS_ERROR_CACHE_TTL: float = 60.0
+    # Cache para configuración de proxy de bootstrap desde tabla config
+    _proxy_bootstrap_cache: Optional[Tuple[Optional[str], float]] = None
+    _PROXY_BOOTSTRAP_CACHE_TTL: float = 60.0
 
     def __init__(self, supabase: Client):
         self.supabase = supabase
@@ -35,7 +38,52 @@ class StreamProxyService:
         # Servicio de resiliencia: circuit breaker + retry + buffering
         self._resilience = ResilienceService()
 
-    async def resolve_redirects(self, url: str, use_cache: bool = True) -> str:
+    def _get_bootstrap_proxy_url(self, use_cache: bool = True) -> Optional[str]:
+        """Obtiene URL de proxy para la llamada inicial al proveedor desde tabla config."""
+        cached = StreamProxyService._proxy_bootstrap_cache
+        if use_cache and cached:
+            cached_value, cached_at = cached
+            if (time.time() - cached_at) < self._PROXY_BOOTSTRAP_CACHE_TTL:
+                return cached_value
+
+        try:
+            result = self.supabase.table('config').select('key,value').execute()
+            rows = cast(list[dict[str, Any]], result.data or [])
+            config: Dict[str, str] = {}
+            for row in rows:
+                key = row.get('key')
+                value = row.get('value')
+                if isinstance(key, str) and key:
+                    config[key] = str(value) if value is not None else ''
+
+            proxy_ip = (config.get('PROXY_IP') or '').strip()
+            proxy_port = (config.get('PROXY_PORT') or '').strip()
+            proxy_user = (config.get('PROXY_USER') or '').strip()
+            proxy_pass = (config.get('PROXY_PASS') or '').strip()
+
+            proxy_url = None
+            if proxy_ip:
+                if proxy_ip.startswith('http://') or proxy_ip.startswith('https://'):
+                    proxy_url = proxy_ip
+                elif proxy_port:
+                    if proxy_user and proxy_pass:
+                        username = quote(proxy_user, safe='')
+                        password = quote(proxy_pass, safe='')
+                        proxy_url = f"http://{username}:{password}@{proxy_ip}:{proxy_port}"
+                    elif proxy_user:
+                        username = quote(proxy_user, safe='')
+                        proxy_url = f"http://{username}@{proxy_ip}:{proxy_port}"
+                    else:
+                        proxy_url = f"http://{proxy_ip}:{proxy_port}"
+
+            StreamProxyService._proxy_bootstrap_cache = (proxy_url, time.time())
+            return proxy_url
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo leer proxy de bootstrap desde config: {e}")
+            StreamProxyService._proxy_bootstrap_cache = (None, time.time())
+            return None
+
+    async def resolve_redirects(self, url: str, use_cache: bool = True, use_proxy: bool = False) -> str:
         """
         Resuelve redirects HTTP manualmente usando HEAD requests para no descargar el stream.
 
@@ -45,6 +93,7 @@ class StreamProxyService:
         Args:
             url: URL inicial que puede tener redirects
             use_cache: Si False, ignora y no escribe en cache (recomendado para live)
+            use_proxy: Si True, utiliza proxy para la llamada inicial al proveedor
 
         Returns:
             URL final después de seguir todos los redirects, o URL original si hay error
@@ -63,6 +112,7 @@ class StreamProxyService:
 
         start_time = time.time()
         hostname = urlparse(url).hostname or "unknown"
+        proxy_url = self._get_bootstrap_proxy_url() if use_proxy else None
 
         try:
             if not await self._resilience.circuit_breaker.can_execute(url):
@@ -72,7 +122,8 @@ class StreamProxyService:
             async with httpx.AsyncClient(
                 follow_redirects=False,
                 headers={'User-Agent': CONSTANTS.DEFAULT_USER_AGENT},
-                timeout=10.0
+                timeout=10.0,
+                proxy=proxy_url
             ) as client:
                 current_url = url
                 max_redirects = 10
@@ -161,12 +212,14 @@ class StreamProxyService:
         # Buscar en la base de datos por provider_id (mucho más rápido que hash)
         result = self.supabase.table(table).select('url').eq('provider_id', provider_id).limit(1).execute()
 
-        if result.data and len(result.data) > 0:
-            url = result.data[0].get('url', '')
-            if url:
+        rows_data = result.data or []
+        if rows_data and isinstance(rows_data[0], dict):
+            first_row = rows_data[0]
+            url_value = first_row.get('url')
+            if isinstance(url_value, str) and url_value:
                 # Guardar en cache
-                self._url_cache[cache_key] = url
-                return url
+                self._url_cache[cache_key] = url_value
+                return url_value
 
         return None
 
@@ -412,7 +465,7 @@ class StreamProxyService:
                         return (response.status_code, pass_headers, rewritten)
                     except Exception as e:
                         logger.error(f"Error procesando M3U8: {e}")
-                        return (response.status_code, pass_headers, content)
+                        return (response.status_code, pass_headers, content.decode('utf-8', errors='ignore'))
 
                 # Para streams de video (TS), usar el proxy con iterador
                 async def body_iterator():
@@ -489,9 +542,11 @@ class StreamProxyService:
             result = self.supabase.table(table).select('url').execute()
             content_type = type_map[table]
 
-            for item in (result.data or []):
-                url = item.get('url', '')
-                if url:
+            rows = cast(list[dict[str, Any]], result.data or [])
+            for item in rows:
+                url_value = item.get('url')
+                if isinstance(url_value, str) and url_value:
+                    url = url_value
                     stream_id = self._hash_url(url)
                     cache_key = f"{content_type}:{stream_id}"
                     self._url_cache[cache_key] = url
