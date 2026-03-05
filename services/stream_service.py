@@ -38,12 +38,31 @@ class StreamProxyService:
         # Servicio de resiliencia: circuit breaker + retry + buffering
         self._resilience = ResilienceService()
 
+    @staticmethod
+    def _mask_proxy_url(proxy_url: Optional[str]) -> str:
+        """Oculta credenciales en logs de proxy."""
+        if not proxy_url:
+            return "none"
+        try:
+            parsed = urlparse(proxy_url)
+            if parsed.username:
+                host = parsed.hostname or ""
+                port = f":{parsed.port}" if parsed.port else ""
+                return f"{parsed.scheme}://***:***@{host}{port}"
+            return proxy_url
+        except Exception:
+            return "invalid-proxy-url"
+
     def _get_bootstrap_proxy_url(self, use_cache: bool = True) -> Optional[str]:
         """Obtiene URL de proxy para la llamada inicial al proveedor desde tabla config."""
         cached = StreamProxyService._proxy_bootstrap_cache
         if use_cache and cached:
             cached_value, cached_at = cached
             if (time.time() - cached_at) < self._PROXY_BOOTSTRAP_CACHE_TTL:
+                logger.info(
+                    f"🛰️ Proxy bootstrap desde cache: enabled={bool(cached_value)}, "
+                    f"proxy={self._mask_proxy_url(cached_value)}"
+                )
                 return cached_value
 
         try:
@@ -77,6 +96,10 @@ class StreamProxyService:
                         proxy_url = f"http://{proxy_ip}:{proxy_port}"
 
             StreamProxyService._proxy_bootstrap_cache = (proxy_url, time.time())
+            logger.info(
+                f"🛰️ Proxy bootstrap desde config: enabled={bool(proxy_url)}, "
+                f"proxy={self._mask_proxy_url(proxy_url)}"
+            )
             return proxy_url
         except Exception as e:
             logger.warning(f"⚠️ No se pudo leer proxy de bootstrap desde config: {e}")
@@ -113,6 +136,10 @@ class StreamProxyService:
         start_time = time.time()
         hostname = urlparse(url).hostname or "unknown"
         proxy_url = self._get_bootstrap_proxy_url() if use_proxy else None
+        logger.info(
+            f"🔎 Resolviendo redirects: host={hostname}, use_proxy={use_proxy}, "
+            f"proxy={self._mask_proxy_url(proxy_url)}, use_cache={use_cache}"
+        )
 
         try:
             if not await self._resilience.circuit_breaker.can_execute(url):
@@ -138,11 +165,21 @@ class StreamProxyService:
                             # Solo necesitamos los headers, cerramos inmediatamente
                             status = response.status_code
                             location = response.headers.get('Location')
-                    except Exception:
+                            logger.info(
+                                f"🔁 Redirect check #{redirect_count + 1}: status={status}, "
+                                f"has_location={bool(location)}"
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ Error evaluando redirect en {current_url[:100]}...: {e}"
+                        )
                         break
 
                     if status in (301, 302, 307, 308):
                         if not location:
+                            logger.warning(
+                                f"⚠️ Redirect sin Location para {current_url[:100]}... (status={status})"
+                            )
                             break
                         if not location.startswith('http'):
                             location = urllib.parse.urljoin(current_url,
@@ -151,6 +188,12 @@ class StreamProxyService:
                             f"  Redirect {redirect_count + 1}: {current_url[:60]} -> {location[:60]}")
                         current_url = location
                         redirect_count += 1
+                    elif status == 511:
+                        logger.warning(
+                            f"🚫 Provider devolvió 511 en bootstrap: {current_url[:100]}... "
+                            f"(use_proxy={use_proxy}, proxy={self._mask_proxy_url(proxy_url)})"
+                        )
+                        break
                     else:
                         break
 
@@ -162,10 +205,13 @@ class StreamProxyService:
             if final_url != url:
                 logger.info(
                     f"✅ Redirect resuelto: {hostname} -> {final_url[:80]}... "
-                    f"({elapsed:.2f}s, {redirect_count} redirects)"
+                    f"({elapsed:.2f}s, {redirect_count} redirects, proxy={self._mask_proxy_url(proxy_url)})"
                 )
             else:
-                logger.debug(f"ℹ️ Sin redirects para {hostname} ({elapsed:.2f}s)")
+                logger.info(
+                    f"ℹ️ Sin redirects para {hostname} ({elapsed:.2f}s, "
+                    f"proxy={self._mask_proxy_url(proxy_url)})"
+                )
 
             if use_cache:
                 self._redirect_cache[url] = (final_url, time.time())

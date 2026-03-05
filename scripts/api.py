@@ -809,9 +809,27 @@ async def _proxy_stream_handler(
     # ✏️ CAMBIO 5: lógica HLS correcta — sesión ffmpeg en disco + redirect al playlist
     origin = request.headers.get('origin') or request.headers.get('referer', '')
     is_from_allowed_web = any(orig in origin for orig in ALLOWED_WEB_ORIGINS if origin)
+    logger.info(
+        f"🌐 Stream routing: type={content_type}, user={username}, "
+        f"allowed_web={is_from_allowed_web}, bootstrap_proxy_live={use_bootstrap_proxy_for_live}, "
+        f"origin={origin[:100] if origin else 'none'}"
+    )
 
     if is_from_allowed_web and transcode_svc:
-        session = await transcode_svc.get_or_create_session(username, clean_stream_id, original_url)
+        hls_source_url = original_url
+        if content_type == 'live':
+            resolved_hls_url = await stream_svc.resolve_redirects(
+                original_url,
+                use_cache=False,
+                use_proxy=True
+            )
+            logger.info(
+                f"🎯 HLS bootstrap resolve: stream_id={clean_stream_id}, "
+                f"changed={resolved_hls_url != original_url}"
+            )
+            hls_source_url = resolved_hls_url
+
+        session = await transcode_svc.get_or_create_session(username, clean_stream_id, hls_source_url)
         ready = await transcode_svc.wait_for_playlist(session)
         if not ready:
             raise BadRequestException("El stream no está disponible o tardó demasiado en arrancar")
@@ -828,6 +846,8 @@ async def _proxy_stream_handler(
         )
         if resolved_url != original_url:
             logger.info(f"🎯 Bootstrap con proxy aplicado: {original_url[:60]}... -> {resolved_url[:60]}...")
+        else:
+            logger.info(f"🎯 Bootstrap con proxy sin cambio: {original_url[:60]}...")
         stream_url = resolved_url
 
     request_headers = {}
