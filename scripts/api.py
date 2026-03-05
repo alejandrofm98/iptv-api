@@ -771,7 +771,8 @@ async def _proxy_stream_handler(
     device_svc: DeviceService,
     stream_svc: StreamProxyService,
     transcode_svc: TranscodeService,
-    use_bootstrap_proxy_for_live: bool = False
+    use_bootstrap_proxy_for_live: bool = False,
+    force_hls_for_live: bool = False
 ):
     """Handler interno para proxy de streams."""
     if content_type not in ['live', 'movie', 'series']:
@@ -815,19 +816,20 @@ async def _proxy_stream_handler(
         f"origin={origin[:100] if origin else 'none'}"
     )
 
-    if is_from_allowed_web and transcode_svc:
+    should_use_hls = (is_from_allowed_web or force_hls_for_live) and content_type == 'live'
+
+    if should_use_hls and transcode_svc:
         hls_source_url = original_url
-        if content_type == 'live':
-            resolved_hls_url = await stream_svc.resolve_redirects(
-                original_url,
-                use_cache=False,
-                use_proxy=True
-            )
-            logger.info(
-                f"🎯 HLS bootstrap resolve: stream_id={clean_stream_id}, "
-                f"changed={resolved_hls_url != original_url}"
-            )
-            hls_source_url = resolved_hls_url
+        resolved_hls_url = await stream_svc.resolve_redirects(
+            original_url,
+            use_cache=False,
+            use_proxy=True
+        )
+        logger.info(
+            f"🎯 HLS bootstrap resolve: stream_id={clean_stream_id}, "
+            f"changed={resolved_hls_url != original_url}, forced_hls={force_hls_for_live}"
+        )
+        hls_source_url = resolved_hls_url
 
         session = await transcode_svc.get_or_create_session(username, clean_stream_id, hls_source_url)
         ready = await transcode_svc.wait_for_playlist(session)
@@ -907,7 +909,8 @@ async def proxy_stream_content(
         device_svc=device_svc,
         stream_svc=stream_svc,
         transcode_svc=transcode_svc,
-        use_bootstrap_proxy_for_live=False
+        use_bootstrap_proxy_for_live=False,
+        force_hls_for_live=False
     )
 
 
@@ -933,7 +936,8 @@ async def proxy_stream_channel(
         device_svc=device_svc,
         stream_svc=stream_svc,
         transcode_svc=transcode_svc,
-        use_bootstrap_proxy_for_live=True
+        use_bootstrap_proxy_for_live=True,
+        force_hls_for_live=True
     )
 
 
