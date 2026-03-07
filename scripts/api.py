@@ -830,6 +830,7 @@ async def cast_media_playlist(
     transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
     """Sirve el media playlist HLS para Chromecast."""
+    logger.info(f"📺 Chromecast media playlist: session={session_id}")
     return _build_cast_playlist_response(session_id, request, transcode_svc)
 
 
@@ -840,6 +841,7 @@ async def cast_hls_segment(
     transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
     """Sirve segmentos HLS para Chromecast."""
+    logger.info(f"📺 Chromecast segment: session={session_id}, segment={segment}")
     return await hls_segment(session_id=session_id, segment=segment, transcode_svc=transcode_svc)
 
 
@@ -1045,6 +1047,7 @@ async def proxy_stream_channel_chromecast(
     transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
     """Genera una playlist HLS compatible con Chromecast para canales en vivo."""
+    logger.info(f"📺 Chromecast request: user={username}, stream_id={stream_id}")
     auth = user_svc.validate_credentials(username, password)
 
     if not auth.valid:
@@ -1088,6 +1091,7 @@ async def proxy_stream_channel_chromecast(
     if not ready:
         raise BadRequestException("El stream no está disponible o tardó demasiado en arrancar")
 
+    logger.info(f"📺 Chromecast master playlist ready: session={session.session_id}")
     return _build_cast_master_playlist(session.session_id, request)
 
 
