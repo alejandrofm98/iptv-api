@@ -766,7 +766,16 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
     with open(file_path, "r", encoding="utf-8") as playlist_file:
         playlist_content = playlist_file.read()
 
-    base_url = settings.public_domain.rstrip("/")
+    forwarded_proto = request.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+
+    if forwarded_host:
+        base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+    else:
+        base_url = settings.public_domain.rstrip("/")
+
+    if base_url.startswith("http://"):
+        base_url = "https://" + base_url[len("http://"):]
     rewritten_lines = []
     for line in playlist_content.splitlines():
         if line == "#EXT-X-DISCONTINUITY":
