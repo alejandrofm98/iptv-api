@@ -1,9 +1,9 @@
 """
-Servicio de transcodificación para HLS con hls.js
+Servicio de transcodificación para HLS con hls.js y Chromecast
 
 Arquitectura:
-- ffmpeg escribe segmentos .ts y playlist .m3u8 a disco (/tmp/hls/{session_id}/)
-- La API sirve esos ficheros con los endpoints /hls/{session_id}/playlist.m3u8 y /hls/{session_id}/{segment}.ts
+- ffmpeg escribe segmentos HLS y playlist .m3u8 a disco (/tmp/hls/{session_id}/)
+- La API sirve esos ficheros con los endpoints /hls/{session_id}/playlist.m3u8 y /hls/{session_id}/{segment}
 - hls.js los consume directamente
 - Limpieza automática de sesiones inactivas cada 2 minutos
 """
@@ -62,7 +62,7 @@ class HlsSession:
 
         try:
             with open(self.playlist_path, "r", encoding="utf-8") as playlist_file:
-                return sum(1 for line in playlist_file if line.strip().endswith(".ts"))
+                return sum(1 for line in playlist_file if line.strip().endswith((".ts", ".m4s")))
         except OSError:
             return 0
 
@@ -137,7 +137,11 @@ class TranscodeService:
 
     async def _start_ffmpeg(self, session: HlsSession):
         """Arranca ffmpeg para generar los segmentos HLS en disco"""
-        segment_pattern = os.path.join(session.output_dir, "segment%d.ts")
+        is_chromecast_profile = session.profile == "chromecast"
+        segment_pattern = os.path.join(
+            session.output_dir,
+            "segment%d.m4s" if is_chromecast_profile else "segment%d.ts"
+        )
 
         cmd = [
             "ffmpeg",
@@ -146,7 +150,7 @@ class TranscodeService:
             "-i", session.url
         ]
 
-        if session.profile == "chromecast":
+        if is_chromecast_profile:
             cmd.extend([
                 "-c:v", "libx264",
                 "-preset", "veryfast",
@@ -173,7 +177,7 @@ class TranscodeService:
             ])
 
         hls_flags = "delete_segments+append_list"
-        if session.profile == "chromecast":
+        if is_chromecast_profile:
             hls_flags = "append_list+independent_segments"
 
         cmd.extend([
@@ -182,13 +186,18 @@ class TranscodeService:
             "-hls_list_size", str(HLS_LIST_SIZE),
             "-hls_flags", hls_flags,
             "-hls_segment_filename", segment_pattern,
-            "-hls_segment_type", "mpegts",
         ])
 
-        if session.profile == "chromecast":
+        if is_chromecast_profile:
             cmd.extend([
+                "-hls_segment_type", "fmp4",
                 "-hls_playlist_type", "event",
                 "-start_number", "1",
+                "-hls_fmp4_init_filename", "init.mp4",
+            ])
+        else:
+            cmd.extend([
+                "-hls_segment_type", "mpegts",
             ])
 
         cmd.append(session.playlist_path)
