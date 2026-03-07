@@ -62,7 +62,7 @@ class HlsSession:
 
         try:
             with open(self.playlist_path, "r", encoding="utf-8") as playlist_file:
-                return sum(1 for line in playlist_file if line.strip().endswith((".ts", ".m4s")))
+                return sum(1 for line in playlist_file if line.strip().endswith(".ts"))
         except OSError:
             return 0
 

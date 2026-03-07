@@ -741,28 +741,20 @@ async def hls_segment(
     segment: str,
     transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
-    """Sirve un segmento o init file de una sesión HLS activa."""
+    """Sirve un segmento .ts de una sesión HLS activa."""
     if "/" in segment or ".." in segment:
         raise BadRequestException("Segmento inválido")
 
-    allowed_suffixes = (".ts", ".m4s", ".mp4")
-    if not segment.endswith(allowed_suffixes):
+    if not segment.endswith(".ts"):
         raise BadRequestException("Segmento inválido")
 
     file_path = transcode_svc.get_file_path(session_id, segment)
     if not file_path:
         raise NotFoundException("Segmento", segment)
 
-    if segment.endswith(".ts"):
-        media_type = "video/mp2t"
-    elif segment.endswith(".m4s"):
-        media_type = "video/mp4"
-    else:
-        media_type = "video/mp4"
-
     return FileResponse(
         path=file_path,
-        media_type=media_type,
+        media_type="video/mp2t",
         headers={
             "Cache-Control": "no-cache",
             **_build_cast_cors_headers(request),
@@ -829,55 +821,12 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
 
     return PlainTextResponse(
         content="\n".join(rewritten_lines),
-        media_type="application/vnd.apple.mpegurl",
+        media_type="application/x-mpegURL",
         headers={
             "Cache-Control": "no-cache, no-store",
             **_build_cast_cors_headers(request),
         }
     )
-
-def _build_cast_master_playlist(session_id: str, request: Request) -> PlainTextResponse:
-    forwarded_proto = request.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
-    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
-
-    if forwarded_host:
-        base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
-    else:
-        base_url = settings.public_domain.rstrip("/")
-
-    if base_url.startswith("http://"):
-        base_url = "https://" + base_url[len("http://"):]
-
-    content = "\n".join([
-        "#EXTM3U",
-        "#EXT-X-VERSION:3",
-        "#EXT-X-STREAM-INF:BANDWIDTH=2500000",
-        f"{base_url}/cast/media/{session_id}/playlist.m3u8"
-    ])
-
-    return PlainTextResponse(
-        content=content,
-        media_type="application/vnd.apple.mpegurl",
-        headers={
-            "Cache-Control": "no-cache, no-store"
-        }
-    )
-
-
-@app.get("/cast/media/{session_id}/playlist.m3u8", tags=["HLS", "Chromecast"])
-async def cast_media_playlist(
-    session_id: str,
-    request: Request,
-    transcode_svc: TranscodeService = Depends(get_transcode_service)
-):
-    """Sirve el media playlist HLS para Chromecast."""
-    logger.info(f"📺 Chromecast media playlist: session={session_id}")
-    return _build_cast_playlist_response(session_id, request, transcode_svc)
-
-
-@app.options("/cast/media/{session_id}/playlist.m3u8", tags=["HLS", "Chromecast"])
-async def cast_media_playlist_options(session_id: str, request: Request):
-    return _build_cast_options_response(request)
 
 
 @app.get("/cast/hls/{session_id}/{segment}", tags=["HLS", "Chromecast"])
