@@ -23,6 +23,7 @@ SESSION_TIMEOUT = 120       # segundos sin actividad para limpiar sesión
 PLAYLIST_READY_TIMEOUT = 15 # segundos esperando el primer playlist
 FFMPEG_START_MAX_ATTEMPTS = 3
 FFMPEG_RETRY_DELAY = 1.0
+CHROMECAST_MIN_SEGMENTS = 3
 
 
 class HlsSession:
@@ -54,6 +55,16 @@ class HlsSession:
 
     def playlist_exists(self) -> bool:
         return os.path.exists(self.playlist_path)
+
+    def playlist_segment_count(self) -> int:
+        if not self.playlist_exists():
+            return 0
+
+        try:
+            with open(self.playlist_path, "r", encoding="utf-8") as playlist_file:
+                return sum(1 for line in playlist_file if line.strip().endswith(".ts"))
+        except OSError:
+            return 0
 
     async def stop(self):
         if self.process:
@@ -160,7 +171,7 @@ class TranscodeService:
 
         hls_flags = "delete_segments+append_list"
         if session.profile == "chromecast":
-            hls_flags += "+independent_segments"
+            hls_flags = "append_list+independent_segments"
 
         cmd.extend([
             "-f", "hls",
@@ -169,8 +180,15 @@ class TranscodeService:
             "-hls_flags", hls_flags,
             "-hls_segment_filename", segment_pattern,
             "-hls_segment_type", "mpegts",
-            session.playlist_path
         ])
+
+        if session.profile == "chromecast":
+            cmd.extend([
+                "-hls_playlist_type", "event",
+                "-start_number", "1",
+            ])
+
+        cmd.append(session.playlist_path)
 
         try:
             session.process = await asyncio.create_subprocess_exec(
@@ -218,7 +236,11 @@ class TranscodeService:
 
         while time.time() < deadline:
             if session.playlist_exists():
-                return True
+                if session.profile != "chromecast":
+                    return True
+
+                if session.playlist_segment_count() >= CHROMECAST_MIN_SEGMENTS:
+                    return True
 
             if not session.process:
                 logger.warning(f"ffmpeg no pudo iniciarse para sesión HLS: {session.session_id}")
