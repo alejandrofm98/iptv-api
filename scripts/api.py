@@ -740,17 +740,28 @@ async def hls_segment(
     segment: str,
     transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
-    """Sirve un segmento .ts de una sesión HLS activa."""
-    if not segment.endswith(".ts") or "/" in segment or ".." in segment:
+    """Sirve un segmento o init file de una sesión HLS activa."""
+    if "/" in segment or ".." in segment:
+        raise BadRequestException("Segmento inválido")
+
+    allowed_suffixes = (".ts", ".m4s", ".mp4")
+    if not segment.endswith(allowed_suffixes):
         raise BadRequestException("Segmento inválido")
 
     file_path = transcode_svc.get_file_path(session_id, segment)
     if not file_path:
         raise NotFoundException("Segmento", segment)
 
+    if segment.endswith(".ts"):
+        media_type = "video/mp2t"
+    elif segment.endswith(".m4s"):
+        media_type = "video/iso.segment"
+    else:
+        media_type = "video/mp4"
+
     return FileResponse(
         path=file_path,
-        media_type="video/mp2t",
+        media_type=media_type,
         headers={
             "Cache-Control": "no-cache",
         }
