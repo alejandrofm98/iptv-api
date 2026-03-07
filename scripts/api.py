@@ -736,6 +736,7 @@ async def hls_playlist(
 
 @app.get("/hls/{session_id}/{segment}", tags=["HLS"])
 async def hls_segment(
+    request: Request,
     session_id: str,
     segment: str,
     transcode_svc: TranscodeService = Depends(get_transcode_service)
@@ -764,8 +765,28 @@ async def hls_segment(
         media_type=media_type,
         headers={
             "Cache-Control": "no-cache",
+            **_build_cast_cors_headers(request),
         }
     )
+
+
+def _build_cast_cors_headers(request: Request) -> dict[str, str]:
+    origin = request.headers.get("origin")
+    if not origin:
+        origin = "https://www.gstatic.com"
+
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Accept-Encoding, Range, Origin",
+        "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type",
+        "Vary": "Origin",
+    }
+
+
+def _build_cast_options_response(request: Request) -> Response:
+    return Response(status_code=204, headers=_build_cast_cors_headers(request))
 
 
 def _build_cast_playlist_response(session_id: str, request: Request, transcode_svc: TranscodeService) -> PlainTextResponse:
@@ -817,7 +838,10 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
     return PlainTextResponse(
         content="\n".join(rewritten_lines),
         media_type="application/vnd.apple.mpegurl",
-        headers={"Cache-Control": "no-cache, no-store"}
+        headers={
+            "Cache-Control": "no-cache, no-store",
+            **_build_cast_cors_headers(request),
+        }
     )
 
 
@@ -860,15 +884,26 @@ async def cast_media_playlist(
     return _build_cast_playlist_response(session_id, request, transcode_svc)
 
 
+@app.options("/cast/media/{session_id}/playlist.m3u8", tags=["HLS", "Chromecast"])
+async def cast_media_playlist_options(session_id: str, request: Request):
+    return _build_cast_options_response(request)
+
+
 @app.get("/cast/hls/{session_id}/{segment}", tags=["HLS", "Chromecast"])
 async def cast_hls_segment(
+    request: Request,
     session_id: str,
     segment: str,
     transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
     """Sirve segmentos HLS para Chromecast."""
     logger.info(f"📺 Chromecast segment: session={session_id}, segment={segment}")
-    return await hls_segment(session_id=session_id, segment=segment, transcode_svc=transcode_svc)
+    return await hls_segment(request=request, session_id=session_id, segment=segment, transcode_svc=transcode_svc)
+
+
+@app.options("/cast/hls/{session_id}/{segment}", tags=["HLS", "Chromecast"])
+async def cast_hls_segment_options(session_id: str, segment: str, request: Request):
+    return _build_cast_options_response(request)
 
 
 # ============================================
@@ -1121,6 +1156,16 @@ async def proxy_stream_channel_chromecast(
     return _build_cast_playlist_response(session.session_id, request, transcode_svc)
 
 
+@app.options("/cast/live/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
+async def proxy_stream_channel_chromecast_options(
+    username: str,
+    password: str,
+    stream_id: str,
+    request: Request,
+):
+    return _build_cast_options_response(request)
+
+
 @app.get("/cast/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
 async def proxy_stream_channel_chromecast_shortcut(
     username: str,
@@ -1143,6 +1188,16 @@ async def proxy_stream_channel_chromecast_shortcut(
         stream_svc=stream_svc,
         transcode_svc=transcode_svc
     )
+
+
+@app.options("/cast/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
+async def proxy_stream_channel_chromecast_shortcut_options(
+    username: str,
+    password: str,
+    stream_id: str,
+    request: Request,
+):
+    return _build_cast_options_response(request)
 
 
 # ============================================
