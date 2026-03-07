@@ -1090,8 +1090,8 @@ async def proxy_stream_channel_chromecast(
     if not ready:
         raise BadRequestException("El stream no está disponible o tardó demasiado en arrancar")
 
-    logger.info(f"📺 Chromecast master playlist ready: session={session.session_id}")
-    return _build_cast_master_playlist(session.session_id, request)
+    logger.info(f"📺 Chromecast media playlist ready: session={session.session_id}")
+    return _build_cast_playlist_response(session.session_id, request, transcode_svc)
 
 
 @app.get("/cast/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
