@@ -808,9 +808,8 @@ def _build_cast_master_playlist(session_id: str, request: Request) -> PlainTextR
 
     content = "\n".join([
         "#EXTM3U",
-        "#EXT-X-VERSION:6",
-        "#EXT-X-INDEPENDENT-SEGMENTS",
-        "#EXT-X-STREAM-INF:BANDWIDTH=3500000,AVERAGE-BANDWIDTH=2500000,CODECS=\"avc1.4d4029,mp4a.40.2\",RESOLUTION=1024x576,FRAME-RATE=25.000",
+        "#EXT-X-VERSION:3",
+        "#EXT-X-STREAM-INF:BANDWIDTH=2500000",
         f"{base_url}/cast/media/{session_id}/playlist.m3u8"
     ])
 
