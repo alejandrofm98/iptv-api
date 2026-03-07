@@ -758,7 +758,6 @@ async def hls_segment(
 
 
 def _build_cast_playlist_response(session_id: str, request: Request, transcode_svc: TranscodeService) -> PlainTextResponse:
-    """Sirve un playlist HLS con URLs absolutas para Chromecast."""
     file_path = transcode_svc.get_file_path(session_id, "playlist.m3u8")
     if not file_path:
         raise NotFoundException("Sesión HLS", session_id)
@@ -767,15 +766,29 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
         playlist_content = playlist_file.read()
 
     forwarded_proto = request.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
-    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    forwarded_host = (
+        request.headers.get("x-forwarded-host") or
+        request.headers.get("host") or
+        ""
+    )
 
-    if forwarded_host:
+    # Filtrar hosts internos Docker — nunca usar host interno como base_url
+    internal_hosts = ["iptv-api", "localhost", "127.0.0.1"]
+    is_internal = any(h in forwarded_host for h in internal_hosts)
+
+    if forwarded_host and not is_internal:
         base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
     else:
+        # Fallback siempre al dominio público configurado
         base_url = settings.public_domain.rstrip("/")
 
+    # Forzar HTTPS siempre para Chromecast
     if base_url.startswith("http://"):
         base_url = "https://" + base_url[len("http://"):]
+
+    logger.info(f"📺 Cast playlist base_url={base_url}, session={session_id}, "
+                f"forwarded_host={forwarded_host}, proto={forwarded_proto}")
+
     rewritten_lines = []
     for line in playlist_content.splitlines():
         if line == "#EXT-X-DISCONTINUITY":
@@ -788,9 +801,7 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
     return PlainTextResponse(
         content="\n".join(rewritten_lines),
         media_type="application/vnd.apple.mpegurl",
-        headers={
-            "Cache-Control": "no-cache, no-store"
-        }
+        headers={"Cache-Control": "no-cache, no-store"}
     )
 
 
