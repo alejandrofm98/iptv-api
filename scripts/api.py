@@ -804,6 +804,11 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
     for line in playlist_content.splitlines():
         if line == "#EXT-X-DISCONTINUITY":
             continue
+        if line.startswith('#EXT-X-MAP:URI="'):
+            rewritten_lines.append(
+                f'#EXT-X-MAP:URI="{base_url}/cast/hls/{session_id}/init.mp4"'
+            )
+            continue
         if line and not line.startswith("#"):
             rewritten_lines.append(f"{base_url}/cast/hls/{session_id}/{line}")
         else:
