@@ -756,7 +756,7 @@ async def hls_segment(
     if segment.endswith(".ts"):
         media_type = "video/mp2t"
     elif segment.endswith(".m4s"):
-        media_type = "video/iso.segment"
+        media_type = "video/mp4"
     else:
         media_type = "video/mp4"
 
@@ -837,7 +837,7 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
 
     return PlainTextResponse(
         content="\n".join(rewritten_lines),
-        media_type="application/vnd.apple.mpegurl",
+        media_type="application/x-mpegURL",
         headers={
             "Cache-Control": "no-cache, no-store",
             **_build_cast_cors_headers(request),
