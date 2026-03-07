@@ -769,6 +769,8 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
     base_url = settings.public_domain.rstrip("/")
     rewritten_lines = []
     for line in playlist_content.splitlines():
+        if line == "#EXT-X-DISCONTINUITY":
+            continue
         if line and not line.startswith("#"):
             rewritten_lines.append(f"{base_url}/cast/hls/{session_id}/{line}")
         else:

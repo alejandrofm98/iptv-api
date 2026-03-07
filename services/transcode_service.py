@@ -28,11 +28,19 @@ FFMPEG_RETRY_DELAY = 1.0
 class HlsSession:
     """Representa una sesión de transcodificación HLS activa"""
 
-    def __init__(self, session_id: str, url: str, output_dir: str, profile: str = "default"):
+    def __init__(
+        self,
+        session_id: str,
+        url: str,
+        output_dir: str,
+        profile: str = "default",
+        cache_key: Optional[str] = None
+    ):
         self.session_id = session_id
         self.url = url
         self.output_dir = output_dir
         self.profile = profile
+        self.cache_key = cache_key or session_id
         self.playlist_path = os.path.join(output_dir, "playlist.m3u8")
         self.process: Optional[asyncio.subprocess.Process] = None
         self.created_at = time.time()
@@ -88,8 +96,9 @@ class TranscodeService:
         Devuelve sesión activa existente para este usuario+stream, o crea una nueva.
         """
         # Buscar sesión activa reutilizable
+        session_cache_key = f"{username}:{stream_id}:{profile}"
         for sid, session in list(self._sessions.items()):
-            if session.url == original_url and session.profile == profile:
+            if session.cache_key == session_cache_key:
                 if not session.is_expired() and session.process and session.process.returncode is None:
                     session.touch()
                     return session
@@ -107,7 +116,8 @@ class TranscodeService:
             session_id=session_id,
             url=original_url,
             output_dir=output_dir,
-            profile=profile
+            profile=profile,
+            cache_key=session_cache_key
         )
         self._sessions[session_id] = session
 
