@@ -794,6 +794,45 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
     )
 
 
+def _build_cast_master_playlist(session_id: str, request: Request) -> PlainTextResponse:
+    forwarded_proto = request.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+
+    if forwarded_host:
+        base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+    else:
+        base_url = settings.public_domain.rstrip("/")
+
+    if base_url.startswith("http://"):
+        base_url = "https://" + base_url[len("http://"):]
+
+    content = "\n".join([
+        "#EXTM3U",
+        "#EXT-X-VERSION:6",
+        "#EXT-X-INDEPENDENT-SEGMENTS",
+        "#EXT-X-STREAM-INF:BANDWIDTH=3500000,AVERAGE-BANDWIDTH=2500000,CODECS=\"avc1.4d4029,mp4a.40.2\",RESOLUTION=1024x576,FRAME-RATE=25.000",
+        f"{base_url}/cast/media/{session_id}/playlist.m3u8"
+    ])
+
+    return PlainTextResponse(
+        content=content,
+        media_type="application/vnd.apple.mpegurl",
+        headers={
+            "Cache-Control": "no-cache, no-store"
+        }
+    )
+
+
+@app.get("/cast/media/{session_id}/playlist.m3u8", tags=["HLS", "Chromecast"])
+async def cast_media_playlist(
+    session_id: str,
+    request: Request,
+    transcode_svc: TranscodeService = Depends(get_transcode_service)
+):
+    """Sirve el media playlist HLS para Chromecast."""
+    return _build_cast_playlist_response(session_id, request, transcode_svc)
+
+
 @app.get("/cast/hls/{session_id}/{segment}", tags=["HLS", "Chromecast"])
 async def cast_hls_segment(
     session_id: str,
@@ -1049,7 +1088,7 @@ async def proxy_stream_channel_chromecast(
     if not ready:
         raise BadRequestException("El stream no está disponible o tardó demasiado en arrancar")
 
-    return _build_cast_playlist_response(session.session_id, request, transcode_svc)
+    return _build_cast_master_playlist(session.session_id, request)
 
 
 @app.get("/cast/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
