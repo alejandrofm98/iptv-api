@@ -146,6 +146,8 @@ class TranscodeService:
         cmd = [
             "ffmpeg",
             "-loglevel", "warning",
+            "-fflags", "+genpts",
+            "-avoid_negative_ts", "make_zero",
             "-re",
             "-i", session.url
         ]
@@ -155,9 +157,14 @@ class TranscodeService:
                 "-c:v", "libx264",
                 "-preset", "veryfast",
                 "-tune", "zerolatency",
+                "-vf", "scale=w=1280:h=720:force_original_aspect_ratio=decrease",
+                "-r", "25",
                 "-profile:v", "main",
                 "-level", "4.1",
                 "-pix_fmt", "yuv420p",
+                "-b:v", "3000k",
+                "-maxrate", "3000k",
+                "-bufsize", "6000k",
                 "-g", "100",
                 "-keyint_min", "100",
                 "-sc_threshold", "0",
