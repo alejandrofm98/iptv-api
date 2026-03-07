@@ -1041,6 +1041,30 @@ async def proxy_stream_channel_chromecast(
     return _build_cast_playlist_response(session.session_id, request, transcode_svc)
 
 
+@app.get("/cast/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
+async def proxy_stream_channel_chromecast_shortcut(
+    username: str,
+    password: str,
+    stream_id: str,
+    request: Request,
+    user_svc: UserService = Depends(get_user_service),
+    device_svc: DeviceService = Depends(get_device_service),
+    stream_svc: StreamProxyService = Depends(get_stream_service),
+    transcode_svc: TranscodeService = Depends(get_transcode_service)
+):
+    """Atajo Chromecast para live, alineado con la ruta web sin /live."""
+    return await proxy_stream_channel_chromecast(
+        username=username,
+        password=password,
+        stream_id=stream_id,
+        request=request,
+        user_svc=user_svc,
+        device_svc=device_svc,
+        stream_svc=stream_svc,
+        transcode_svc=transcode_svc
+    )
+
+
 # ============================================
 # API: Stream Validation (Nginx)
 # ============================================

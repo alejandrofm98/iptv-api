@@ -100,7 +100,7 @@ curl http://localhost:3010/api/admin/users \
 
 - Playlist: `/get.php?username=...&password=...`
 - Streams: `/live/{user}/{pass}/{id}`, `/movie/{user}/{pass}/{id}`, `/series/{user}/{pass}/{id}`
-- Chromecast live: `/cast/live/{user}/{pass}/{id}/playlist.m3u8`
+- Chromecast live: `/cast/{user}/{pass}/{id}/playlist.m3u8`
 
 ## Endpoints principales
 
@@ -147,7 +147,7 @@ curl http://localhost:3010/api/admin/users \
 - `GET /get.php`
 - `GET /{live|movie|series}/{username}/{password}/{stream_id}`
 - `GET /{username}/{password}/{stream_id}` (atajo para `live`)
-- `GET /cast/live/{username}/{password}/{stream_id}/playlist.m3u8`
+- `GET /cast/{username}/{password}/{stream_id}/playlist.m3u8`
 - `GET /auth/validate-stream/{content_type}/{username}/{password}/{provider_id}`
 - `GET /internal/stream-url`
 
