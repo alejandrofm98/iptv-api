@@ -766,7 +766,7 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
     with open(file_path, "r", encoding="utf-8") as playlist_file:
         playlist_content = playlist_file.read()
 
-    base_url = str(request.base_url).rstrip("/")
+    base_url = settings.public_domain.rstrip("/")
     rewritten_lines = []
     for line in playlist_content.splitlines():
         if line and not line.startswith("#"):
