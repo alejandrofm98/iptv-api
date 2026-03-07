@@ -166,8 +166,6 @@ class TranscodeService:
                 "-c:v", "libx264",
                 "-preset", "veryfast",
                 "-tune", "zerolatency",
-                "-vf",
-                "scale=w=1280:h=720:force_original_aspect_ratio=decrease",
                 "-r", "25",
                 "-profile:v", "main",
                 "-level", "4.1",
