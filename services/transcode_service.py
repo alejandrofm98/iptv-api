@@ -28,10 +28,11 @@ FFMPEG_RETRY_DELAY = 1.0
 class HlsSession:
     """Representa una sesión de transcodificación HLS activa"""
 
-    def __init__(self, session_id: str, url: str, output_dir: str):
+    def __init__(self, session_id: str, url: str, output_dir: str, profile: str = "default"):
         self.session_id = session_id
         self.url = url
         self.output_dir = output_dir
+        self.profile = profile
         self.playlist_path = os.path.join(output_dir, "playlist.m3u8")
         self.process: Optional[asyncio.subprocess.Process] = None
         self.created_at = time.time()
@@ -76,13 +77,19 @@ class TranscodeService:
         self._sessions: Dict[str, HlsSession] = {}
         os.makedirs(HLS_BASE_DIR, exist_ok=True)
 
-    async def get_or_create_session(self, username: str, stream_id: str, original_url: str) -> HlsSession:
+    async def get_or_create_session(
+        self,
+        username: str,
+        stream_id: str,
+        original_url: str,
+        profile: str = "default"
+    ) -> HlsSession:
         """
         Devuelve sesión activa existente para este usuario+stream, o crea una nueva.
         """
         # Buscar sesión activa reutilizable
         for sid, session in list(self._sessions.items()):
-            if session.url == original_url:
+            if session.url == original_url and session.profile == profile:
                 if not session.is_expired() and session.process and session.process.returncode is None:
                     session.touch()
                     return session
@@ -96,7 +103,12 @@ class TranscodeService:
         output_dir = os.path.join(HLS_BASE_DIR, session_id)
         os.makedirs(output_dir, exist_ok=True)
 
-        session = HlsSession(session_id=session_id, url=original_url, output_dir=output_dir)
+        session = HlsSession(
+            session_id=session_id,
+            url=original_url,
+            output_dir=output_dir,
+            profile=profile
+        )
         self._sessions[session_id] = session
 
         await self._start_ffmpeg(session)
@@ -109,11 +121,34 @@ class TranscodeService:
         cmd = [
             "ffmpeg",
             "-loglevel", "warning",
-            "-re",                              # leer a velocidad real
-            "-i", session.url,
-            "-c:v", "copy",                     # video sin recodificar
-            "-c:a", "aac",                      # audio siempre a AAC (compatible hls.js)
-            "-b:a", "128k",
+            "-re",
+            "-i", session.url
+        ]
+
+        if session.profile == "chromecast":
+            cmd.extend([
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-tune", "zerolatency",
+                "-profile:v", "main",
+                "-level", "4.1",
+                "-pix_fmt", "yuv420p",
+                "-g", "48",
+                "-keyint_min", "48",
+                "-sc_threshold", "0",
+                "-c:a", "aac",
+                "-ar", "48000",
+                "-ac", "2",
+                "-b:a", "128k"
+            ])
+        else:
+            cmd.extend([
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "128k"
+            ])
+
+        cmd.extend([
             "-f", "hls",
             "-hls_time", str(SEGMENT_DURATION),
             "-hls_list_size", str(HLS_LIST_SIZE),
@@ -121,7 +156,7 @@ class TranscodeService:
             "-hls_segment_filename", segment_pattern,
             "-hls_segment_type", "mpegts",
             session.playlist_path
-        ]
+        ])
 
         try:
             session.process = await asyncio.create_subprocess_exec(
@@ -129,7 +164,10 @@ class TranscodeService:
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE
             )
-            logger.info(f"🎬 HLS session started: {session.session_id}, pid={session.process.pid}")
+            logger.info(
+                f"🎬 HLS session started: {session.session_id}, "
+                f"profile={session.profile}, pid={session.process.pid}"
+            )
             asyncio.create_task(self._log_ffmpeg_stderr(session))
         except Exception as e:
             logger.error(f"❌ Error arrancando ffmpeg: {e}")

@@ -10,6 +10,7 @@ API FastAPI para gestión de usuarios IPTV, catálogo de contenido y proxy de st
 - Endpoints de calendario deportivo con canales resueltos
 - Playlist vía `/get.php`
 - Proxy de streams (`/live`, `/movie`, `/series`) con control de conexiones
+- Perfil HLS específico para Chromecast en directo
 - Transcodificación HLS bajo demanda para clientes web permitidos
 - Proxy de logos con fallback automático a placeholders
 
@@ -99,6 +100,7 @@ curl http://localhost:3010/api/admin/users \
 
 - Playlist: `/get.php?username=...&password=...`
 - Streams: `/live/{user}/{pass}/{id}`, `/movie/{user}/{pass}/{id}`, `/series/{user}/{pass}/{id}`
+- Chromecast live: `/cast/live/{user}/{pass}/{id}/playlist.m3u8`
 
 ## Endpoints principales
 
@@ -145,6 +147,7 @@ curl http://localhost:3010/api/admin/users \
 - `GET /get.php`
 - `GET /{live|movie|series}/{username}/{password}/{stream_id}`
 - `GET /{username}/{password}/{stream_id}` (atajo para `live`)
+- `GET /cast/live/{username}/{password}/{stream_id}/playlist.m3u8`
 - `GET /auth/validate-stream/{content_type}/{username}/{password}/{provider_id}`
 - `GET /internal/stream-url`
 

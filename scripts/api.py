@@ -771,7 +771,8 @@ async def _proxy_stream_handler(
     device_svc: DeviceService,
     stream_svc: StreamProxyService,
     transcode_svc: TranscodeService,
-    force_hls_for_live: bool = False
+    force_hls_for_live: bool = False,
+    hls_profile: str = 'default'
 ):
     """Handler interno para proxy de streams."""
     if content_type not in ['live', 'movie', 'series']:
@@ -830,7 +831,12 @@ async def _proxy_stream_handler(
         )
         hls_source_url = resolved_hls_url
 
-        session = await transcode_svc.get_or_create_session(username, clean_stream_id, hls_source_url)
+        session = await transcode_svc.get_or_create_session(
+            username,
+            clean_stream_id,
+            hls_source_url,
+            profile=hls_profile
+        )
         ready = await transcode_svc.wait_for_playlist(session)
         if not ready:
             raise BadRequestException("El stream no está disponible o tardó demasiado en arrancar")
@@ -909,7 +915,8 @@ async def proxy_stream_content(
         device_svc=device_svc,
         stream_svc=stream_svc,
         transcode_svc=transcode_svc,
-        force_hls_for_live=False
+        force_hls_for_live=False,
+        hls_profile='default'
     )
 
 
@@ -935,7 +942,35 @@ async def proxy_stream_channel(
         device_svc=device_svc,
         stream_svc=stream_svc,
         transcode_svc=transcode_svc,
-        force_hls_for_live=True
+        force_hls_for_live=True,
+        hls_profile='default'
+    )
+
+
+@app.get("/cast/live/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
+async def proxy_stream_channel_chromecast(
+    username: str,
+    password: str,
+    stream_id: str,
+    request: Request,
+    user_svc: UserService = Depends(get_user_service),
+    device_svc: DeviceService = Depends(get_device_service),
+    stream_svc: StreamProxyService = Depends(get_stream_service),
+    transcode_svc: TranscodeService = Depends(get_transcode_service)
+):
+    """Genera una playlist HLS compatible con Chromecast para canales en vivo."""
+    return await _proxy_stream_handler(
+        content_type='live',
+        username=username,
+        password=password,
+        stream_id=stream_id,
+        request=request,
+        user_svc=user_svc,
+        device_svc=device_svc,
+        stream_svc=stream_svc,
+        transcode_svc=transcode_svc,
+        force_hls_for_live=True,
+        hls_profile='chromecast'
     )
 
 
