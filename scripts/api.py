@@ -861,7 +861,7 @@ async def _proxy_stream_handler(
     stream_svc: StreamProxyService,
     transcode_svc: TranscodeService,
     force_hls_for_live: bool = False,
-    hls_profile: str = 'default'
+    hls_profile: str = 'web'
 ):
     """Handler interno para proxy de streams."""
     if content_type not in ['live', 'movie', 'series']:
@@ -1005,7 +1005,7 @@ async def proxy_stream_content(
         stream_svc=stream_svc,
         transcode_svc=transcode_svc,
         force_hls_for_live=False,
-        hls_profile='default'
+        hls_profile='web'
     )
 
 
@@ -1032,7 +1032,7 @@ async def proxy_stream_channel(
         stream_svc=stream_svc,
         transcode_svc=transcode_svc,
         force_hls_for_live=True,
-        hls_profile='default'
+        hls_profile='web'
     )
 
 

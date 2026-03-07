@@ -24,6 +24,7 @@ PLAYLIST_READY_TIMEOUT = 15 # segundos esperando el primer playlist
 FFMPEG_START_MAX_ATTEMPTS = 3
 FFMPEG_RETRY_DELAY = 1.0
 CHROMECAST_MIN_SEGMENTS = 3
+WEB_MIN_SEGMENTS = 2
 
 
 class HlsSession:
@@ -95,6 +96,18 @@ class TranscodeService:
     def __init__(self):
         self._sessions: Dict[str, HlsSession] = {}
         os.makedirs(HLS_BASE_DIR, exist_ok=True)
+
+    @staticmethod
+    def _requires_stable_startup(profile: str) -> bool:
+        return profile in {"chromecast", "web"}
+
+    @staticmethod
+    def _min_segments_for_profile(profile: str) -> int:
+        if profile == "chromecast":
+            return CHROMECAST_MIN_SEGMENTS
+        if profile == "web":
+            return WEB_MIN_SEGMENTS
+        return 1
 
     async def get_or_create_session(
         self,
@@ -171,6 +184,30 @@ class TranscodeService:
                 "-ac", "2",
                 "-b:a", "128k"
             ])
+        elif session.profile == "web":
+            cmd.extend([
+                "-map", "0:v:0",
+                "-map", "0:a:0?",
+                "-sn",
+                "-dn",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-tune", "zerolatency",
+                "-r", "25",
+                "-profile:v", "main",
+                "-pix_fmt", "yuv420p",
+                "-crf", "21",
+                "-maxrate", "8000k",
+                "-bufsize", "16000k",
+                "-g", "100",
+                "-keyint_min", "100",
+                "-sc_threshold", "0",
+                "-force_key_frames", f"expr:gte(t,n_forced*{SEGMENT_DURATION})",
+                "-c:a", "aac",
+                "-ar", "48000",
+                "-ac", "2",
+                "-b:a", "128k"
+            ])
         else:
             cmd.extend([
                 "-c:v", "copy",
@@ -234,10 +271,10 @@ class TranscodeService:
 
         while time.time() < deadline:
             if session.playlist_exists():
-                if session.profile != "chromecast":
+                if not self._requires_stable_startup(session.profile):
                     return True
 
-                if session.playlist_segment_count() >= CHROMECAST_MIN_SEGMENTS:
+                if session.playlist_segment_count() >= self._min_segments_for_profile(session.profile):
                     return True
 
             if not session.process:
