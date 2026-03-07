@@ -137,11 +137,7 @@ class TranscodeService:
 
     async def _start_ffmpeg(self, session: HlsSession):
         """Arranca ffmpeg para generar los segmentos HLS en disco"""
-        is_chromecast_profile = session.profile == "chromecast"
-        segment_pattern = os.path.join(
-            session.output_dir,
-            "segment%d.m4s" if is_chromecast_profile else "segment%d.ts"
-        )
+        segment_pattern = os.path.join(session.output_dir, "segment%d.ts")
 
         cmd = [
             "ffmpeg",
@@ -152,12 +148,13 @@ class TranscodeService:
             "-i", session.url
         ]
 
-        if is_chromecast_profile:
+        if session.profile == "chromecast":
             cmd.extend([
                 "-c:v", "libx264",
                 "-preset", "veryfast",
                 "-tune", "zerolatency",
-                "-vf", "scale=w=1280:h=720:force_original_aspect_ratio=decrease",
+                "-vf",
+                "scale=w=1280:h=720:force_original_aspect_ratio=decrease",
                 "-r", "25",
                 "-profile:v", "main",
                 "-level", "4.1",
@@ -169,8 +166,6 @@ class TranscodeService:
                 "-keyint_min", "100",
                 "-sc_threshold", "0",
                 "-force_key_frames", f"expr:gte(t,n_forced*{SEGMENT_DURATION})",
-                "-x264-params", "repeat-headers=1:scenecut=0:open-gop=0",
-                "-flags", "+cgop",
                 "-c:a", "aac",
                 "-ar", "48000",
                 "-ac", "2",
@@ -183,31 +178,15 @@ class TranscodeService:
                 "-b:a", "128k"
             ])
 
-        hls_flags = "delete_segments+append_list"
-        if is_chromecast_profile:
-            hls_flags = "append_list+independent_segments"
-
         cmd.extend([
             "-f", "hls",
             "-hls_time", str(SEGMENT_DURATION),
             "-hls_list_size", str(HLS_LIST_SIZE),
-            "-hls_flags", hls_flags,
+            "-hls_flags", "delete_segments+append_list",
+            "-hls_segment_type", "mpegts",
             "-hls_segment_filename", segment_pattern,
+            session.playlist_path
         ])
-
-        if is_chromecast_profile:
-            cmd.extend([
-                "-hls_segment_type", "fmp4",
-                "-hls_playlist_type", "event",
-                "-start_number", "1",
-                "-hls_fmp4_init_filename", "init.mp4",
-            ])
-        else:
-            cmd.extend([
-                "-hls_segment_type", "mpegts",
-            ])
-
-        cmd.append(session.playlist_path)
 
         try:
             session.process = await asyncio.create_subprocess_exec(

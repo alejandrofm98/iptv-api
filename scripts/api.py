@@ -794,8 +794,8 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
     if not file_path:
         raise NotFoundException("Sesión HLS", session_id)
 
-    with open(file_path, "r", encoding="utf-8") as playlist_file:
-        playlist_content = playlist_file.read()
+    with open(file_path, "r", encoding="utf-8") as f:
+        playlist_content = f.read()
 
     forwarded_proto = request.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
     forwarded_host = (
@@ -804,32 +804,24 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
         ""
     )
 
-    # Filtrar hosts internos Docker — nunca usar host interno como base_url
     internal_hosts = ["iptv-api", "localhost", "127.0.0.1"]
     is_internal = any(h in forwarded_host for h in internal_hosts)
 
     if forwarded_host and not is_internal:
         base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
     else:
-        # Fallback siempre al dominio público configurado
         base_url = settings.public_domain.rstrip("/")
 
-    # Forzar HTTPS siempre para Chromecast
     if base_url.startswith("http://"):
         base_url = "https://" + base_url[len("http://"):]
 
-    logger.info(f"📺 Cast playlist base_url={base_url}, session={session_id}, "
-                f"forwarded_host={forwarded_host}, proto={forwarded_proto}")
+    logger.info(
+        f"📺 Cast playlist base_url={base_url}, session={session_id}, "
+        f"forwarded_host={forwarded_host}, proto={forwarded_proto}"
+    )
 
     rewritten_lines = []
     for line in playlist_content.splitlines():
-        if line == "#EXT-X-DISCONTINUITY":
-            continue
-        if line.startswith('#EXT-X-MAP:URI="'):
-            rewritten_lines.append(
-                f'#EXT-X-MAP:URI="{base_url}/cast/hls/{session_id}/init.mp4"'
-            )
-            continue
         if line and not line.startswith("#"):
             rewritten_lines.append(f"{base_url}/cast/hls/{session_id}/{line}")
         else:
@@ -837,13 +829,12 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
 
     return PlainTextResponse(
         content="\n".join(rewritten_lines),
-        media_type="application/x-mpegURL",
+        media_type="application/vnd.apple.mpegurl",
         headers={
             "Cache-Control": "no-cache, no-store",
             **_build_cast_cors_headers(request),
         }
     )
-
 
 def _build_cast_master_playlist(session_id: str, request: Request) -> PlainTextResponse:
     forwarded_proto = request.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
