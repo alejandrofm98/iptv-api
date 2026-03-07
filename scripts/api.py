@@ -757,6 +757,42 @@ async def hls_segment(
     )
 
 
+def _build_cast_playlist_response(session_id: str, request: Request, transcode_svc: TranscodeService) -> PlainTextResponse:
+    """Sirve un playlist HLS con URLs absolutas para Chromecast."""
+    file_path = transcode_svc.get_file_path(session_id, "playlist.m3u8")
+    if not file_path:
+        raise NotFoundException("Sesión HLS", session_id)
+
+    with open(file_path, "r", encoding="utf-8") as playlist_file:
+        playlist_content = playlist_file.read()
+
+    base_url = str(request.base_url).rstrip("/")
+    rewritten_lines = []
+    for line in playlist_content.splitlines():
+        if line and not line.startswith("#"):
+            rewritten_lines.append(f"{base_url}/cast/hls/{session_id}/{line}")
+        else:
+            rewritten_lines.append(line)
+
+    return PlainTextResponse(
+        content="\n".join(rewritten_lines),
+        media_type="application/vnd.apple.mpegurl",
+        headers={
+            "Cache-Control": "no-cache, no-store"
+        }
+    )
+
+
+@app.get("/cast/hls/{session_id}/{segment}", tags=["HLS", "Chromecast"])
+async def cast_hls_segment(
+    session_id: str,
+    segment: str,
+    transcode_svc: TranscodeService = Depends(get_transcode_service)
+):
+    """Sirve segmentos HLS para Chromecast."""
+    return await hls_segment(session_id=session_id, segment=segment, transcode_svc=transcode_svc)
+
+
 # ============================================
 # API: Stream Proxy
 # ============================================
@@ -959,19 +995,50 @@ async def proxy_stream_channel_chromecast(
     transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
     """Genera una playlist HLS compatible con Chromecast para canales en vivo."""
-    return await _proxy_stream_handler(
-        content_type='live',
-        username=username,
-        password=password,
-        stream_id=stream_id,
-        request=request,
-        user_svc=user_svc,
-        device_svc=device_svc,
-        stream_svc=stream_svc,
-        transcode_svc=transcode_svc,
-        force_hls_for_live=True,
-        hls_profile='chromecast'
+    auth = user_svc.validate_credentials(username, password)
+
+    if not auth.valid:
+        raise UnauthorizedException(auth.message)
+
+    if not auth.can_connect:
+        raise ForbiddenException(auth.message)
+
+    user_agent = request.headers.get('User-Agent', 'Unknown')
+    ip_address = request.client.host if request.client else 'Unknown'
+
+    success, message, _ = device_svc.register_or_update_session(
+        user_id=auth.user_id,
+        user_agent=user_agent,
+        ip_address=ip_address,
+        max_connections=auth.max_devices
     )
+
+    if not success:
+        raise TooManyRequestsException(message)
+
+    clean_stream_id = stream_id.split('.')[0]
+    original_url = stream_svc.get_original_url(clean_stream_id, 'live')
+
+    if not original_url:
+        raise NotFoundException("Stream", stream_id)
+
+    hls_source_url = await stream_svc.resolve_redirects(
+        original_url,
+        use_cache=False,
+        use_proxy=True
+    )
+
+    session = await transcode_svc.get_or_create_session(
+        username,
+        clean_stream_id,
+        hls_source_url,
+        profile='chromecast'
+    )
+    ready = await transcode_svc.wait_for_playlist(session)
+    if not ready:
+        raise BadRequestException("El stream no está disponible o tardó demasiado en arrancar")
+
+    return _build_cast_playlist_response(session.session_id, request, transcode_svc)
 
 
 # ============================================

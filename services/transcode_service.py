@@ -148,11 +148,15 @@ class TranscodeService:
                 "-b:a", "128k"
             ])
 
+        hls_flags = "delete_segments+append_list"
+        if session.profile == "chromecast":
+            hls_flags += "+independent_segments"
+
         cmd.extend([
             "-f", "hls",
             "-hls_time", str(SEGMENT_DURATION),
             "-hls_list_size", str(HLS_LIST_SIZE),
-            "-hls_flags", "delete_segments+append_list",
+            "-hls_flags", hls_flags,
             "-hls_segment_filename", segment_pattern,
             "-hls_segment_type", "mpegts",
             session.playlist_path
