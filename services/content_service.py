@@ -5,7 +5,8 @@ Con soporte para paginación estándar y métodos genéricos
 from datetime import datetime
 import time
 from typing import Optional, List, Dict, Any, Tuple
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
+import requests
 from supabase import Client
 
 from utils.config import get_settings
@@ -27,6 +28,7 @@ class ContentService:
     _cache: Dict[str, Tuple[Any, float]] = {}
     _CACHE_TTL_SECONDS = 300
     REPLAY_EMBED_BASE_URL = 'https://dailywrestling.cc/embed'
+    REPLAY_METADATA_EMBEDDER = 'https://dailywrestling.cc/'
 
     @classmethod
     def _get_cached(cls, key: str) -> Optional[Any]:
@@ -644,6 +646,51 @@ class ContentService:
             return self._parse_replay_item(result.data[0])
         return None
 
+    def get_replay_source(self, slug: str, source_index: int, button_index: int) -> Optional[Dict[str, Any]]:
+        """Obtiene una fuente concreta de replay por slug e indices."""
+        replay = self.get_replay(slug)
+        if not replay:
+            return None
+
+        for group in replay.get('video_sources') or []:
+            for source in group.get('sources') or []:
+                if source.get('source_index') == source_index and source.get('button_index') == button_index:
+                    return source
+
+        return None
+
+    def resolve_replay_source_stream_url(
+        self,
+        slug: str,
+        source_index: int,
+        button_index: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Resuelve una URL fresca para una fuente de replay."""
+        source = self.get_replay_source(slug, source_index, button_index)
+        if not source:
+            return None
+
+        provider = str(source.get('provider') or '').lower()
+        provider_access_id = source.get('provider_access_id')
+        provider_url = source.get('provider_url')
+        stream_url = source.get('stream_url')
+        stream_format = source.get('stream_format')
+
+        if provider == 'dailymotion' and provider_access_id:
+            refreshed = self._resolve_dailymotion_stream(str(provider_access_id))
+            if refreshed:
+                return refreshed
+
+        direct_url = provider_url or stream_url
+        if direct_url:
+            return {
+                'stream_url': direct_url,
+                'stream_format': stream_format or self._guess_stream_format(str(direct_url)),
+                'provider': provider or self._provider_from_url(str(direct_url)),
+            }
+
+        return None
+
     @staticmethod
     def _parse_replay_item(row: Dict[str, Any]) -> Dict[str, Any]:
         """Normaliza un replay de Supabase para respuesta API."""
@@ -754,6 +801,71 @@ class ContentService:
     @staticmethod
     def _reverse_category_name(category_name: str) -> str:
         return str(category_name or '').strip().lower().replace(' ', '')[::-1]
+
+    @classmethod
+    def _resolve_dailymotion_stream(cls, provider_access_id: str) -> Optional[Dict[str, Any]]:
+        metadata_url = f'https://www.dailymotion.com/player/metadata/video/{provider_access_id}'
+        try:
+            response = requests.get(
+                metadata_url,
+                params={'embedder': cls.REPLAY_METADATA_EMBEDDER},
+                headers={'User-Agent': 'Mozilla/5.0'},
+                timeout=20,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            return None
+
+        source = cls._pick_best_dailymotion_quality(payload.get('qualities') or {})
+        if not source:
+            return None
+
+        return {
+            'stream_url': source.get('url'),
+            'stream_format': source.get('type') or 'application/x-mpegURL',
+            'provider': 'dailymotion',
+            'provider_video_id': payload.get('id'),
+        }
+
+    @staticmethod
+    def _pick_best_dailymotion_quality(
+        quality_sources: Dict[str, List[Dict[str, Any]]]
+    ) -> Optional[Dict[str, Any]]:
+        numeric_sources = []
+        for label, sources in quality_sources.items():
+            if str(label).isdigit() and sources:
+                numeric_sources.append((int(str(label)), sources[0]))
+
+        if numeric_sources:
+            numeric_sources.sort(key=lambda item: item[0], reverse=True)
+            return numeric_sources[0][1]
+
+        auto_sources = quality_sources.get('auto') or []
+        if auto_sources:
+            return auto_sources[0]
+
+        for sources in quality_sources.values():
+            if sources:
+                return sources[0]
+
+        return None
+
+    @staticmethod
+    def _guess_stream_format(url: str) -> str:
+        lowered = url.lower()
+        if '.m3u8' in lowered:
+            return 'application/x-mpegURL'
+        if '.mp4' in lowered:
+            return 'video/mp4'
+        return 'application/octet-stream'
+
+    @staticmethod
+    def _provider_from_url(url: str) -> str:
+        parsed = urlparse(url)
+        if 'dailymotion' in parsed.netloc or 'dmcdn' in parsed.netloc:
+            return 'dailymotion'
+        return parsed.netloc or 'unknown'
 
     def get_episodes_by_serie_name(
         self,

@@ -691,6 +691,29 @@ async def proxy_replay_stream(
         raise HTTPException(status_code=500, detail=f"Error proxy replay: {e}")
 
 
+@app.get("/api/replays/{slug}/stream/{source_index}/{button_index}", tags=["Replays"])
+async def proxy_replay_source_stream(
+    slug: str,
+    source_index: int,
+    button_index: int,
+    request: Request,
+    token: str = Query(..., description="JWT para autorizar el proxy"),
+    content_svc: ContentService = Depends(get_content_service),
+):
+    """Resuelve una URL fresca para una fuente de replay y la proxya."""
+    validate_stream_token(token)
+
+    resolved = content_svc.resolve_replay_source_stream_url(slug, source_index, button_index)
+    if not resolved or not resolved.get('stream_url'):
+        raise NotFoundException("Replay source", f"{slug}:{source_index}:{button_index}")
+
+    return await proxy_replay_stream(
+        request=request,
+        url=resolved['stream_url'],
+        token=token,
+    )
+
+
 # ============================================
 # API: Calendar
 # ============================================
