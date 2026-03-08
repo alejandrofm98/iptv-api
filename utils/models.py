@@ -2,7 +2,7 @@
 Modelos Pydantic para IPTV API
 """
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -212,3 +212,46 @@ class CalendarDayResponse(BaseModel):
     fecha: str
     total_eventos: int
     eventos: List[CalendarEvent]
+
+
+# ============================================
+# Replay Models
+# ============================================
+
+class ReplaySource(BaseModel):
+    """Fuente individual disponible para un replay"""
+    label: str
+    token: str
+    token_enc: Optional[str] = None
+
+
+class ReplaySourceGroup(BaseModel):
+    """Grupo de fuentes de un replay"""
+    group: str
+    sources: List[ReplaySource]
+
+
+class ReplayItem(BaseModel):
+    """Replay UFC normalizado para la web"""
+    slug: str
+    source_site: str
+    source_id: Optional[int] = None
+    category: Optional[str] = None
+    title: str
+    event_name: Optional[str] = None
+    event_type: Optional[str] = None
+    event_date: Optional[str] = None
+    published_at: Optional[datetime] = None
+    modified_at: Optional[datetime] = None
+    post_url: str
+    featured_image_url: Optional[str] = None
+    excerpt: Optional[str] = None
+    description: Optional[str] = None
+    video_sources: List[ReplaySourceGroup] = []
+    match_card: List[str] = []
+    raw_payload: Dict[str, Any] = {}
+
+
+class ReplayStats(BaseModel):
+    """Estadisticas de replays"""
+    total_replays: int

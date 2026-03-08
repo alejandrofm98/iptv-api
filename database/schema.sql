@@ -121,3 +121,40 @@ CREATE TABLE config (
   description TEXT,
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- ============================================
+-- 7. Tabla de replays UFC
+-- ============================================
+CREATE TABLE IF NOT EXISTS replays (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug TEXT NOT NULL UNIQUE,
+    source_site TEXT NOT NULL DEFAULT 'watch-wrestling.eu',
+    source_id BIGINT UNIQUE,
+    category TEXT,
+    title TEXT NOT NULL,
+    event_name TEXT,
+    event_type TEXT,
+    event_date DATE,
+    published_at TIMESTAMP WITH TIME ZONE,
+    modified_at TIMESTAMP WITH TIME ZONE,
+    post_url TEXT NOT NULL,
+    featured_image_url TEXT,
+    excerpt TEXT,
+    description TEXT,
+    video_sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+    match_card JSONB NOT NULL DEFAULT '[]'::jsonb,
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_replays_source_site ON replays(source_site);
+CREATE INDEX IF NOT EXISTS idx_replays_event_date ON replays(event_date DESC);
+CREATE INDEX IF NOT EXISTS idx_replays_published_at ON replays(published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_replays_event_type ON replays(event_type);
+
+DROP TRIGGER IF EXISTS update_replays_updated_at ON replays;
+CREATE TRIGGER update_replays_updated_at
+    BEFORE UPDATE ON replays
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();

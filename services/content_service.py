@@ -18,7 +18,8 @@ class ContentService:
     TABLE_MAP = {
         'channels': 'channels',
         'movies': 'movies',
-        'series': 'series'
+        'series': 'series',
+        'replays': 'replays'
     }
 
     # Cache estático para countries y groups (TTL: 5 minutos)
@@ -588,11 +589,80 @@ class ContentService:
         channels = self.supabase.table('channels').select('id', count='exact').execute()
         movies = self.supabase.table('movies').select('id', count='exact').execute()
         series = self.supabase.table('series').select('id', count='exact').execute()
+        replays = self.supabase.table('replays').select('id', count='exact').execute()
 
         return {
             'channels': channels.count or 0,
             'movies': movies.count or 0,
-            'series': series.count or 0
+            'series': series.count or 0,
+            'replays': replays.count or 0
+        }
+
+    def get_replays(
+        self,
+        page: int = 1,
+        page_size: int = 24,
+        event_type: Optional[str] = None,
+        search: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Obtiene lista paginada de replays."""
+        query = self.supabase.table('replays').select('*', count='exact')
+
+        if event_type:
+            query = query.eq('event_type', event_type)
+
+        if search:
+            query = query.or_(
+                f"title.ilike.%{search}%,event_name.ilike.%{search}%,description.ilike.%{search}%"
+            )
+
+        offset = self._calculate_offset(page, page_size)
+        query = query.order('event_date', desc=True).order('published_at', desc=True)
+        query = query.range(offset, offset + page_size - 1)
+
+        result = query.execute()
+
+        total = result.count or 0
+        pages = (total + page_size - 1) // page_size
+
+        return {
+            'items': [self._parse_replay_item(row) for row in (result.data or [])],
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'pages': pages,
+            'has_next': page < pages,
+            'has_prev': page > 1
+        }
+
+    def get_replay(self, slug: str) -> Optional[Dict[str, Any]]:
+        """Obtiene un replay por slug."""
+        result = self.supabase.table('replays').select('*').eq('slug', slug).limit(1).execute()
+        if result.data:
+            return self._parse_replay_item(result.data[0])
+        return None
+
+    @staticmethod
+    def _parse_replay_item(row: Dict[str, Any]) -> Dict[str, Any]:
+        """Normaliza un replay de Supabase para respuesta API."""
+        return {
+            'slug': row.get('slug', ''),
+            'source_site': row.get('source_site', ''),
+            'source_id': row.get('source_id'),
+            'category': row.get('category'),
+            'title': row.get('title', ''),
+            'event_name': row.get('event_name'),
+            'event_type': row.get('event_type'),
+            'event_date': row.get('event_date'),
+            'published_at': row.get('published_at'),
+            'modified_at': row.get('modified_at'),
+            'post_url': row.get('post_url', ''),
+            'featured_image_url': row.get('featured_image_url'),
+            'excerpt': row.get('excerpt'),
+            'description': row.get('description'),
+            'video_sources': row.get('video_sources') or [],
+            'match_card': row.get('match_card') or [],
+            'raw_payload': row.get('raw_payload') or {},
         }
 
     def get_episodes_by_serie_name(

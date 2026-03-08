@@ -43,7 +43,17 @@ from services import UserService, DeviceService, PlaylistService, StreamProxySer
 from services.transcode_service import TranscodeService
 from services.postgres_service import get_postgres_service
 from utils.config import get_settings
-from utils.models import UserCreate, UserUpdate, ValidateCredentials, AuthResult, SystemStats, Token, CalendarDayResponse, CalendarEvent
+from utils.models import (
+    UserCreate,
+    UserUpdate,
+    ValidateCredentials,
+    AuthResult,
+    SystemStats,
+    Token,
+    CalendarDayResponse,
+    CalendarEvent,
+    ReplayItem,
+)
 from utils.constants import JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 from utils.exceptions import (
     NotFoundException, UnauthorizedException, ForbiddenException,
@@ -528,8 +538,40 @@ async def get_content_stats(
         "channels": counts['channels'],
         "movies": counts['movies'],
         "series": counts['series'],
-        "total": counts['channels'] + counts['movies'] + counts['series']
+        "replays": counts.get('replays', 0),
+        "total": counts['channels'] + counts['movies'] + counts['series'] + counts.get('replays', 0)
     }
+
+
+@app.get("/api/replays", tags=["Replays"])
+async def get_replays(
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(24, ge=1, le=100, description="Items por página"),
+    event_type: Optional[str] = Query(None, description="Filtrar por tipo de evento"),
+    search: Optional[str] = Query(None, description="Buscar por título o descripción"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service)
+):
+    """Obtiene lista paginada de replays. Requiere Bearer Token."""
+    return content_svc.get_replays(
+        page=page,
+        page_size=page_size,
+        event_type=event_type,
+        search=search,
+    )
+
+
+@app.get("/api/replays/{slug}", response_model=ReplayItem, tags=["Replays"])
+async def get_replay(
+    slug: str,
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service)
+):
+    """Obtiene un replay específico por slug. Requiere Bearer Token."""
+    item = content_svc.get_replay(slug)
+    if not item:
+        raise NotFoundException("Replay", slug)
+    return item
 
 
 # ============================================
