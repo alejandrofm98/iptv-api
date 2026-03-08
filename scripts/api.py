@@ -12,6 +12,7 @@ import asyncio
 import gzip
 import logging
 from contextlib import asynccontextmanager
+from urllib.parse import quote, urljoin
 
 from starlette.responses import RedirectResponse
 
@@ -32,6 +33,7 @@ from typing import Optional
 logging.getLogger("httpx").setLevel(logging.DEBUG)
 
 import uvicorn
+import requests
 from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 # ✏️ CAMBIO 1: añadido FileResponse para servir ficheros HLS
@@ -193,6 +195,41 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def validate_stream_token(token: str) -> dict:
+    """Valida un JWT para uso en proxy de streaming."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        role: str = payload.get("role")
+
+        if user_id is None or role is None:
+            raise UnauthorizedException("Token inválido")
+
+        return {"id": user_id, "role": role}
+    except JWTError:
+        raise UnauthorizedException("Token inválido o expirado")
+
+
+def build_replay_proxy_url(target_url: str, token: str) -> str:
+    encoded_url = quote(target_url, safe='')
+    encoded_token = quote(token, safe='')
+    return f"/api/replay-proxy?url={encoded_url}&token={encoded_token}"
+
+
+def rewrite_m3u8_content(content: str, source_url: str, token: str) -> str:
+    rewritten_lines = []
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#'):
+            rewritten_lines.append(raw_line)
+            continue
+
+        absolute_url = urljoin(source_url, line)
+        rewritten_lines.append(build_replay_proxy_url(absolute_url, token))
+
+    return '\n'.join(rewritten_lines)
 
 
 # ============================================
@@ -572,6 +609,86 @@ async def get_replay(
     if not item:
         raise NotFoundException("Replay", slug)
     return item
+
+
+@app.get("/api/replay-proxy", tags=["Replays"])
+async def proxy_replay_stream(
+    request: Request,
+    url: str = Query(..., description="URL remota del manifiesto o segmento"),
+    token: str = Query(..., description="JWT para autorizar el proxy"),
+):
+    """Proxy de manifests HLS y ficheros directos para evitar problemas CORS en frontend."""
+    validate_stream_token(token)
+
+    lowered_url = url.lower()
+    range_headers = {}
+    request_range = request.headers.get('range')
+    if request_range:
+        range_headers['Range'] = request_range
+
+    try:
+        if lowered_url.endswith('.m3u8'):
+            upstream = requests.get(
+                url,
+                timeout=30,
+                headers={
+                    'User-Agent': 'Mozilla/5.0',
+                    'Referer': 'https://www.dailymotion.com/',
+                    'Origin': 'https://www.dailymotion.com',
+                },
+            )
+            upstream.raise_for_status()
+            rewritten = rewrite_m3u8_content(upstream.text, url, token)
+            return Response(
+                content=rewritten,
+                media_type='application/vnd.apple.mpegurl',
+                headers={
+                    'Cache-Control': 'no-store',
+                },
+            )
+
+        upstream = requests.get(
+            url,
+            stream=True,
+            timeout=60,
+            headers={
+                'User-Agent': 'Mozilla/5.0',
+                'Referer': 'https://www.dailymotion.com/',
+                'Origin': 'https://www.dailymotion.com',
+                **range_headers,
+            },
+        )
+        upstream.raise_for_status()
+        media_type = upstream.headers.get('content-type', 'application/octet-stream').split(';')[0]
+        response_headers = {
+            'Cache-Control': 'no-store',
+        }
+        content_length = upstream.headers.get('content-length')
+        if content_length:
+            response_headers['Content-Length'] = content_length
+        content_range = upstream.headers.get('content-range')
+        if content_range:
+            response_headers['Content-Range'] = content_range
+        accept_ranges = upstream.headers.get('accept-ranges')
+        if accept_ranges:
+            response_headers['Accept-Ranges'] = accept_ranges
+
+        def stream_iterator():
+            with upstream:
+                for chunk in upstream.iter_content(chunk_size=1024 * 256):
+                    if chunk:
+                        yield chunk
+
+        return StreamingResponse(
+            stream_iterator(),
+            media_type=media_type,
+            status_code=upstream.status_code,
+            headers=response_headers,
+        )
+    except requests.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Error remoto proxy replay: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error proxy replay: {e}")
 
 
 # ============================================
