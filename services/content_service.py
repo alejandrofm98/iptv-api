@@ -712,6 +712,14 @@ class ContentService:
                     'source_index': source_index,
                     'button_index': button_index,
                     'embed_url': embed_url,
+                    'provider': source.get('provider'),
+                    'provider_url': source.get('provider_url'),
+                    'provider_access_id': source.get('provider_access_id'),
+                    'provider_video_id': source.get('provider_video_id'),
+                    'provider_playlist_id': source.get('provider_playlist_id'),
+                    'stream_url': source.get('stream_url'),
+                    'stream_format': source.get('stream_format'),
+                    'stream_resolved_at': source.get('stream_resolved_at'),
                 })
 
             normalized_groups.append({

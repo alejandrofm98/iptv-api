@@ -226,6 +226,14 @@ class ReplaySource(BaseModel):
     source_index: Optional[int] = None
     button_index: Optional[int] = None
     embed_url: Optional[str] = None
+    provider: Optional[str] = None
+    provider_url: Optional[str] = None
+    provider_access_id: Optional[str] = None
+    provider_video_id: Optional[str] = None
+    provider_playlist_id: Optional[str] = None
+    stream_url: Optional[str] = None
+    stream_format: Optional[str] = None
+    stream_resolved_at: Optional[datetime] = None
 
 
 class ReplaySourceGroup(BaseModel):
