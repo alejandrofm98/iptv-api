@@ -223,6 +223,9 @@ class ReplaySource(BaseModel):
     label: str
     token: str
     token_enc: Optional[str] = None
+    source_index: Optional[int] = None
+    button_index: Optional[int] = None
+    embed_url: Optional[str] = None
 
 
 class ReplaySourceGroup(BaseModel):

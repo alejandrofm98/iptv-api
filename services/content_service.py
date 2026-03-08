@@ -2,6 +2,7 @@
 Servicio de gestión de contenido (canales, películas, series)
 Con soporte para paginación estándar y métodos genéricos
 """
+from datetime import datetime
 import time
 from typing import Optional, List, Dict, Any, Tuple
 from urllib.parse import urlparse
@@ -25,6 +26,7 @@ class ContentService:
     # Cache estático para countries y groups (TTL: 5 minutos)
     _cache: Dict[str, Tuple[Any, float]] = {}
     _CACHE_TTL_SECONDS = 300
+    REPLAY_EMBED_BASE_URL = 'https://dailywrestling.cc/embed'
 
     @classmethod
     def _get_cached(cls, key: str) -> Optional[Any]:
@@ -645,6 +647,13 @@ class ContentService:
     @staticmethod
     def _parse_replay_item(row: Dict[str, Any]) -> Dict[str, Any]:
         """Normaliza un replay de Supabase para respuesta API."""
+        video_sources = ContentService._normalize_replay_sources(
+            row.get('video_sources') or [],
+            row.get('event_date'),
+            row.get('category'),
+            row.get('raw_payload') or {},
+        )
+
         return {
             'slug': row.get('slug', ''),
             'source_site': row.get('source_site', ''),
@@ -660,10 +669,83 @@ class ContentService:
             'featured_image_url': row.get('featured_image_url'),
             'excerpt': row.get('excerpt'),
             'description': row.get('description'),
-            'video_sources': row.get('video_sources') or [],
+            'video_sources': video_sources,
             'match_card': row.get('match_card') or [],
             'raw_payload': row.get('raw_payload') or {},
         }
+
+    @classmethod
+    def _normalize_replay_sources(
+        cls,
+        video_sources: List[Dict[str, Any]],
+        event_date: Optional[str],
+        category: Optional[str],
+        raw_payload: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        embed_api = raw_payload.get('embed_api') or {}
+        category_name = embed_api.get('category_name') or cls._reverse_category_name(category or 'ufc')
+        select_post = embed_api.get('select_post') or 1
+
+        normalized_groups: List[Dict[str, Any]] = []
+        fallback_group_index = 0
+
+        for group in video_sources:
+            fallback_group_index += 1
+            group_name = group.get('group', '')
+            sources = []
+
+            for fallback_button_index, source in enumerate(group.get('sources') or [], start=1):
+                source_index = source.get('source_index') or fallback_group_index
+                button_index = source.get('button_index') or fallback_button_index
+                embed_url = source.get('embed_url') or cls._build_replay_embed_url(
+                    category_name=category_name,
+                    event_date=event_date,
+                    select_post=select_post,
+                    source_index=source_index,
+                    button_index=button_index,
+                )
+
+                sources.append({
+                    'label': source.get('label', ''),
+                    'token': source.get('token', ''),
+                    'token_enc': source.get('token_enc'),
+                    'source_index': source_index,
+                    'button_index': button_index,
+                    'embed_url': embed_url,
+                })
+
+            normalized_groups.append({
+                'group': group_name,
+                'sources': sources,
+            })
+
+        return normalized_groups
+
+    @classmethod
+    def _build_replay_embed_url(
+        cls,
+        category_name: str,
+        event_date: Optional[str],
+        select_post: int,
+        source_index: int,
+        button_index: int,
+    ) -> Optional[str]:
+        if not event_date:
+            return None
+
+        try:
+            formatted_date = datetime.fromisoformat(str(event_date)).strftime('%m-%d-%Y')
+        except ValueError:
+            return None
+
+        return (
+            f"{cls.REPLAY_EMBED_BASE_URL}/{category_name}/{formatted_date}/select-post-{select_post}/"
+            f"{source_index}/{button_index}"
+        )
+
+    @staticmethod
+    def _reverse_category_name(category_name: str) -> str:
+        return str(category_name or '').strip().lower().replace(' ', '')[::-1]
 
     def get_episodes_by_serie_name(
         self,
