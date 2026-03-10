@@ -5,6 +5,7 @@ Con soporte para paginación estándar y métodos genéricos
 from datetime import datetime
 import time
 from typing import Optional, List, Dict, Any, Tuple
+import re
 from urllib.parse import parse_qs, urlparse
 import requests
 from supabase import Client
@@ -621,7 +622,7 @@ class ContentService:
             )
 
         offset = self._calculate_offset(page, page_size)
-        query = query.order('event_date', desc=True).order('published_at', desc=True)
+        query = query.order('event_date', desc=True).order('created_at', desc=True)
         query = query.range(offset, offset + page_size - 1)
 
         result = query.execute()
@@ -676,8 +677,12 @@ class ContentService:
         stream_url = source.get('stream_url')
         stream_format = source.get('stream_format')
 
-        if provider == 'dailymotion' and provider_access_id:
-            refreshed = self._resolve_dailymotion_stream(str(provider_access_id))
+        dailymotion_access_id = provider_access_id or self._extract_dailymotion_access_id(
+            str(provider_url or stream_url or '')
+        )
+
+        if (provider == 'dailymotion' or dailymotion_access_id) and dailymotion_access_id:
+            refreshed = self._resolve_dailymotion_stream(str(dailymotion_access_id))
             if refreshed:
                 return refreshed
 
@@ -697,28 +702,20 @@ class ContentService:
         video_sources = ContentService._normalize_replay_sources(
             row.get('video_sources') or [],
             row.get('event_date'),
-            row.get('category'),
-            row.get('raw_payload') or {},
         )
 
         return {
             'slug': row.get('slug', ''),
             'source_site': row.get('source_site', ''),
-            'source_id': row.get('source_id'),
-            'category': row.get('category'),
             'title': row.get('title', ''),
             'event_name': row.get('event_name'),
             'event_type': row.get('event_type'),
             'event_date': row.get('event_date'),
-            'published_at': row.get('published_at'),
-            'modified_at': row.get('modified_at'),
             'post_url': row.get('post_url', ''),
             'featured_image_url': row.get('featured_image_url'),
-            'excerpt': row.get('excerpt'),
             'description': row.get('description'),
             'video_sources': video_sources,
             'match_card': row.get('match_card') or [],
-            'raw_payload': row.get('raw_payload') or {},
         }
 
     @classmethod
@@ -726,39 +723,22 @@ class ContentService:
         cls,
         video_sources: List[Dict[str, Any]],
         event_date: Optional[str],
-        category: Optional[str],
-        raw_payload: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
-        embed_api = raw_payload.get('embed_api') or {}
-        category_name = embed_api.get('category_name') or cls._reverse_category_name(category or 'ufc')
-        select_post = embed_api.get('select_post') or 1
-
         normalized_groups: List[Dict[str, Any]] = []
-        fallback_group_index = 0
 
         for group in video_sources:
-            fallback_group_index += 1
             group_name = group.get('group', '')
             sources = []
 
-            for fallback_button_index, source in enumerate(group.get('sources') or [], start=1):
-                source_index = source.get('source_index') or fallback_group_index
-                button_index = source.get('button_index') or fallback_button_index
-                embed_url = source.get('embed_url') or cls._build_replay_embed_url(
-                    category_name=category_name,
-                    event_date=event_date,
-                    select_post=select_post,
-                    source_index=source_index,
-                    button_index=button_index,
-                )
-
+            for source in (group.get('sources') or []):
                 sources.append({
                     'label': source.get('label', ''),
                     'token': source.get('token', ''),
                     'token_enc': source.get('token_enc'),
-                    'source_index': source_index,
-                    'button_index': button_index,
-                    'embed_url': embed_url,
+                    'source_index': source.get('source_index'),
+                    'button_index': source.get('button_index'),
+                    'embed_url': source.get('embed_url'),
+                    'web_embed_url': source.get('web_embed_url'),
                     'provider': source.get('provider'),
                     'provider_url': source.get('provider_url'),
                     'provider_access_id': source.get('provider_access_id'),
@@ -866,6 +846,23 @@ class ContentService:
         if 'dailymotion' in parsed.netloc or 'dmcdn' in parsed.netloc:
             return 'dailymotion'
         return parsed.netloc or 'unknown'
+
+    @staticmethod
+    def _extract_dailymotion_access_id(url: str) -> Optional[str]:
+        if not url:
+            return None
+
+        patterns = [
+            r'/embed/video/([A-Za-z0-9]+)',
+            r'/manifest/video/([A-Za-z0-9]+)\.m3u8',
+            r'/video/([A-Za-z0-9]+)\.m3u8',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+
+        return None
 
     def get_episodes_by_serie_name(
         self,

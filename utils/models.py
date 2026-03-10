@@ -221,11 +221,12 @@ class CalendarDayResponse(BaseModel):
 class ReplaySource(BaseModel):
     """Fuente individual disponible para un replay"""
     label: str
-    token: str
+    token: Optional[str] = None
     token_enc: Optional[str] = None
     source_index: Optional[int] = None
     button_index: Optional[int] = None
     embed_url: Optional[str] = None
+    web_embed_url: Optional[str] = None
     provider: Optional[str] = None
     provider_url: Optional[str] = None
     provider_access_id: Optional[str] = None
@@ -246,21 +247,15 @@ class ReplayItem(BaseModel):
     """Replay UFC normalizado para la web"""
     slug: str
     source_site: str
-    source_id: Optional[int] = None
-    category: Optional[str] = None
     title: str
     event_name: Optional[str] = None
     event_type: Optional[str] = None
     event_date: Optional[str] = None
-    published_at: Optional[datetime] = None
-    modified_at: Optional[datetime] = None
     post_url: str
     featured_image_url: Optional[str] = None
-    excerpt: Optional[str] = None
     description: Optional[str] = None
     video_sources: List[ReplaySourceGroup] = []
     match_card: List[str] = []
-    raw_payload: Dict[str, Any] = {}
 
 
 class ReplayStats(BaseModel):

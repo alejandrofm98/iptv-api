@@ -232,6 +232,28 @@ def rewrite_m3u8_content(content: str, source_url: str, token: str) -> str:
     return '\n'.join(rewritten_lines)
 
 
+def build_replay_upstream_headers(url: str, request: Request) -> dict:
+    lowered_url = url.lower()
+    headers = {
+        'User-Agent': 'PostmanRuntime/7.43.0',
+        'Accept': '*/*',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+    }
+
+    request_range = request.headers.get('range')
+    if request_range:
+        headers['Range'] = request_range
+
+    if 'dailymotion.com' in lowered_url or 'dmcdn.net' in lowered_url or 'dmxleo.dailymotion.com' in lowered_url:
+        headers.update({
+            'Postman-Token': 'iptv-api-replay-proxy',
+            'Cookie': 'dmvk=69adf139dae1d; ts=966072; v1st=4068e8cf-d19d-4adc-a624-69ab5f4c5a48',
+        })
+
+    return headers
+
+
 # ============================================
 # Health Check
 # ============================================
@@ -621,21 +643,14 @@ async def proxy_replay_stream(
     validate_stream_token(token)
 
     lowered_url = url.lower()
-    range_headers = {}
-    request_range = request.headers.get('range')
-    if request_range:
-        range_headers['Range'] = request_range
+    upstream_headers = build_replay_upstream_headers(url, request)
 
     try:
         if lowered_url.endswith('.m3u8'):
             upstream = requests.get(
                 url,
                 timeout=30,
-                headers={
-                    'User-Agent': 'Mozilla/5.0',
-                    'Referer': 'https://www.dailymotion.com/',
-                    'Origin': 'https://www.dailymotion.com',
-                },
+                headers=upstream_headers,
             )
             upstream.raise_for_status()
             rewritten = rewrite_m3u8_content(upstream.text, url, token)
@@ -651,12 +666,7 @@ async def proxy_replay_stream(
             url,
             stream=True,
             timeout=60,
-            headers={
-                'User-Agent': 'Mozilla/5.0',
-                'Referer': 'https://www.dailymotion.com/',
-                'Origin': 'https://www.dailymotion.com',
-                **range_headers,
-            },
+            headers=upstream_headers,
         )
         upstream.raise_for_status()
         media_type = upstream.headers.get('content-type', 'application/octet-stream').split(';')[0]
