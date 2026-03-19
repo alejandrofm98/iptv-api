@@ -21,7 +21,11 @@ from utils.models import AuthResult
 
 
 class StubContentService:
-    def get_home_catalog(self, username: str, page_size: int = 12) -> dict:
+    def __init__(self):
+        self.last_home_country = None
+
+    def get_home_catalog(self, username: str, page_size: int = 12, country: str | None = None) -> dict:
+        self.last_home_country = country
         return {
             "featured_channels": [{"id": "1", "title": "Noticias 24", "type": "channel"}],
             "featured_movies": [{"id": "2", "title": "Pelicula Uno", "type": "movie"}],
@@ -117,10 +121,13 @@ def override_auth() -> AuthResult:
 
 
 def create_client() -> TestClient:
+    stub_content_service = StubContentService()
     app.dependency_overrides[require_auth_with_jwt] = override_auth
-    app.dependency_overrides[get_content_service] = lambda: StubContentService()
+    app.dependency_overrides[get_content_service] = lambda: stub_content_service
     app.dependency_overrides[get_calendar_service] = lambda: StubCalendarService()
-    return TestClient(app)
+    client = TestClient(app)
+    client.stub_content_service = stub_content_service
+    return client
 
 
 def teardown_function() -> None:
@@ -136,6 +143,15 @@ def test_get_home_returns_lightweight_sections() -> None:
     payload = response.json()
     assert payload["featured_channels"][0]["title"] == "Noticias 24"
     assert payload["stats"] == {"channels": 10, "movies": 20, "series": 30}
+
+
+def test_get_home_accepts_country_filter() -> None:
+    client = create_client()
+
+    response = client.get("/api/home", params={"country": "EN"})
+
+    assert response.status_code == 200
+    assert client.stub_content_service.last_home_country == "EN"
 
 
 def test_search_returns_paginated_catalog_results() -> None:

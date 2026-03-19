@@ -633,18 +633,36 @@ class ContentService:
             'replays': replays.count or 0
         }
 
-    def get_home_catalog(self, username: str, page_size: int = 12) -> Dict[str, Any]:
+    def get_home_catalog(self, username: str, page_size: int = 12, country: Optional[str] = None) -> Dict[str, Any]:
         counts = self.get_content_count()
         return {
-            'featured_channels': self.get_android_content_list('channels', page=1, page_size=page_size, username=username)['items'],
-            'featured_movies': self.get_android_content_list('movies', page=1, page_size=page_size, username=username)['items'],
-            'featured_series': self.get_android_content_list('series', page=1, page_size=page_size, username=username)['items'],
+            'featured_channels': self.get_android_home_items('channels', page_size=page_size, username=username, country=country),
+            'featured_movies': self.get_android_home_items('movies', page_size=page_size, username=username, country=country),
+            'featured_series': self.get_android_home_items('series', page_size=page_size, username=username, country=country),
             'stats': {
                 'channels': counts['channels'],
                 'movies': counts['movies'],
                 'series': counts['series'],
             },
         }
+
+    def get_android_home_items(
+        self,
+        content_type: str,
+        page_size: int = 12,
+        username: str = '',
+        password: str = '',
+        country: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        table = self.TABLE_MAP.get(content_type)
+        if not table:
+            raise ValueError(f"Tipo de contenido inválido: {content_type}")
+
+        query = self.supabase.table(table).select('*')
+        if country:
+            query = query.eq('country', country)
+        result = query.order('numero', desc=False).limit(page_size).execute()
+        return [self._to_android_catalog_item(row, content_type, username, password) for row in (result.data or [])]
 
     def get_android_content_list(
         self,
@@ -691,7 +709,7 @@ class ContentService:
             result = (
                 self.supabase.table(table)
                 .select('*')
-                .ilike('nombre', f'%{query}%')
+                .or_(f'nombre_normalizado.ilike.%{query}%,nombre.ilike.%{query}%')
                 .order('numero', desc=False)
                 .execute()
             )

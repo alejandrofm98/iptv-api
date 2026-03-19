@@ -564,11 +564,12 @@ async def get_content(
 @app.get("/api/home", tags=["Content"])
 async def get_home(
     page_size: int = Query(12, ge=1, le=50, description="Items por bloque"),
+    country: Optional[str] = Query(None, description="Filtrar home por country, por ejemplo ES o EN"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
     """Obtiene bloques ligeros para la home de clientes TV."""
-    return content_svc.get_home_catalog(username=auth.username, page_size=page_size)
+    return content_svc.get_home_catalog(username=auth.username, page_size=page_size, country=country)
 
 
 @app.get("/api/search", tags=["Content"])

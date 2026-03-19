@@ -41,6 +41,54 @@ class FakeSupabase:
         return self.query
 
 
+class HomeSupabaseQuery:
+    def __init__(self, rows):
+        self.rows = rows
+        self.selected_counts = []
+        self.eq_filters = []
+
+    def select(self, _fields='*', count=None):
+        self.selected_counts.append(count)
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, value: int):
+        self.rows = self.rows[:value]
+        return self
+
+    def eq(self, key: str, value: str):
+        self.eq_filters.append((key, value))
+        return self
+
+    def execute(self):
+        class Result:
+            def __init__(self, data):
+                self.data = data
+                self.count = len(data)
+
+        return Result(self.rows)
+
+
+class HomeSupabase:
+    def __init__(self):
+        self.queries = {
+            'channels': HomeSupabaseQuery([
+                {'numero': 1, 'nombre': 'ES - Canal Uno', 'nombre_normalizado': 'Canal Uno', 'grupo': 'ES - Noticias', 'grupo_normalizado': 'Noticias', 'logo': '', 'url': 'http://provider/live/user/pass/1.ts'},
+            ]),
+            'movies': HomeSupabaseQuery([
+                {'numero': 2, 'nombre': 'ES - Movie One', 'nombre_normalizado': 'Movie One', 'grupo': 'ES - Cine', 'grupo_normalizado': 'Cine', 'logo': '', 'url': 'http://provider/movie/user/pass/2.mp4'},
+            ]),
+            'series': HomeSupabaseQuery([
+                {'numero': 3, 'nombre': 'ES - Serie One S01 E01', 'nombre_normalizado': 'Serie One S01 E01', 'grupo': 'ES - Drama', 'grupo_normalizado': 'Drama', 'logo': '', 'url': 'http://provider/series/user/pass/3.mp4', 'serie_name': 'Serie One', 'temporada': '01', 'episodio': '01'},
+            ]),
+        }
+
+    def table(self, name: str):
+        return self.queries[name]
+
+
 def test_build_base_query_uses_normalized_columns_for_group_and_search():
     service = ContentService(FakeSupabase())
 
@@ -80,3 +128,29 @@ def test_android_catalog_item_prefers_normalized_fields_for_display():
     assert item["group"] == "Noticias"
     assert item["original_title"] == "ES - Canal Demo HD"
     assert item["original_group"] == "ES - Noticias"
+
+
+def test_home_catalog_uses_lightweight_queries_without_exact_count():
+    service = ContentService(HomeSupabase())
+    service.get_content_count = lambda: {'channels': 1, 'movies': 1, 'series': 1, 'replays': 0}
+    service.get_content_list = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('home should not call get_content_list'))
+
+    payload = service.get_home_catalog(username='demo', page_size=12)
+
+    assert payload['featured_channels'][0]['title'] == 'Canal Uno'
+    assert payload['featured_movies'][0]['title'] == 'Movie One'
+    assert payload['featured_series'][0]['title'] == 'Serie One S01 E01'
+    assert service.supabase.queries['channels'].selected_counts == [None]
+    assert service.supabase.queries['movies'].selected_counts == [None]
+    assert service.supabase.queries['series'].selected_counts == [None]
+
+
+def test_home_catalog_can_filter_by_country():
+    service = ContentService(HomeSupabase())
+    service.get_content_count = lambda: {'channels': 1, 'movies': 1, 'series': 1, 'replays': 0}
+
+    service.get_home_catalog(username='demo', page_size=12, country='EN')
+
+    assert ('country', 'EN') in service.supabase.queries['channels'].eq_filters
+    assert ('country', 'EN') in service.supabase.queries['movies'].eq_filters
+    assert ('country', 'EN') in service.supabase.queries['series'].eq_filters
