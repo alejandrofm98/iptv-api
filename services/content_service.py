@@ -368,10 +368,13 @@ class ContentService:
         Método genérico que reemplaza a _parse_channel, _parse_movie, _parse_series.
         """
         original_url = row.get('url', '')
+        persisted_stream_url = row.get('stream_url')
         stream_id, extension, content_type_detected = self._extract_stream_id(original_url)
 
         base_url = self.settings.public_domain.rstrip('/') if username and password else ''
-        if original_url and username and password and stream_id:
+        if persisted_stream_url:
+            stream_url = persisted_stream_url
+        elif original_url and username and password and stream_id:
             # Canales (live) no llevan tipo en la URL, solo movie y series
             if content_type_detected == 'live':
                 stream_url = f"{base_url}/{username}/{password}/{stream_id}"

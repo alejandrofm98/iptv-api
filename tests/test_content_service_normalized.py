@@ -130,6 +130,23 @@ def test_android_catalog_item_prefers_normalized_fields_for_display():
     assert item["original_group"] == "ES - Noticias"
 
 
+def test_parse_content_item_prefers_persisted_stream_url_over_generated_one():
+    service = ContentService(FakeSupabase())
+
+    row = {
+        "numero": 7,
+        "nombre": "Canal Demo",
+        "logo": "",
+        "grupo": "Noticias",
+        "url": "https://provider.test/live/user/pass/7.ts",
+        "stream_url": "https://iptv.walerike.com/live/admin/secret/7",
+    }
+
+    item = service._parse_content_item(row, "channels", username="other", password="creds")
+
+    assert item["stream_url"] == "https://iptv.walerike.com/live/admin/secret/7"
+
+
 def test_home_catalog_uses_lightweight_queries_without_exact_count():
     service = ContentService(HomeSupabase())
     service.get_content_count = lambda: {'channels': 1, 'movies': 1, 'series': 1, 'replays': 0}
