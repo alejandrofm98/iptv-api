@@ -386,8 +386,10 @@ class ContentService:
             'id': stream_id or '',
             'num': row.get('numero'),
             'nombre': row.get('nombre'),
+            'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre'),
             'logo': row.get('logo'),
             'grupo': row.get('grupo'),
+            'grupo_normalizado': row.get('grupo_normalizado') or row.get('grupo'),
             'country': row.get('country'),
             'provider_id': row.get('provider_id'),
             'url': original_url,
@@ -403,6 +405,34 @@ class ContentService:
 
         return base_item
 
+    def _to_android_catalog_item(self, row: Dict[str, Any], content_type: str, username: str = '', password: str = '') -> Dict[str, Any]:
+        parsed = self._parse_content_item(row, content_type, username, password)
+        original_title = parsed.get('nombre') or ''
+        original_group = parsed.get('grupo') or ''
+        title = parsed.get('nombre_normalizado') or original_title
+        group = parsed.get('grupo_normalizado') or original_group
+
+        return {
+            'id': parsed.get('id') or '',
+            'type': map_android_type(content_type),
+            'title': title,
+            'normalized_title': title,
+            'original_title': original_title,
+            'subtitle': group,
+            'description': group,
+            'image_url': parsed.get('logo') or '',
+            'group': group,
+            'normalized_group': group,
+            'original_group': original_group,
+            'badge_text': group[:8] if content_type == 'channels' else ('CINE' if content_type == 'movies' else 'SERIE'),
+            'channel_number': parsed.get('num') if content_type == 'channels' else None,
+            'language_label': None,
+            'series_name': (parsed.get('serie_name') or parsed.get('nombre_normalizado') or original_title) if content_type == 'series' else None,
+            'season_number': parsed.get('temporada') if content_type == 'series' else None,
+            'episode_number': parsed.get('episodio') if content_type == 'series' else None,
+            'stream_url': parsed.get('stream_url') or '',
+        }
+
     def _calculate_offset(self, page: int, page_size: int) -> int:
         """Calcula el offset basado en page y page_size"""
         return (page - 1) * page_size
@@ -415,11 +445,11 @@ class ContentService:
         query = self.supabase.table(table).select('*', count=count_param)
 
         if group:
-            query = query.ilike('grupo', f'%{group}%')
+            query = query.or_(f'grupo_normalizado.ilike.%{group}%,grupo.ilike.%{group}%')
         if country:
             query = query.eq('country', country)
         if search:
-            query = query.ilike('nombre', f'%{search}%')
+            query = query.or_(f'nombre_normalizado.ilike.%{search}%,nombre.ilike.%{search}%')
 
         return query
 
@@ -601,6 +631,90 @@ class ContentService:
             'movies': movies.count or 0,
             'series': series.count or 0,
             'replays': replays.count or 0
+        }
+
+    def get_home_catalog(self, username: str, page_size: int = 12) -> Dict[str, Any]:
+        counts = self.get_content_count()
+        return {
+            'featured_channels': self.get_android_content_list('channels', page=1, page_size=page_size, username=username)['items'],
+            'featured_movies': self.get_android_content_list('movies', page=1, page_size=page_size, username=username)['items'],
+            'featured_series': self.get_android_content_list('series', page=1, page_size=page_size, username=username)['items'],
+            'stats': {
+                'channels': counts['channels'],
+                'movies': counts['movies'],
+                'series': counts['series'],
+            },
+        }
+
+    def get_android_content_list(
+        self,
+        content_type: str,
+        page: int = 1,
+        page_size: int = 50,
+        group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+        username: str = '',
+        password: str = '',
+    ) -> Dict[str, Any]:
+        result = self.get_content_list(
+            content_type=content_type,
+            page=page,
+            page_size=page_size,
+            group=group,
+            country=country,
+            search=search,
+            username=username,
+            password=password,
+        )
+        return {
+            **result,
+            'items': [self._to_android_catalog_item(row, content_type, username, password) for row in result['items']],
+        }
+
+    def search_catalog(
+        self,
+        query: str,
+        types: List[str],
+        page: int = 1,
+        page_size: int = 50,
+        username: str = '',
+        password: str = '',
+    ) -> Dict[str, Any]:
+        requested_types = [content_type for content_type in types if content_type in self.TABLE_MAP]
+        if not requested_types:
+            requested_types = ['channels', 'movies', 'series']
+
+        merged_items: List[Dict[str, Any]] = []
+        for content_type in requested_types:
+            table = self.TABLE_MAP[content_type]
+            result = (
+                self.supabase.table(table)
+                .select('*')
+                .ilike('nombre', f'%{query}%')
+                .order('numero', desc=False)
+                .execute()
+            )
+            merged_items.extend(
+                self._to_android_catalog_item(row, content_type, username, password)
+                for row in (result.data or [])
+            )
+
+        merged_items.sort(key=lambda item: item.get('title') or '')
+        total = len(merged_items)
+        offset = self._calculate_offset(page, page_size)
+        paged_items = merged_items[offset:offset + page_size]
+        pages = (total + page_size - 1) // page_size if total else 0
+
+        return {
+            'items': paged_items,
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'pages': pages,
+            'has_next': page < pages,
+            'has_prev': page > 1,
+            'types': requested_types,
         }
 
     def get_replays(
@@ -896,3 +1010,49 @@ class ContentService:
             episodes.append(episode)
 
         return episodes
+
+    def get_episodes_by_serie_name_paginated(
+        self,
+        serie_name: str,
+        username: str = '',
+        password: str = '',
+        page: int = 1,
+        page_size: int = 50,
+    ) -> Dict[str, Any]:
+        result = (
+            self.supabase.table('series')
+            .select('*', count='exact')
+            .eq('serie_name', serie_name)
+            .order('temporada')
+            .order('episodio')
+            .range(self._calculate_offset(page, page_size), self._calculate_offset(page, page_size) + page_size - 1)
+            .execute()
+        )
+
+        total = result.count or 0
+        pages = (total + page_size - 1) // page_size if total else 0
+        items = [self._to_android_catalog_item(row, 'series', username, password) for row in (result.data or [])]
+        all_episodes = self.get_episodes_by_serie_name(serie_name, username, password)
+        seasons = sorted({episode.get('temporada') for episode in all_episodes if episode.get('temporada') is not None})
+
+        return {
+            'serie_name': serie_name,
+            'items': items,
+            'episodes': items,
+            'total': total,
+            'total_episodes': total,
+            'page': page,
+            'page_size': page_size,
+            'pages': pages,
+            'has_next': page < pages,
+            'has_prev': page > 1,
+            'seasons': seasons,
+        }
+
+
+def map_android_type(content_type: str) -> str:
+    return {
+        'channels': 'channel',
+        'movies': 'movie',
+        'series': 'series',
+    }.get(content_type, content_type)

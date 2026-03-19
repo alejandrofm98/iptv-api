@@ -193,16 +193,19 @@ class ChannelResolved(BaseModel):
     quality: str
     priority: int
     source_name: str
+    logo: Optional[str] = None
+    stream_url: Optional[str] = None
+    content_type: Optional[str] = None
 
 
 class CalendarEvent(BaseModel):
     """Evento del calendario con canales resueltos"""
     id: str
-    fecha: str
-    hora: str
+    fecha: Optional[str]
+    hora: Optional[str]
     competicion: Optional[str]
     categoria: Optional[str]
-    equipos: str
+    equipos: Optional[str]
     canales_original: List[str]
     canales_resueltos: List[ChannelResolved]
 

@@ -561,6 +561,37 @@ async def get_content(
     )
 
 
+@app.get("/api/home", tags=["Content"])
+async def get_home(
+    page_size: int = Query(12, ge=1, le=50, description="Items por bloque"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service)
+):
+    """Obtiene bloques ligeros para la home de clientes TV."""
+    return content_svc.get_home_catalog(username=auth.username, page_size=page_size)
+
+
+@app.get("/api/search", tags=["Content"])
+async def search_content(
+    q: str = Query(..., min_length=1, description="Texto de búsqueda"),
+    types: Optional[str] = Query(None, description="Tipos separados por coma: channels,movies,series"),
+    page: int = Query(1, ge=1, description="Número de página"),
+    page_size: int = Query(50, ge=1, le=100, description="Items por página"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service)
+):
+    """Busca contenido en varios tipos sin descargar la playlist completa."""
+    requested_types = [value.strip() for value in (types or "channels,movies,series").split(',') if value.strip()]
+    return content_svc.search_catalog(
+        query=q,
+        types=requested_types,
+        page=page,
+        page_size=page_size,
+        username=auth.username,
+        password='',
+    )
+
+
 @app.get("/api/content/{content_type}/{item_id}", tags=["Content"])
 async def get_content_item(
     content_type: str,
@@ -752,11 +783,11 @@ async def get_calendar_by_date(
         canales_resueltos = evento.get('canales_resueltos', []) or []
         eventos.append(CalendarEvent(
             id=str(evento['id']),
-            fecha=evento['fecha'],
-            hora=evento['hora'],
+            fecha=evento.get('fecha'),
+            hora=evento.get('hora'),
             competicion=evento.get('competicion'),
             categoria=evento.get('categoria'),
-            equipos=evento['equipos'],
+            equipos=evento.get('equipos'),
             canales_original=evento.get('canales_original', []) or [],
             canales_resueltos=canales_resueltos
         ))
@@ -779,11 +810,11 @@ async def get_calendar_event(
     canales_resueltos = evento.get('canales_resueltos', []) or []
     return CalendarEvent(
         id=str(evento['id']),
-        fecha=evento['fecha'],
-        hora=evento['hora'],
+        fecha=evento.get('fecha'),
+        hora=evento.get('hora'),
         competicion=evento.get('competicion'),
         categoria=evento.get('categoria'),
-        equipos=evento['equipos'],
+        equipos=evento.get('equipos'),
         canales_original=evento.get('canales_original', []) or [],
         canales_resueltos=canales_resueltos
     )
@@ -792,25 +823,42 @@ async def get_calendar_event(
 @app.get("/api/series/{serie_name}/episodes", tags=["Content"])
 async def get_serie_episodes(
     serie_name: str,
+    request: Request,
+    page: Optional[int] = Query(None, ge=1, description="Número de página"),
+    page_size: Optional[int] = Query(None, ge=1, le=100, description="Items por página"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
     """Obtiene todos los episodios de una serie. Requiere Bearer Token."""
-    episodes = content_svc.get_episodes_by_serie_name(
+    if "page" not in request.query_params and "page_size" not in request.query_params:
+        episodes = content_svc.get_episodes_by_serie_name(
+            serie_name=serie_name,
+            username=auth.username,
+            password='',
+        )
+
+        if not episodes:
+            raise NotFoundException("Serie", serie_name)
+
+        return {
+            "serie_name": serie_name,
+            "total_episodes": len(episodes),
+            "seasons": list(set([ep.get('temporada') for ep in episodes if ep.get('temporada')])),
+            "episodes": episodes,
+        }
+
+    episodes = content_svc.get_episodes_by_serie_name_paginated(
         serie_name=serie_name,
         username=auth.username,
-        password=''
+        password='',
+        page=page or 1,
+        page_size=page_size or 50,
     )
 
-    if not episodes:
+    if episodes.get('total', 0) == 0:
         raise NotFoundException("Serie", serie_name)
 
-    return {
-        "serie_name": serie_name,
-        "total_episodes": len(episodes),
-        "seasons": list(set([ep.get('temporada') for ep in episodes if ep.get('temporada')])),
-        "episodes": episodes
-    }
+    return episodes
 
 
 # ============================================
