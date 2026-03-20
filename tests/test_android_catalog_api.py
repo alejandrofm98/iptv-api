@@ -56,6 +56,48 @@ class StubContentService:
             "types": types,
         }
 
+    def get_android_content_list(
+        self,
+        content_type: str,
+        page: int,
+        page_size: int,
+        group: str | None,
+        country: str | None,
+        search: str | None,
+        username: str,
+        password: str = '',
+    ) -> dict:
+        return {
+            "items": [
+                {
+                    "id": "10",
+                    "type": "series" if content_type == "series" else content_type[:-1],
+                    "title": "Serie Uno S01 E01" if content_type == "series" else "Canal Uno",
+                    "normalized_title": "Serie Uno S01 E01" if content_type == "series" else "Canal Uno",
+                    "subtitle": "Drama" if content_type == "series" else "Noticias",
+                    "normalized_group": "Drama" if content_type == "series" else "Noticias",
+                    "group": "Drama" if content_type == "series" else "Noticias",
+                    "language_label": country or "ES",
+                    "series_name": "Serie Uno" if content_type == "series" else None,
+                    "season_number": 1 if content_type == "series" else None,
+                    "episode_number": 1 if content_type == "series" else None,
+                    "stream_url": "https://stream/test.m3u8",
+                }
+            ],
+            "total": 1,
+            "page": page,
+            "page_size": page_size,
+            "pages": 1,
+            "has_next": False,
+            "has_prev": False,
+        }
+
+    def get_catalog_filters(self, content_type: str, country: str | None = None) -> dict:
+        return {
+            "languages": [country or "ES", "EN"],
+            "groups": ["Noticias", "Drama"],
+        }
+
     def get_episodes_by_serie_name_paginated(
         self,
         serie_name: str,
@@ -164,6 +206,29 @@ def test_search_returns_paginated_catalog_results() -> None:
     assert payload["items"][0]["title"] == "deporte Noticias"
     assert payload["types"] == ["channels", "series"]
     assert payload["page_size"] == 20
+
+
+def test_content_returns_android_friendly_payload() -> None:
+    client = create_client()
+
+    response = client.get("/api/content", params={"content_type": "series", "page": 1, "page_size": 20, "country": "ES"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["series_name"] == "Serie Uno"
+    assert payload["items"][0]["language_label"] == "ES"
+    assert payload["items"][0]["normalized_group"] == "Drama"
+
+
+def test_content_filters_returns_languages_and_groups() -> None:
+    client = create_client()
+
+    response = client.get("/api/content/filters", params={"content_type": "movies", "country": "ES"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["languages"][0] == "ES"
+    assert "Drama" in payload["groups"]
 
 
 def test_series_episodes_endpoint_supports_pagination() -> None:

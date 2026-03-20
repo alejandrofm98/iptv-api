@@ -549,7 +549,7 @@ async def get_content(
     content_svc: ContentService = Depends(get_content_service)
 ):
     """Obtiene lista paginada de contenido. Requiere Bearer Token."""
-    return content_svc.get_content_list(
+    return content_svc.get_android_content_list(
         content_type=content_type,
         page=page,
         page_size=page_size,
@@ -559,6 +559,17 @@ async def get_content(
         username=auth.username,
         password=''
     )
+
+
+@app.get("/api/content/filters", tags=["Content"])
+async def get_content_filters(
+    content_type: str = Query(..., enum=['channels', 'movies', 'series'], description="Tipo de contenido"),
+    country: Optional[str] = Query(None, description="Filtrar grupos por país"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service)
+):
+    """Obtiene idiomas y grupos disponibles para filtros por tipo de contenido."""
+    return content_svc.get_catalog_filters(content_type=content_type, country=country)
 
 
 @app.get("/api/home", tags=["Content"])

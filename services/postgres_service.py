@@ -242,6 +242,65 @@ class PostgresService:
         
         return countries
 
+    def get_distinct_series_page(
+        self,
+        page: int,
+        page_size: int,
+        group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Obtiene una página de series únicas usando SQL directo."""
+        filters: List[str] = []
+        params: List[Any] = []
+
+        if group:
+            filters.append("(grupo_normalizado ILIKE %s OR grupo ILIKE %s)")
+            params.extend([f"%{group}%", f"%{group}%"])
+
+        if country:
+            filters.append("country = %s")
+            params.append(country)
+
+        if search:
+            filters.append(
+                "(serie_name ILIKE %s OR nombre_normalizado ILIKE %s OR nombre ILIKE %s)"
+            )
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+        offset = (page - 1) * page_size
+
+        count_sql = f"""
+            SELECT COUNT(DISTINCT COALESCE(NULLIF(serie_name, ''), NULLIF(nombre_normalizado, ''), nombre)) AS total
+            FROM series
+            {where_clause}
+        """
+        count_result = self.execute_query(count_sql, tuple(params))
+        total = count_result[0]['total'] if count_result else 0
+
+        page_sql = f"""
+            WITH filtered AS (
+                SELECT *, COALESCE(NULLIF(serie_name, ''), NULLIF(nombre_normalizado, ''), nombre) AS series_key
+                FROM series
+                {where_clause}
+            ), deduped AS (
+                SELECT DISTINCT ON (series_key) *
+                FROM filtered
+                ORDER BY series_key ASC, numero ASC
+            )
+            SELECT *
+            FROM deduped
+            ORDER BY numero ASC
+            LIMIT %s OFFSET %s
+        """
+        rows = self.execute_query(page_sql, tuple([*params, page_size, offset]))
+
+        return {
+            'items': rows,
+            'total': total,
+        }
+
 
 # Singleton instance
 _postgres_service: Optional[PostgresService] = None

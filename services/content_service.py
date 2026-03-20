@@ -403,6 +403,7 @@ class ContentService:
         if content_type == 'channels':
             base_item['tvg_id'] = row.get('tvg_id')
         elif content_type == 'series':
+            base_item['serie_name'] = row.get('serie_name')
             base_item['temporada'] = row.get('temporada')
             base_item['episodio'] = row.get('episodio')
 
@@ -429,7 +430,7 @@ class ContentService:
             'original_group': original_group,
             'badge_text': group[:8] if content_type == 'channels' else ('CINE' if content_type == 'movies' else 'SERIE'),
             'channel_number': parsed.get('num') if content_type == 'channels' else None,
-            'language_label': None,
+            'language_label': parsed.get('country'),
             'series_name': (parsed.get('serie_name') or parsed.get('nombre_normalizado') or original_title) if content_type == 'series' else None,
             'season_number': parsed.get('temporada') if content_type == 'series' else None,
             'episode_number': parsed.get('episodio') if content_type == 'series' else None,
@@ -485,6 +486,17 @@ class ContentService:
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
+        if content_type == 'series':
+            return self._get_series_catalog_page(
+                page=page,
+                page_size=page_size,
+                group=group,
+                country=country,
+                search=search,
+                username=username,
+                password=password,
+            )
+
         query = self._build_base_query(table, group, country, search, include_count=True)
         query = query.order('numero', desc=False)
 
@@ -505,6 +517,39 @@ class ContentService:
             'pages': pages,
             'has_next': page < pages,
             'has_prev': page > 1
+        }
+
+    def _get_series_catalog_page(
+        self,
+        page: int,
+        page_size: int,
+        group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+        username: str = '',
+        password: str = '',
+    ) -> Dict[str, Any]:
+        """Obtiene el catálogo de series agrupado por nombre de serie."""
+        pg_service = get_postgres_service()
+        result = pg_service.get_distinct_series_page(
+            page=page,
+            page_size=page_size,
+            group=group,
+            country=country,
+            search=search,
+        )
+
+        total = result.get('total', 0) or 0
+        pages = (total + page_size - 1) // page_size if total else 0
+
+        return {
+            'items': [self._parse_content_item(row, 'series', username, password) for row in (result.get('items') or [])],
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'pages': pages,
+            'has_next': page < pages,
+            'has_prev': page > 1,
         }
 
     def get_content_item(
@@ -691,6 +736,19 @@ class ContentService:
         return {
             **result,
             'items': [self._to_android_catalog_item(row, content_type, username, password) for row in result['items']],
+        }
+
+    def get_catalog_filters(self, content_type: str, country: Optional[str] = None) -> Dict[str, Any]:
+        countries = [country] if country else None
+        groups = self.get_groups(content_type=content_type, countries=countries)
+        if country:
+            languages = [country]
+        else:
+            languages = [item['code'] for item in self.get_countries(content_type=content_type) if item.get('code')]
+
+        return {
+            'languages': sorted(set(languages)),
+            'groups': groups,
         }
 
     def search_catalog(
