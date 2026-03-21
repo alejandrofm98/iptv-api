@@ -14,6 +14,7 @@ from typing import Optional, List, Dict, Any, Tuple
 import re
 from urllib.parse import parse_qs, urlparse
 import requests
+from postgrest.exceptions import APIError
 from supabase import Client
 
 from utils.config import get_settings
@@ -391,6 +392,69 @@ class ContentService:
     def _calculate_offset(self, page: int, page_size: int) -> int:
         return (page - 1) * page_size
 
+    @staticmethod
+    def _build_paginated_payload(
+        items: List[Dict[str, Any]],
+        total: int,
+        page: int,
+        page_size: int,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Construye una respuesta paginada consistente."""
+        pages = (total + page_size - 1) // page_size if total else 0
+        payload = {
+            'items': items,
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'pages': pages,
+            'has_next': page < pages,
+            'has_prev': page > 1,
+        }
+        if extra:
+            payload.update(extra)
+        return payload
+
+    @staticmethod
+    def _is_requested_range_error(error: Exception) -> bool:
+        """Detecta el error 416 de rangos fuera de límite."""
+        if not isinstance(error, APIError):
+            return False
+
+        raw_error = error.json()
+        code = str(raw_error.get('code') or error.code or '').upper()
+        status = str(raw_error.get('status') or '')
+        details = ' '.join(
+            str(value)
+            for value in [error.message, error.details, error.hint]
+            if value
+        ).lower()
+
+        return (
+            status == '416'
+            or code == 'PGRST103'
+            or 'requested range' in details
+            or 'range not satisfiable' in details
+        )
+
+    def _get_filtered_total(
+        self,
+        table: str,
+        group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> int:
+        """Obtiene el total filtrado sin aplicar paginación."""
+        result = self._build_base_query(
+            table,
+            group=group,
+            country=country,
+            search=search,
+            include_count=True,
+            fields='id',
+        ).limit(1).execute()
+        return result.count or 0
+
     def _build_base_query(
         self,
         table: str,
@@ -398,9 +462,10 @@ class ContentService:
         country: Optional[str] = None,
         search: Optional[str] = None,
         include_count: bool = False,
+        fields: str = '*',
     ):
         count_param = 'exact' if include_count else None
-        query = self.supabase.table(table).select('*', count=count_param)
+        query = self.supabase.table(table).select(fields, count=count_param)
 
         if group:
             query = query.or_(f'grupo_normalizado.ilike.%{group}%,grupo.ilike.%{group}%')
@@ -452,23 +517,21 @@ class ContentService:
         offset = self._calculate_offset(page, page_size)
         query = query.range(offset, offset + page_size - 1)
 
-        result = query.execute()
-
-        total = result.count or 0
-        pages = (total + page_size - 1) // page_size
-
-        data = {
-            'items': [
+        try:
+            result = query.execute()
+            total = result.count or 0
+            items = [
                 self._parse_content_item(row, content_type, username, password)
                 for row in (result.data or [])
-            ],
-            'total': total,
-            'page': page,
-            'page_size': page_size,
-            'pages': pages,
-            'has_next': page < pages,
-            'has_prev': page > 1,
-        }
+            ]
+        except Exception as error:
+            if not self._is_requested_range_error(error):
+                raise
+
+            total = self._get_filtered_total(table, group=group, country=country, search=search)
+            items = []
+
+        data = self._build_paginated_payload(items, total, page, page_size)
 
         # Guardar en caché sin stream_urls
         if content_type == 'movies' and not search:
@@ -509,20 +572,15 @@ class ContentService:
         )
 
         total = result.get('total', 0) or 0
-        pages = (total + page_size - 1) // page_size if total else 0
-
-        data = {
-            'items': [
+        data = self._build_paginated_payload(
+            [
                 self._to_android_catalog_item(row, 'series', username, password)
                 for row in (result.get('items') or [])
             ],
-            'total': total,
-            'page': page,
-            'page_size': page_size,
-            'pages': pages,
-            'has_next': page < pages,
-            'has_prev': page > 1,
-        }
+            total,
+            page,
+            page_size,
+        )
 
         if use_cache:
             self._set_cached(cache_key, self._strip_stream_urls(data))
@@ -774,22 +832,35 @@ class ContentService:
         en lugar de traer todos los episodios completos solo para extraer las seasons.
         """
         offset = self._calculate_offset(page, page_size)
-        result = (
-            self.supabase.table('series')
-            .select('*', count='exact')
-            .eq('serie_name', serie_name)
-            .order('temporada')
-            .order('episodio')
-            .range(offset, offset + page_size - 1)
-            .execute()
-        )
 
-        total = result.count or 0
-        pages = (total + page_size - 1) // page_size if total else 0
-        items = [
-            self._to_android_catalog_item(row, 'series', username, password)
-            for row in (result.data or [])
-        ]
+        try:
+            result = (
+                self.supabase.table('series')
+                .select('*', count='exact')
+                .eq('serie_name', serie_name)
+                .order('temporada')
+                .order('episodio')
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            total = result.count or 0
+            items = [
+                self._to_android_catalog_item(row, 'series', username, password)
+                for row in (result.data or [])
+            ]
+        except Exception as error:
+            if not self._is_requested_range_error(error):
+                raise
+
+            count_result = (
+                self.supabase.table('series')
+                .select('id', count='exact')
+                .eq('serie_name', serie_name)
+                .limit(1)
+                .execute()
+            )
+            total = count_result.count or 0
+            items = []
 
         # Query ligera: solo la columna temporada para construir el listado de seasons
         seasons_result = (
@@ -803,19 +874,18 @@ class ContentService:
             if row.get('temporada') is not None
         })
 
-        return {
-            'serie_name': serie_name,
-            'items': items,
-            'episodes': items,
-            'total': total,
-            'total_episodes': total,
-            'page': page,
-            'page_size': page_size,
-            'pages': pages,
-            'has_next': page < pages,
-            'has_prev': page > 1,
-            'seasons': seasons,
-        }
+        return self._build_paginated_payload(
+            items,
+            total,
+            page,
+            page_size,
+            extra={
+                'serie_name': serie_name,
+                'episodes': items,
+                'total_episodes': total,
+                'seasons': seasons,
+            },
+        )
 
     # ── Replays ───────────────────────────────────────────────────────────────
 
@@ -841,20 +911,25 @@ class ContentService:
         query = query.order('event_date', desc=True).order('created_at', desc=True)
         query = query.range(offset, offset + page_size - 1)
 
-        result = query.execute()
+        try:
+            result = query.execute()
+            total = result.count or 0
+            items = [self._parse_replay_item(row) for row in (result.data or [])]
+        except Exception as error:
+            if not self._is_requested_range_error(error):
+                raise
 
-        total = result.count or 0
-        pages = (total + page_size - 1) // page_size
+            count_query = self.supabase.table('replays').select('id', count='exact')
+            if event_type:
+                count_query = count_query.eq('event_type', event_type)
+            if search:
+                count_query = count_query.or_(
+                    f"title.ilike.%{search}%,event_name.ilike.%{search}%,description.ilike.%{search}%"
+                )
+            total = count_query.limit(1).execute().count or 0
+            items = []
 
-        return {
-            'items': [self._parse_replay_item(row) for row in (result.data or [])],
-            'total': total,
-            'page': page,
-            'page_size': page_size,
-            'pages': pages,
-            'has_next': page < pages,
-            'has_prev': page > 1,
-        }
+        return self._build_paginated_payload(items, total, page, page_size)
 
     def get_replay(self, slug: str) -> Optional[Dict[str, Any]]:
         """Obtiene un replay por slug."""
