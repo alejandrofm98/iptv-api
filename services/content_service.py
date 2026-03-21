@@ -237,50 +237,60 @@ class ContentService:
         password: str = '',
     ) -> Dict[str, Any]:
         """
-        Parsea un item de contenido de Supabase.
+        Parsea un item de contenido de Supabase o PostgreSQL directo.
 
-        Optimización: cuando el row tiene provider_id (siempre en channels/movies/series
-        después de la ingesta) lo usamos directamente en lugar de hacer urlparse.
+        Compatibilidad garantizada con rows de ambas fuentes:
+        - Supabase (dict con snake_case)
+        - psycopg2 RealDictCursor (igual, pero provider_id puede ser NULL)
+
+        Orden de prioridad para stream_id:
+          1. provider_id  (columna explícita, más rápido)
+          2. _extract_stream_id(url)  (fallback via urlparse)
         """
-        original_url = row.get('url', '')
-        persisted_stream_url = row.get('stream_url')
+        original_url = row.get('url') or ''
+        persisted_stream_url = row.get('stream_url') or None
 
-        # Intentar provider_id primero (evita urlparse en ~100% de los casos)
-        provider_id = row.get('provider_id')
-        if provider_id and username and password:
-            base_url = self.settings.public_domain.rstrip('/')
-            # Determinar content_type_detected a partir del tipo de tabla
-            if content_type == 'channels':
-                stream_url = f"{base_url}/{username}/{password}/{provider_id}"
-            elif content_type in ('movies', 'series'):
-                ct_path = 'movie' if content_type == 'movies' else 'series'
-                stream_url = f"{base_url}/{ct_path}/{username}/{password}/{provider_id}.ts"
-            else:
-                stream_url = self._build_stream_url(
-                    original_url, persisted_stream_url, username, password
-                )
-        elif persisted_stream_url:
+        # Limpiar persisted_stream_url si es string vacío
+        if persisted_stream_url == '':
+            persisted_stream_url = None
+
+        # ── Determinar stream_id ──────────────────────────────────────────
+        provider_id = row.get('provider_id') or None
+        if provider_id:
+            stream_id = str(provider_id)
+            url_content_type = 'live' if content_type == 'channels' else content_type.rstrip('s')
+        else:
+            # Fallback: parsear la URL original
+            extracted_id, _ext, url_content_type = self._extract_stream_id(original_url)
+            stream_id = extracted_id or ''
+
+        # ── Construir stream_url ──────────────────────────────────────────
+        if persisted_stream_url and username and password:
             stream_url = self._interpolate_stream_url_template(
                 persisted_stream_url, username, password
             )
-        elif original_url:
-            stream_url = self._build_stream_url(
-                original_url, None, username, password
-            )
+        elif stream_id and username and password:
+            base_url = self.settings.public_domain.rstrip('/')
+            if url_content_type == 'live':
+                stream_url = f"{base_url}/{username}/{password}/{stream_id}"
+            else:
+                # Detectar extensión desde URL si la hay
+                if original_url and '.' in original_url.split('/')[-1]:
+                    ext = original_url.split('/')[-1].rsplit('.', 1)[-1]
+                else:
+                    ext = 'ts'
+                stream_url = f"{base_url}/{url_content_type}/{username}/{password}/{stream_id}.{ext}"
         else:
             stream_url = None
-
-        # stream_id para el campo 'id' de la respuesta
-        stream_id = provider_id or self._extract_stream_id(original_url)[0] or ''
 
         base_item = {
             'id': stream_id,
             'num': row.get('numero'),
-            'nombre': row.get('nombre'),
-            'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre'),
-            'logo': row.get('logo'),
-            'grupo': row.get('grupo'),
-            'grupo_normalizado': row.get('grupo_normalizado') or row.get('grupo'),
+            'nombre': row.get('nombre') or '',
+            'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre') or '',
+            'logo': row.get('logo') or '',
+            'grupo': row.get('grupo') or '',
+            'grupo_normalizado': row.get('grupo_normalizado') or row.get('grupo') or '',
             'country': row.get('country'),
             'provider_id': provider_id,
             'url': original_url,
@@ -290,7 +300,7 @@ class ContentService:
         if content_type == 'channels':
             base_item['tvg_id'] = row.get('tvg_id')
         elif content_type == 'series':
-            base_item['serie_name'] = row.get('serie_name')
+            base_item['serie_name'] = row.get('serie_name') or ''
             base_item['temporada'] = row.get('temporada')
             base_item['episodio'] = row.get('episodio')
 
@@ -646,6 +656,15 @@ class ContentService:
         username: str = '',
         password: str = '',
     ) -> Dict[str, Any]:
+        # Para series, _get_series_catalog_page ya devuelve items en formato android.
+        # Llamar get_content_list + _to_android_catalog_item causaría doble parse.
+        if content_type == 'series':
+            return self._get_series_catalog_page(
+                page=page, page_size=page_size,
+                group=group, country=country, search=search,
+                username=username, password=password,
+            )
+
         result = self.get_content_list(
             content_type=content_type,
             page=page, page_size=page_size,
