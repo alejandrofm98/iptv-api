@@ -422,7 +422,11 @@ class ContentService:
             return False
 
         raw_error = error.json()
-        code = str(raw_error.get('code') or error.code or '').upper()
+        if not isinstance(raw_error, dict):
+            raw_error = {}
+
+        raw_code = raw_error.get('code')
+        code = str(raw_code or error.code or '').upper()
         status = str(raw_error.get('status') or '')
         details = ' '.join(
             str(value)
@@ -432,9 +436,12 @@ class ContentService:
 
         return (
             status == '416'
+            or raw_code == 416
+            or code == '416'
             or code == 'PGRST103'
             or 'requested range' in details
             or 'range not satisfiable' in details
+            or 'offset outside the result set' in details
         )
 
     def _get_filtered_total(
