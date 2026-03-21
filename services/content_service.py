@@ -362,6 +362,19 @@ class ContentService:
             return f"{base_url}/{content_type}/{username}/{password}/{stream_id}.{extension}"
         return f"{base_url}/{content_type}/{username}/{password}/{stream_id}"
 
+    @staticmethod
+    def _interpolate_stream_url_template(stream_url: str, username: str, password: str) -> str:
+        """Reemplaza placeholders de credenciales en URLs persistidas."""
+        if not stream_url:
+            return stream_url
+
+        if username:
+            stream_url = stream_url.replace('{{USERNAME}}', username)
+        if password:
+            stream_url = stream_url.replace('{{PASSWORD}}', password)
+
+        return stream_url
+
     def _parse_content_item(self, row: Dict[str, Any], content_type: str, username: str = '', password: str = '') -> Dict[str, Any]:
         """
         Parsea un item de contenido (canal, película o serie) de Supabase.
@@ -373,7 +386,7 @@ class ContentService:
 
         base_url = self.settings.public_domain.rstrip('/') if username and password else ''
         if persisted_stream_url:
-            stream_url = persisted_stream_url
+            stream_url = self._interpolate_stream_url_template(persisted_stream_url, username, password)
         elif original_url and username and password and stream_id:
             # Canales (live) no llevan tipo en la URL, solo movie y series
             if content_type_detected == 'live':

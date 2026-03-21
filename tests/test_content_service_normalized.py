@@ -142,12 +142,29 @@ def test_parse_content_item_prefers_persisted_stream_url_over_generated_one():
         "logo": "",
         "grupo": "Noticias",
         "url": "https://provider.test/live/user/pass/7.ts",
-        "stream_url": "https://iptv.walerike.com/live/{{USERNAME}}/{{PASSWORD}}/7",
+        "stream_url": "https://iptv.walerike.com/live/admin/secret/7",
     }
 
     item = service._parse_content_item(row, "channels", username="other", password="creds")
 
-    assert item["stream_url"] == "https://iptv.walerike.com/live/{{USERNAME}}/{{PASSWORD}}/7"
+    assert item["stream_url"] == "https://iptv.walerike.com/live/admin/secret/7"
+
+
+def test_parse_content_item_interpolates_persisted_stream_url_templates():
+    service = ContentService(FakeSupabase())
+
+    row = {
+        "numero": 7,
+        "nombre": "Canal Demo",
+        "logo": "",
+        "grupo": "Noticias",
+        "url": "https://provider.test/live/user/pass/7.ts",
+        "stream_url": "https://iptv.walerike.com/live/{{USERNAME}}/{{PASSWORD}}/7",
+    }
+
+    item = service._parse_content_item(row, "channels", username="demo", password="secret")
+
+    assert item["stream_url"] == "https://iptv.walerike.com/live/demo/secret/7"
 
 
 def test_android_catalog_item_keeps_series_name_for_grouping():
