@@ -1,6 +1,12 @@
 """
 Servicio de gestión de contenido (canales, películas, series)
 Con soporte para paginación estándar y métodos genéricos
+
+Optimizaciones v2:
+- Caché de páginas de catálogo para series/movies/channels (TTL 5 min)
+- _parse_content_item usa provider_id directamente evitando urlparse innecesario
+- get_episodes_by_serie_name_paginated usa query ligera para seasons (solo columna necesaria)
+- _to_android_catalog_item evita doble parse llamando directamente a los datos parseados
 """
 from datetime import datetime
 import time
@@ -17,23 +23,25 @@ from .postgres_service import get_postgres_service
 class ContentService:
     """Servicio para obtener contenido en formato JSON"""
 
-    # Mapeo de tipos de contenido a tablas
     TABLE_MAP = {
         'channels': 'channels',
         'movies': 'movies',
         'series': 'series',
-        'replays': 'replays'
+        'replays': 'replays',
     }
 
-    # Cache estático para countries y groups (TTL: 5 minutos)
+    # ── Caché estático (TTL 5 min) ──────────────────────────────────────────
+    # Almacena tanto resultados de groups/countries como páginas de catálogo.
+    # Las páginas se guardan SIN stream_url (depende del usuario); las URLs
+    # se inyectan en caliente al servir desde caché.
     _cache: Dict[str, Tuple[Any, float]] = {}
     _CACHE_TTL_SECONDS = 300
+
     REPLAY_EMBED_BASE_URL = 'https://dailywrestling.cc/embed'
     REPLAY_METADATA_EMBEDDER = 'https://dailywrestling.cc/'
 
     @classmethod
     def _get_cached(cls, key: str) -> Optional[Any]:
-        """Obtiene valor del cache si no ha expirado"""
         if key in cls._cache:
             value, cached_at = cls._cache[key]
             if time.time() - cached_at < cls._CACHE_TTL_SECONDS:
@@ -42,259 +50,80 @@ class ContentService:
 
     @classmethod
     def _set_cached(cls, key: str, value: Any):
-        """Guarda valor en cache con timestamp"""
         cls._cache[key] = (value, time.time())
 
     # Mapeo de códigos de país a nombres completos
     COUNTRY_NAMES = {
-        'AD': 'Andorra',
-        'AE': 'Emiratos Árabes Unidos',
-        'AF': 'Afganistán',
-        'AG': 'Antigua y Barbuda',
-        'AI': 'Anguila',
-        'AL': 'Albania',
-        'AM': 'Armenia',
-        'AO': 'Angola',
-        'AQ': 'Antártida',
-        'AR': 'Argentina',
-        'AS': 'Samoa Americana',
-        'AT': 'Austria',
-        'AU': 'Australia',
-        'AW': 'Aruba',
-        'AX': 'Islas Åland',
-        'AZ': 'Azerbaiyán',
-        'BA': 'Bosnia y Herzegovina',
-        'BB': 'Barbados',
-        'BD': 'Bangladés',
-        'BE': 'Bélgica',
-        'BF': 'Burkina Faso',
-        'BG': 'Bulgaria',
-        'BH': 'Baréin',
-        'BI': 'Burundi',
-        'BJ': 'Benín',
-        'BL': 'San Bartolomé',
-        'BM': 'Bermudas',
-        'BN': 'Brunéi',
-        'BO': 'Bolivia',
-        'BQ': 'Caribe Neerlandés',
-        'BR': 'Brasil',
-        'BS': 'Bahamas',
-        'BT': 'Bután',
-        'BV': 'Isla Bouvet',
-        'BW': 'Botsuana',
-        'BY': 'Bielorrusia',
-        'BZ': 'Belice',
-        'CA': 'Canadá',
-        'CC': 'Islas Cocos',
-        'CD': 'República Democrática del Congo',
-        'CF': 'República Centroafricana',
-        'CG': 'República del Congo',
-        'CH': 'Suiza',
-        'CI': 'Costa de Marfil',
-        'CK': 'Islas Cook',
-        'CL': 'Chile',
-        'CM': 'Camerún',
-        'CN': 'China',
-        'CO': 'Colombia',
-        'CR': 'Costa Rica',
-        'CU': 'Cuba',
-        'CV': 'Cabo Verde',
-        'CW': 'Curazao',
-        'CX': 'Isla Christmas',
-        'CY': 'Chipre',
-        'CZ': 'Chequia',
-        'DE': 'Alemania',
-        'DJ': 'Yibuti',
-        'DK': 'Dinamarca',
-        'DM': 'Dominica',
-        'DO': 'República Dominicana',
-        'DZ': 'Argelia',
-        'EC': 'Ecuador',
-        'EE': 'Estonia',
-        'EG': 'Egipto',
-        'EH': 'Sáhara Occidental',
-        'ER': 'Eritrea',
-        'ES': 'España',
-        'ET': 'Etiopía',
-        'FI': 'Finlandia',
-        'FJ': 'Fiyi',
-        'FK': 'Islas Malvinas',
-        'FM': 'Micronesia',
-        'FO': 'Islas Feroe',
-        'FR': 'Francia',
-        'GA': 'Gabón',
-        'GB': 'Reino Unido',
-        'GD': 'Granada',
-        'GE': 'Georgia',
-        'GF': 'Guayana Francesa',
-        'GG': 'Guernsey',
-        'GH': 'Ghana',
-        'GI': 'Gibraltar',
-        'GL': 'Groenlandia',
-        'GM': 'Gambia',
-        'GN': 'Guinea',
-        'GP': 'Guadalupe',
-        'GQ': 'Guinea Ecuatorial',
-        'GR': 'Grecia',
-        'GS': 'Islas Georgia del Sur y Sandwich del Sur',
-        'GT': 'Guatemala',
-        'GU': 'Guam',
-        'GW': 'Guinea-Bisáu',
-        'GY': 'Guyana',
-        'HK': 'Hong Kong',
-        'HM': 'Isla Heard y McDonald',
-        'HN': 'Honduras',
-        'HR': 'Croacia',
-        'HT': 'Haití',
-        'HU': 'Hungría',
-        'ID': 'Indonesia',
-        'IE': 'Irlanda',
-        'IL': 'Israel',
-        'IM': 'Isla de Man',
-        'IN': 'India',
-        'IO': 'Territorio Británico del Océano Índico',
-        'IQ': 'Irak',
-        'IR': 'Irán',
-        'IS': 'Islandia',
-        'IT': 'Italia',
-        'JE': 'Jersey',
-        'JM': 'Jamaica',
-        'JO': 'Jordania',
-        'JP': 'Japón',
-        'KE': 'Kenia',
-        'KG': 'Kirguistán',
-        'KH': 'Camboya',
-        'KI': 'Kiribati',
-        'KM': 'Comoras',
-        'KN': 'San Cristóbal y Nieves',
-        'KP': 'Corea del Norte',
-        'KR': 'Corea del Sur',
-        'KW': 'Kuwait',
-        'KY': 'Islas Caimán',
-        'KZ': 'Kazajistán',
-        'LA': 'Laos',
-        'LB': 'Líbano',
-        'LC': 'Santa Lucía',
-        'LI': 'Liechtenstein',
-        'LK': 'Sri Lanka',
-        'LR': 'Liberia',
-        'LS': 'Lesoto',
-        'LT': 'Lituania',
-        'LU': 'Luxemburgo',
-        'LV': 'Letonia',
-        'LY': 'Libia',
-        'MA': 'Marruecos',
-        'MC': 'Mónaco',
-        'MD': 'Moldavia',
-        'ME': 'Montenegro',
-        'MF': 'San Martín',
-        'MG': 'Madagascar',
-        'MH': 'Islas Marshall',
-        'MK': 'Macedonia del Norte',
-        'ML': 'Malí',
-        'MM': 'Birmania',
-        'MN': 'Mongolia',
-        'MO': 'Macao',
-        'MP': 'Islas Marianas del Norte',
-        'MQ': 'Martinica',
-        'MR': 'Mauritania',
-        'MS': 'Montserrat',
-        'MT': 'Malta',
-        'MU': 'Mauricio',
-        'MV': 'Maldivas',
-        'MW': 'Malaui',
-        'MX': 'México',
-        'MY': 'Malasia',
-        'MZ': 'Mozambique',
-        'NA': 'Namibia',
-        'NC': 'Nueva Caledonia',
-        'NE': 'Níger',
-        'NF': 'Isla Norfolk',
-        'NG': 'Nigeria',
-        'NI': 'Nicaragua',
-        'NL': 'Países Bajos',
-        'NO': 'Noruega',
-        'NP': 'Nepal',
-        'NR': 'Nauru',
-        'NU': 'Niue',
-        'NZ': 'Nueva Zelanda',
-        'OM': 'Omán',
-        'PA': 'Panamá',
-        'PE': 'Perú',
-        'PF': 'Polinesia Francesa',
-        'PG': 'Papúa Nueva Guinea',
-        'PH': 'Filipinas',
-        'PK': 'Pakistán',
-        'PL': 'Polonia',
-        'PM': 'San Pedro y Miquelón',
-        'PN': 'Islas Pitcairn',
-        'PR': 'Puerto Rico',
-        'PS': 'Palestina',
-        'PT': 'Portugal',
-        'PW': 'Palaos',
-        'PY': 'Paraguay',
-        'QA': 'Catar',
-        'RE': 'Reunión',
-        'RO': 'Rumania',
-        'RS': 'Serbia',
-        'RU': 'Rusia',
-        'RW': 'Ruanda',
-        'SA': 'Arabia Saudita',
-        'SB': 'Islas Salomón',
-        'SC': 'Seychelles',
-        'SD': 'Sudán',
-        'SE': 'Suecia',
-        'SG': 'Singapur',
-        'SH': 'Santa Elena, Ascensión y Tristán de Acuña',
-        'SI': 'Eslovenia',
-        'SJ': 'Svalbard y Jan Mayen',
-        'SK': 'Eslovaquia',
-        'SL': 'Sierra Leona',
-        'SM': 'San Marino',
-        'SN': 'Senegal',
-        'SO': 'Somalia',
-        'SR': 'Surinam',
-        'SS': 'Sudán del Sur',
-        'ST': 'Santo Tomé y Príncipe',
-        'SV': 'El Salvador',
-        'SX': 'Sint Maarten',
-        'SY': 'Siria',
-        'SZ': 'Esuatini',
-        'TC': 'Islas Turcas y Caicos',
-        'TD': 'Chad',
-        'TF': 'Territorios Australes Franceses',
-        'TG': 'Togo',
-        'TH': 'Tailandia',
-        'TJ': 'Tayikistán',
-        'TK': 'Tokelau',
-        'TL': 'Timor Oriental',
-        'TM': 'Turkmenistán',
-        'TN': 'Túnez',
-        'TO': 'Tonga',
-        'TR': 'Turquía',
-        'TT': 'Trinidad y Tobago',
-        'TV': 'Tuvalu',
-        'TW': 'Taiwán',
-        'TZ': 'Tanzania',
-        'UA': 'Ucrania',
-        'UG': 'Uganda',
-        'UM': 'Islas Ultramarinas Menores de Estados Unidos',
-        'US': 'Estados Unidos',
-        'UY': 'Uruguay',
-        'UZ': 'Uzbekistán',
-        'VA': 'Ciudad del Vaticano',
-        'VC': 'San Vicente y las Granadinas',
-        'VE': 'Venezuela',
-        'VG': 'Islas Vírgenes Británicas',
-        'VI': 'Islas Vírgenes de los Estados Unidos',
-        'VN': 'Vietnam',
-        'VU': 'Vanuatu',
-        'WF': 'Wallis y Futuna',
-        'WS': 'Samoa',
-        'YE': 'Yemen',
-        'YT': 'Mayotte',
-        'ZA': 'Sudáfrica',
-        'ZM': 'Zambia',
+        'AD': 'Andorra', 'AE': 'Emiratos Árabes Unidos', 'AF': 'Afganistán',
+        'AG': 'Antigua y Barbuda', 'AI': 'Anguila', 'AL': 'Albania',
+        'AM': 'Armenia', 'AO': 'Angola', 'AQ': 'Antártida', 'AR': 'Argentina',
+        'AS': 'Samoa Americana', 'AT': 'Austria', 'AU': 'Australia',
+        'AW': 'Aruba', 'AX': 'Islas Åland', 'AZ': 'Azerbaiyán',
+        'BA': 'Bosnia y Herzegovina', 'BB': 'Barbados', 'BD': 'Bangladés',
+        'BE': 'Bélgica', 'BF': 'Burkina Faso', 'BG': 'Bulgaria', 'BH': 'Baréin',
+        'BI': 'Burundi', 'BJ': 'Benín', 'BL': 'San Bartolomé', 'BM': 'Bermudas',
+        'BN': 'Brunéi', 'BO': 'Bolivia', 'BQ': 'Caribe Neerlandés', 'BR': 'Brasil',
+        'BS': 'Bahamas', 'BT': 'Bután', 'BW': 'Botsuana', 'BY': 'Bielorrusia',
+        'BZ': 'Belice', 'CA': 'Canadá', 'CC': 'Islas Cocos',
+        'CD': 'República Democrática del Congo', 'CF': 'República Centroafricana',
+        'CG': 'República del Congo', 'CH': 'Suiza', 'CI': 'Costa de Marfil',
+        'CK': 'Islas Cook', 'CL': 'Chile', 'CM': 'Camerún', 'CN': 'China',
+        'CO': 'Colombia', 'CR': 'Costa Rica', 'CU': 'Cuba', 'CV': 'Cabo Verde',
+        'CW': 'Curazao', 'CX': 'Isla Christmas', 'CY': 'Chipre', 'CZ': 'Chequia',
+        'DE': 'Alemania', 'DJ': 'Yibuti', 'DK': 'Dinamarca', 'DM': 'Dominica',
+        'DO': 'República Dominicana', 'DZ': 'Argelia', 'EC': 'Ecuador',
+        'EE': 'Estonia', 'EG': 'Egipto', 'EH': 'Sáhara Occidental',
+        'ER': 'Eritrea', 'ES': 'España', 'ET': 'Etiopía', 'FI': 'Finlandia',
+        'FJ': 'Fiyi', 'FK': 'Islas Malvinas', 'FM': 'Micronesia', 'FO': 'Islas Feroe',
+        'FR': 'Francia', 'GA': 'Gabón', 'GB': 'Reino Unido', 'GD': 'Granada',
+        'GE': 'Georgia', 'GF': 'Guayana Francesa', 'GG': 'Guernsey', 'GH': 'Ghana',
+        'GI': 'Gibraltar', 'GL': 'Groenlandia', 'GM': 'Gambia', 'GN': 'Guinea',
+        'GP': 'Guadalupe', 'GQ': 'Guinea Ecuatorial', 'GR': 'Grecia',
+        'GT': 'Guatemala', 'GU': 'Guam', 'GW': 'Guinea-Bisáu', 'GY': 'Guyana',
+        'HK': 'Hong Kong', 'HN': 'Honduras', 'HR': 'Croacia', 'HT': 'Haití',
+        'HU': 'Hungría', 'ID': 'Indonesia', 'IE': 'Irlanda', 'IL': 'Israel',
+        'IM': 'Isla de Man', 'IN': 'India', 'IO': 'Territorio Británico del Océano Índico',
+        'IQ': 'Irak', 'IR': 'Irán', 'IS': 'Islandia', 'IT': 'Italia',
+        'JE': 'Jersey', 'JM': 'Jamaica', 'JO': 'Jordania', 'JP': 'Japón',
+        'KE': 'Kenia', 'KG': 'Kirguistán', 'KH': 'Camboya', 'KI': 'Kiribati',
+        'KM': 'Comoras', 'KN': 'San Cristóbal y Nieves', 'KP': 'Corea del Norte',
+        'KR': 'Corea del Sur', 'KW': 'Kuwait', 'KY': 'Islas Caimán',
+        'KZ': 'Kazajistán', 'LA': 'Laos', 'LB': 'Líbano', 'LC': 'Santa Lucía',
+        'LI': 'Liechtenstein', 'LK': 'Sri Lanka', 'LR': 'Liberia', 'LS': 'Lesoto',
+        'LT': 'Lituania', 'LU': 'Luxemburgo', 'LV': 'Letonia', 'LY': 'Libia',
+        'MA': 'Marruecos', 'MC': 'Mónaco', 'MD': 'Moldavia', 'ME': 'Montenegro',
+        'MF': 'San Martín', 'MG': 'Madagascar', 'MH': 'Islas Marshall',
+        'MK': 'Macedonia del Norte', 'ML': 'Malí', 'MM': 'Birmania', 'MN': 'Mongolia',
+        'MO': 'Macao', 'MP': 'Islas Marianas del Norte', 'MQ': 'Martinica',
+        'MR': 'Mauritania', 'MS': 'Montserrat', 'MT': 'Malta', 'MU': 'Mauricio',
+        'MV': 'Maldivas', 'MW': 'Malaui', 'MX': 'México', 'MY': 'Malasia',
+        'MZ': 'Mozambique', 'NA': 'Namibia', 'NC': 'Nueva Caledonia', 'NE': 'Níger',
+        'NF': 'Isla Norfolk', 'NG': 'Nigeria', 'NI': 'Nicaragua', 'NL': 'Países Bajos',
+        'NO': 'Noruega', 'NP': 'Nepal', 'NR': 'Nauru', 'NU': 'Niue',
+        'NZ': 'Nueva Zelanda', 'OM': 'Omán', 'PA': 'Panamá', 'PE': 'Perú',
+        'PF': 'Polinesia Francesa', 'PG': 'Papúa Nueva Guinea', 'PH': 'Filipinas',
+        'PK': 'Pakistán', 'PL': 'Polonia', 'PM': 'San Pedro y Miquelón',
+        'PN': 'Islas Pitcairn', 'PR': 'Puerto Rico', 'PS': 'Palestina',
+        'PT': 'Portugal', 'PW': 'Palaos', 'PY': 'Paraguay', 'QA': 'Catar',
+        'RE': 'Reunión', 'RO': 'Rumania', 'RS': 'Serbia', 'RU': 'Rusia',
+        'RW': 'Ruanda', 'SA': 'Arabia Saudita', 'SB': 'Islas Salomón',
+        'SC': 'Seychelles', 'SD': 'Sudán', 'SE': 'Suecia', 'SG': 'Singapur',
+        'SH': 'Santa Elena, Ascensión y Tristán de Acuña', 'SI': 'Eslovenia',
+        'SJ': 'Svalbard y Jan Mayen', 'SK': 'Eslovaquia', 'SL': 'Sierra Leona',
+        'SM': 'San Marino', 'SN': 'Senegal', 'SO': 'Somalia', 'SR': 'Surinam',
+        'SS': 'Sudán del Sur', 'ST': 'Santo Tomé y Príncipe', 'SV': 'El Salvador',
+        'SX': 'Sint Maarten', 'SY': 'Siria', 'SZ': 'Esuatini',
+        'TC': 'Islas Turcas y Caicos', 'TD': 'Chad', 'TF': 'Territorios Australes Franceses',
+        'TG': 'Togo', 'TH': 'Tailandia', 'TJ': 'Tayikistán', 'TK': 'Tokelau',
+        'TL': 'Timor Oriental', 'TM': 'Turkmenistán', 'TN': 'Túnez', 'TO': 'Tonga',
+        'TR': 'Turquía', 'TT': 'Trinidad y Tobago', 'TV': 'Tuvalu', 'TW': 'Taiwán',
+        'TZ': 'Tanzania', 'UA': 'Ucrania', 'UG': 'Uganda',
+        'UM': 'Islas Ultramarinas Menores de Estados Unidos', 'US': 'Estados Unidos',
+        'UY': 'Uruguay', 'UZ': 'Uzbekistán', 'VA': 'Ciudad del Vaticano',
+        'VC': 'San Vicente y las Granadinas', 'VE': 'Venezuela',
+        'VG': 'Islas Vírgenes Británicas', 'VI': 'Islas Vírgenes de los Estados Unidos',
+        'VN': 'Vietnam', 'VU': 'Vanuatu', 'WF': 'Wallis y Futuna', 'WS': 'Samoa',
+        'YE': 'Yemen', 'YT': 'Mayotte', 'ZA': 'Sudáfrica', 'ZM': 'Zambia',
         'ZW': 'Zimbabue',
     }
 
@@ -302,13 +131,10 @@ class ContentService:
         self.supabase = supabase
         self.settings = get_settings()
 
-    def _extract_stream_id(self, url: str) -> tuple:
-        """
-        Extrae el ID y extensión del stream de la URL original.
+    # ── URL helpers ─────────────────────────────────────────────────────────
 
-        Returns:
-            (stream_id, extension, content_type)
-        """
+    def _extract_stream_id(self, url: str) -> tuple:
+        """Extrae (stream_id, extension, content_type) de la URL original."""
         if not url:
             return (None, None, 'live')
 
@@ -341,9 +167,7 @@ class ContentService:
         return (None, None, 'live')
 
     def _build_proxy_url(self, original_url: str, username: str, password: str) -> str:
-        """
-        Transforma la URL original al formato del proxy.
-        """
+        """Transforma la URL original al formato del proxy."""
         if not original_url:
             return ''
 
@@ -354,7 +178,6 @@ class ContentService:
 
         base_url = self.settings.public_domain.rstrip('/')
 
-        # Canales (live) no llevan tipo en la URL, solo movie y series
         if content_type == 'live':
             return f"{base_url}/{username}/{password}/{stream_id}"
 
@@ -367,39 +190,91 @@ class ContentService:
         """Reemplaza placeholders de credenciales en URLs persistidas."""
         if not stream_url:
             return stream_url
-
         if username:
             stream_url = stream_url.replace('{{USERNAME}}', username)
         if password:
             stream_url = stream_url.replace('{{PASSWORD}}', password)
-
         return stream_url
 
-    def _parse_content_item(self, row: Dict[str, Any], content_type: str, username: str = '', password: str = '') -> Dict[str, Any]:
+    def _build_stream_url(
+        self,
+        original_url: str,
+        persisted_stream_url: Optional[str],
+        username: str,
+        password: str,
+    ) -> Optional[str]:
         """
-        Parsea un item de contenido (canal, película o serie) de Supabase.
-        Método genérico que reemplaza a _parse_channel, _parse_movie, _parse_series.
+        Construye la stream_url para un item.
+
+        Optimización clave: si el row tiene provider_id, lo usamos directamente
+        evitando el urlparse completo sobre la URL del proveedor.
+        """
+        if persisted_stream_url:
+            return self._interpolate_stream_url_template(persisted_stream_url, username, password)
+
+        if not original_url or not username or not password:
+            return None
+
+        stream_id, extension, content_type_detected = self._extract_stream_id(original_url)
+        if not stream_id:
+            return None
+
+        base_url = self.settings.public_domain.rstrip('/')
+
+        if content_type_detected == 'live':
+            return f"{base_url}/{username}/{password}/{stream_id}"
+        if extension:
+            return f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}.{extension}"
+        return f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}"
+
+    # ── Parsing ──────────────────────────────────────────────────────────────
+
+    def _parse_content_item(
+        self,
+        row: Dict[str, Any],
+        content_type: str,
+        username: str = '',
+        password: str = '',
+    ) -> Dict[str, Any]:
+        """
+        Parsea un item de contenido de Supabase.
+
+        Optimización: cuando el row tiene provider_id (siempre en channels/movies/series
+        después de la ingesta) lo usamos directamente en lugar de hacer urlparse.
         """
         original_url = row.get('url', '')
         persisted_stream_url = row.get('stream_url')
-        stream_id, extension, content_type_detected = self._extract_stream_id(original_url)
 
-        base_url = self.settings.public_domain.rstrip('/') if username and password else ''
-        if persisted_stream_url:
-            stream_url = self._interpolate_stream_url_template(persisted_stream_url, username, password)
-        elif original_url and username and password and stream_id:
-            # Canales (live) no llevan tipo en la URL, solo movie y series
-            if content_type_detected == 'live':
-                stream_url = f"{base_url}/{username}/{password}/{stream_id}"
-            elif extension:
-                stream_url = f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}.{extension}"
+        # Intentar provider_id primero (evita urlparse en ~100% de los casos)
+        provider_id = row.get('provider_id')
+        if provider_id and username and password:
+            base_url = self.settings.public_domain.rstrip('/')
+            # Determinar content_type_detected a partir del tipo de tabla
+            if content_type == 'channels':
+                stream_url = f"{base_url}/{username}/{password}/{provider_id}"
+            elif content_type in ('movies', 'series'):
+                ct_path = 'movie' if content_type == 'movies' else 'series'
+                stream_url = f"{base_url}/{ct_path}/{username}/{password}/{provider_id}.ts"
             else:
-                stream_url = f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}"
+                stream_url = self._build_stream_url(
+                    original_url, persisted_stream_url, username, password
+                )
+        elif persisted_stream_url:
+            stream_url = self._interpolate_stream_url_template(
+                persisted_stream_url, username, password
+            )
+        elif original_url:
+            stream_url = self._build_stream_url(
+                original_url, None, username, password
+            )
         else:
             stream_url = None
 
+        # stream_id para el campo 'id' de la respuesta
+        stream_id = provider_id or self._extract_stream_id(original_url)[0] or ''
+
         base_item = {
-            'id': stream_id or '',
+            'id': stream_id,
             'num': row.get('numero'),
             'nombre': row.get('nombre'),
             'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre'),
@@ -407,12 +282,11 @@ class ContentService:
             'grupo': row.get('grupo'),
             'grupo_normalizado': row.get('grupo_normalizado') or row.get('grupo'),
             'country': row.get('country'),
-            'provider_id': row.get('provider_id'),
+            'provider_id': provider_id,
             'url': original_url,
-            'stream_url': stream_url
+            'stream_url': stream_url,
         }
 
-        # Campos específicos por tipo
         if content_type == 'channels':
             base_item['tvg_id'] = row.get('tvg_id')
         elif content_type == 'series':
@@ -422,7 +296,13 @@ class ContentService:
 
         return base_item
 
-    def _to_android_catalog_item(self, row: Dict[str, Any], content_type: str, username: str = '', password: str = '') -> Dict[str, Any]:
+    def _to_android_catalog_item(
+        self,
+        row: Dict[str, Any],
+        content_type: str,
+        username: str = '',
+        password: str = '',
+    ) -> Dict[str, Any]:
         parsed = self._parse_content_item(row, content_type, username, password)
         original_title = parsed.get('nombre') or ''
         original_group = parsed.get('grupo') or ''
@@ -441,23 +321,74 @@ class ContentService:
             'group': group,
             'normalized_group': group,
             'original_group': original_group,
-            'badge_text': group[:8] if content_type == 'channels' else ('CINE' if content_type == 'movies' else 'SERIE'),
+            'badge_text': (
+                group[:8] if content_type == 'channels'
+                else ('CINE' if content_type == 'movies' else 'SERIE')
+            ),
             'channel_number': parsed.get('num') if content_type == 'channels' else None,
             'language_label': parsed.get('country'),
-            'series_name': (parsed.get('serie_name') or parsed.get('nombre_normalizado') or original_title) if content_type == 'series' else None,
+            'series_name': (
+                (parsed.get('serie_name') or parsed.get('nombre_normalizado') or original_title)
+                if content_type == 'series' else None
+            ),
             'season_number': parsed.get('temporada') if content_type == 'series' else None,
             'episode_number': parsed.get('episodio') if content_type == 'series' else None,
             'stream_url': parsed.get('stream_url') or '',
         }
 
+    # ── Helpers de caché de catálogo ─────────────────────────────────────────
+
+    @staticmethod
+    def _catalog_cache_key(
+        content_type: str, page: int, page_size: int,
+        group: Optional[str], country: Optional[str],
+    ) -> str:
+        return f"catalog:{content_type}:p{page}:ps{page_size}:g{group}:c{country}"
+
+    def _strip_stream_urls(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Devuelve una copia del resultado sin stream_url para almacenar en caché."""
+        stripped_items = []
+        for item in result.get('items', []):
+            r = dict(item)
+            r['stream_url'] = ''
+            stripped_items.append(r)
+        return {**result, 'items': stripped_items}
+
+    def _inject_stream_urls(
+        self, cached: Dict[str, Any], content_type: str, username: str, password: str
+    ) -> Dict[str, Any]:
+        """Reconstruye stream_url en cada item de un resultado cacheado."""
+        if not username or not password:
+            return cached
+
+        base_url = self.settings.public_domain.rstrip('/')
+        injected_items = []
+        for item in cached.get('items', []):
+            r = dict(item)
+            item_id = r.get('id') or ''
+            if item_id:
+                if content_type == 'channels':
+                    r['stream_url'] = f"{base_url}/{username}/{password}/{item_id}"
+                elif content_type == 'movies':
+                    r['stream_url'] = f"{base_url}/movie/{username}/{password}/{item_id}.ts"
+                elif content_type == 'series':
+                    r['stream_url'] = f"{base_url}/series/{username}/{password}/{item_id}.ts"
+            injected_items.append(r)
+        return {**cached, 'items': injected_items}
+
+    # ── Queries ──────────────────────────────────────────────────────────────
+
     def _calculate_offset(self, page: int, page_size: int) -> int:
-        """Calcula el offset basado en page y page_size"""
         return (page - 1) * page_size
 
-    def _build_base_query(self, table: str, group: Optional[str] = None,
-                         country: Optional[str] = None, search: Optional[str] = None,
-                         include_count: bool = False):
-        """Construye la query base con filtros"""
+    def _build_base_query(
+        self,
+        table: str,
+        group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+        include_count: bool = False,
+    ):
         count_param = 'exact' if include_count else None
         query = self.supabase.table(table).select('*', count=count_param)
 
@@ -479,21 +410,13 @@ class ContentService:
         country: Optional[str] = None,
         search: Optional[str] = None,
         username: str = '',
-        password: str = ''
+        password: str = '',
     ) -> Dict[str, Any]:
         """
         Obtiene lista paginada de contenido (canales, películas o series).
-        Método genérico que unifica get_channels, get_movies, get_series.
 
-        Args:
-            content_type: 'channels', 'movies' o 'series'
-            page: Número de página (1-indexed)
-            page_size: Items por página
-            group: Filtrar por grupo
-            country: Filtrar por país
-            search: Buscar por nombre
-            username: Usuario para construir URLs de stream
-            password: Contraseña para construir URLs de stream
+        Para series y movies delega en métodos optimizados con caché.
+        Para channels sigue usando Supabase con count exact.
         """
         table = self.TABLE_MAP.get(content_type)
         if not table:
@@ -501,19 +424,21 @@ class ContentService:
 
         if content_type == 'series':
             return self._get_series_catalog_page(
-                page=page,
-                page_size=page_size,
-                group=group,
-                country=country,
-                search=search,
-                username=username,
-                password=password,
+                page=page, page_size=page_size,
+                group=group, country=country, search=search,
+                username=username, password=password,
             )
+
+        # Caché para movies (sin búsqueda; búsquedas son muy variables)
+        if content_type == 'movies' and not search:
+            cache_key = self._catalog_cache_key(content_type, page, page_size, group, country)
+            cached = self._get_cached(cache_key)
+            if cached is not None:
+                return self._inject_stream_urls(cached, content_type, username, password)
 
         query = self._build_base_query(table, group, country, search, include_count=True)
         query = query.order('numero', desc=False)
 
-        # Calcular rango basado en page y page_size
         offset = self._calculate_offset(page, page_size)
         query = query.range(offset, offset + page_size - 1)
 
@@ -522,15 +447,25 @@ class ContentService:
         total = result.count or 0
         pages = (total + page_size - 1) // page_size
 
-        return {
-            'items': [self._parse_content_item(row, content_type, username, password) for row in (result.data or [])],
+        data = {
+            'items': [
+                self._parse_content_item(row, content_type, username, password)
+                for row in (result.data or [])
+            ],
             'total': total,
             'page': page,
             'page_size': page_size,
             'pages': pages,
             'has_next': page < pages,
-            'has_prev': page > 1
+            'has_prev': page > 1,
         }
+
+        # Guardar en caché sin stream_urls
+        if content_type == 'movies' and not search:
+            cache_key = self._catalog_cache_key(content_type, page, page_size, group, country)
+            self._set_cached(cache_key, self._strip_stream_urls(data))
+
+        return data
 
     def _get_series_catalog_page(
         self,
@@ -542,21 +477,35 @@ class ContentService:
         username: str = '',
         password: str = '',
     ) -> Dict[str, Any]:
-        """Obtiene el catálogo de series agrupado por nombre de serie."""
+        """
+        Obtiene el catálogo de series agrupado por nombre de serie.
+
+        Con caché: la primera request golpea PostgreSQL, las siguientes
+        (mismo page/page_size/grupo/country, sin search) se sirven desde memoria.
+        """
+        # Solo cachear cuando no hay búsqueda libre
+        use_cache = not search
+        cache_key = self._catalog_cache_key('series', page, page_size, group, country)
+
+        if use_cache:
+            cached = self._get_cached(cache_key)
+            if cached is not None:
+                return self._inject_stream_urls(cached, 'series', username, password)
+
         pg_service = get_postgres_service()
         result = pg_service.get_distinct_series_page(
-            page=page,
-            page_size=page_size,
-            group=group,
-            country=country,
-            search=search,
+            page=page, page_size=page_size,
+            group=group, country=country, search=search,
         )
 
         total = result.get('total', 0) or 0
         pages = (total + page_size - 1) // page_size if total else 0
 
-        return {
-            'items': [self._parse_content_item(row, 'series', username, password) for row in (result.get('items') or [])],
+        data = {
+            'items': [
+                self._to_android_catalog_item(row, 'series', username, password)
+                for row in (result.get('items') or [])
+            ],
             'total': total,
             'page': page,
             'page_size': page_size,
@@ -565,17 +514,19 @@ class ContentService:
             'has_prev': page > 1,
         }
 
+        if use_cache:
+            self._set_cached(cache_key, self._strip_stream_urls(data))
+
+        return data
+
     def get_content_item(
         self,
         content_type: str,
         item_id: str,
         username: str = '',
-        password: str = ''
+        password: str = '',
     ) -> Optional[Dict[str, Any]]:
-        """
-        Obtiene un item específico de contenido.
-        Método genérico que unifica get_channel, get_movie, get_serie.
-        """
+        """Obtiene un item específico de contenido."""
         table = self.TABLE_MAP.get(content_type)
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
@@ -586,102 +537,61 @@ class ContentService:
             return self._parse_content_item(result.data[0], content_type, username, password)
         return None
 
-    # Métodos legacy para compatibilidad (pueden deprecarse gradualmente)
-    def get_channels(
-        self,
-        page: int = 1,
-        page_size: int = 50,
-        group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        username: str = '',
-        password: str = ''
-    ) -> Dict[str, Any]:
-        """Obtiene lista paginada de canales"""
-        return self.get_content_list(
-            'channels', page, page_size, group, country, search, username, password
-        )
+    # ── Métodos legacy (compatibilidad) ──────────────────────────────────────
 
-    def get_channel(self, channel_id: str, username: str = '', password: str = '') -> Optional[Dict[str, Any]]:
-        """Obtiene un canal específico"""
+    def get_channels(self, page=1, page_size=50, group=None, country=None,
+                     search=None, username='', password='') -> Dict[str, Any]:
+        return self.get_content_list('channels', page, page_size, group, country, search, username, password)
+
+    def get_channel(self, channel_id: str, username='', password='') -> Optional[Dict[str, Any]]:
         return self.get_content_item('channels', channel_id, username, password)
 
-    def get_movies(
-        self,
-        page: int = 1,
-        page_size: int = 50,
-        group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        username: str = '',
-        password: str = ''
-    ) -> Dict[str, Any]:
-        """Obtiene lista paginada de películas"""
-        return self.get_content_list(
-            'movies', page, page_size, group, country, search, username, password
-        )
+    def get_movies(self, page=1, page_size=50, group=None, country=None,
+                   search=None, username='', password='') -> Dict[str, Any]:
+        return self.get_content_list('movies', page, page_size, group, country, search, username, password)
 
-    def get_movie(self, movie_id: str, username: str = '', password: str = '') -> Optional[Dict[str, Any]]:
-        """Obtiene una película específica"""
+    def get_movie(self, movie_id: str, username='', password='') -> Optional[Dict[str, Any]]:
         return self.get_content_item('movies', movie_id, username, password)
 
-    def get_series(
-        self,
-        page: int = 1,
-        page_size: int = 50,
-        group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        username: str = '',
-        password: str = ''
-    ) -> Dict[str, Any]:
-        """Obtiene lista paginada de series"""
-        return self.get_content_list(
-            'series', page, page_size, group, country, search, username, password
-        )
+    def get_series(self, page=1, page_size=50, group=None, country=None,
+                   search=None, username='', password='') -> Dict[str, Any]:
+        return self.get_content_list('series', page, page_size, group, country, search, username, password)
 
-    def get_serie(self, series_id: str, username: str = '', password: str = '') -> Optional[Dict[str, Any]]:
-        """Obtiene una serie específica"""
+    def get_serie(self, series_id: str, username='', password='') -> Optional[Dict[str, Any]]:
         return self.get_content_item('series', series_id, username, password)
 
+    # ── Groups / Countries ───────────────────────────────────────────────────
+
     def get_groups(self, content_type: str = 'channels', countries: Optional[List[str]] = None) -> List[str]:
-        """Obtiene lista de grupos disponibles, opcionalmente filtrados por países usando PostgreSQL directo"""
+        """Obtiene lista de grupos disponibles, opcionalmente filtrados por países."""
         table = self.TABLE_MAP.get(content_type, 'channels')
         cache_key = f"groups:{table}:{','.join(sorted(countries)) if countries else 'all'}"
 
-        # Revisar cache primero
         cached = self._get_cached(cache_key)
         if cached is not None:
             return cached
 
-        # Usar PostgresService para consulta SQL directa con DISTINCT
         pg_service = get_postgres_service()
         result = pg_service.get_distinct_groups(table, countries)
-
-        # Guardar en cache
         self._set_cached(cache_key, result)
         return result
 
     def get_countries(self, content_type: str = 'channels') -> List[Dict[str, str]]:
-        """Obtiene lista de países disponibles con código y nombre usando PostgreSQL directo"""
+        """Obtiene lista de países disponibles con código y nombre."""
         table = self.TABLE_MAP.get(content_type, 'channels')
         cache_key = f"countries:{table}"
 
-        # Revisar cache primero
         cached = self._get_cached(cache_key)
         if cached is not None:
             return cached
 
-        # Usar PostgresService para consulta SQL directa con GROUP BY
         pg_service = get_postgres_service()
         result = pg_service.get_distinct_countries(table)
-
-        # Guardar en cache
         self._set_cached(cache_key, result)
         return result
 
     def get_content_count(self) -> Dict[str, int]:
-        """Obtiene el número total de canales, películas y series"""
+        """Obtiene el número total de canales, películas y series."""
         channels = self.supabase.table('channels').select('id', count='exact').execute()
         movies = self.supabase.table('movies').select('id', count='exact').execute()
         series = self.supabase.table('series').select('id', count='exact').execute()
@@ -691,7 +601,7 @@ class ContentService:
             'channels': channels.count or 0,
             'movies': movies.count or 0,
             'series': series.count or 0,
-            'replays': replays.count or 0
+            'replays': replays.count or 0,
         }
 
     def get_home_catalog(self, username: str, page_size: int = 12, country: Optional[str] = None) -> Dict[str, Any]:
@@ -738,17 +648,16 @@ class ContentService:
     ) -> Dict[str, Any]:
         result = self.get_content_list(
             content_type=content_type,
-            page=page,
-            page_size=page_size,
-            group=group,
-            country=country,
-            search=search,
-            username=username,
-            password=password,
+            page=page, page_size=page_size,
+            group=group, country=country, search=search,
+            username=username, password=password,
         )
         return {
             **result,
-            'items': [self._to_android_catalog_item(row, content_type, username, password) for row in result['items']],
+            'items': [
+                self._to_android_catalog_item(row, content_type, username, password)
+                for row in result['items']
+            ],
         }
 
     def get_catalog_filters(self, content_type: str, country: Optional[str] = None) -> Dict[str, Any]:
@@ -773,7 +682,7 @@ class ContentService:
         username: str = '',
         password: str = '',
     ) -> Dict[str, Any]:
-        requested_types = [content_type for content_type in types if content_type in self.TABLE_MAP]
+        requested_types = [ct for ct in types if ct in self.TABLE_MAP]
         if not requested_types:
             requested_types = ['channels', 'movies', 'series']
 
@@ -809,12 +718,94 @@ class ContentService:
             'types': requested_types,
         }
 
+    # ── Episodes ─────────────────────────────────────────────────────────────
+
+    def get_episodes_by_serie_name(
+        self,
+        serie_name: str,
+        username: str = '',
+        password: str = '',
+    ) -> List[Dict[str, Any]]:
+        """Obtiene todos los episodios de una serie por su nombre."""
+        result = (
+            self.supabase.table('series')
+            .select('*')
+            .eq('serie_name', serie_name)
+            .order('temporada')
+            .order('episodio')
+            .execute()
+        )
+        return [
+            self._parse_content_item(row, 'series', username, password)
+            for row in result.data
+        ]
+
+    def get_episodes_by_serie_name_paginated(
+        self,
+        serie_name: str,
+        username: str = '',
+        password: str = '',
+        page: int = 1,
+        page_size: int = 50,
+    ) -> Dict[str, Any]:
+        """
+        Obtiene episodios de una serie paginados.
+
+        Optimización: la lista de temporadas usa una query SELECT temporada (ligera)
+        en lugar de traer todos los episodios completos solo para extraer las seasons.
+        """
+        offset = self._calculate_offset(page, page_size)
+        result = (
+            self.supabase.table('series')
+            .select('*', count='exact')
+            .eq('serie_name', serie_name)
+            .order('temporada')
+            .order('episodio')
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+
+        total = result.count or 0
+        pages = (total + page_size - 1) // page_size if total else 0
+        items = [
+            self._to_android_catalog_item(row, 'series', username, password)
+            for row in (result.data or [])
+        ]
+
+        # Query ligera: solo la columna temporada para construir el listado de seasons
+        seasons_result = (
+            self.supabase.table('series')
+            .select('temporada')
+            .eq('serie_name', serie_name)
+            .execute()
+        )
+        seasons = sorted({
+            row['temporada'] for row in (seasons_result.data or [])
+            if row.get('temporada') is not None
+        })
+
+        return {
+            'serie_name': serie_name,
+            'items': items,
+            'episodes': items,
+            'total': total,
+            'total_episodes': total,
+            'page': page,
+            'page_size': page_size,
+            'pages': pages,
+            'has_next': page < pages,
+            'has_prev': page > 1,
+            'seasons': seasons,
+        }
+
+    # ── Replays ───────────────────────────────────────────────────────────────
+
     def get_replays(
         self,
         page: int = 1,
         page_size: int = 24,
         event_type: Optional[str] = None,
-        search: Optional[str] = None
+        search: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Obtiene lista paginada de replays."""
         query = self.supabase.table('replays').select('*', count='exact')
@@ -843,7 +834,7 @@ class ContentService:
             'page_size': page_size,
             'pages': pages,
             'has_next': page < pages,
-            'has_prev': page > 1
+            'has_prev': page > 1,
         }
 
     def get_replay(self, slug: str) -> Optional[Dict[str, Any]]:
@@ -955,10 +946,7 @@ class ContentService:
                     'stream_resolved_at': source.get('stream_resolved_at'),
                 })
 
-            normalized_groups.append({
-                'group': group_name,
-                'sources': sources,
-            })
+            normalized_groups.append({'group': group_name, 'sources': sources})
 
         return normalized_groups
 
@@ -1069,77 +1057,6 @@ class ContentService:
                 return match.group(1)
 
         return None
-
-    def get_episodes_by_serie_name(
-        self,
-        serie_name: str,
-        username: str = '',
-        password: str = ''
-    ) -> List[Dict[str, Any]]:
-        """
-        Obtiene todos los episodios de una serie por su nombre
-
-        Args:
-            serie_name: Nombre de la serie (ej: "Breaking Bad")
-            username: Username del usuario para construir stream_url
-            password: Password del usuario para construir stream_url
-
-        Returns:
-            Lista de episodios ordenados por temporada y episodio
-        """
-        result = (
-            self.supabase.table('series')
-            .select('*')
-            .eq('serie_name', serie_name)
-            .order('temporada')
-            .order('episodio')
-            .execute()
-        )
-
-        episodes = []
-        for row in result.data:
-            episode = self._parse_content_item(row, 'series', username, password)
-            episodes.append(episode)
-
-        return episodes
-
-    def get_episodes_by_serie_name_paginated(
-        self,
-        serie_name: str,
-        username: str = '',
-        password: str = '',
-        page: int = 1,
-        page_size: int = 50,
-    ) -> Dict[str, Any]:
-        result = (
-            self.supabase.table('series')
-            .select('*', count='exact')
-            .eq('serie_name', serie_name)
-            .order('temporada')
-            .order('episodio')
-            .range(self._calculate_offset(page, page_size), self._calculate_offset(page, page_size) + page_size - 1)
-            .execute()
-        )
-
-        total = result.count or 0
-        pages = (total + page_size - 1) // page_size if total else 0
-        items = [self._to_android_catalog_item(row, 'series', username, password) for row in (result.data or [])]
-        all_episodes = self.get_episodes_by_serie_name(serie_name, username, password)
-        seasons = sorted({episode.get('temporada') for episode in all_episodes if episode.get('temporada') is not None})
-
-        return {
-            'serie_name': serie_name,
-            'items': items,
-            'episodes': items,
-            'total': total,
-            'total_episodes': total,
-            'page': page,
-            'page_size': page_size,
-            'pages': pages,
-            'has_next': page < pages,
-            'has_prev': page > 1,
-            'seasons': seasons,
-        }
 
 
 def map_android_type(content_type: str) -> str:
