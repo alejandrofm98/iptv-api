@@ -32,9 +32,6 @@ class ContentService:
     }
 
     # ── Caché estático (TTL 5 min) ──────────────────────────────────────────
-    # Almacena tanto resultados de groups/countries como páginas de catálogo.
-    # Las páginas se guardan SIN stream_url (depende del usuario); las URLs
-    # se inyectan en caliente al servir desde caché.
     _cache: Dict[str, Tuple[Any, float]] = {}
     _CACHE_TTL_SECONDS = 300
 
@@ -204,12 +201,6 @@ class ContentService:
         username: str,
         password: str,
     ) -> Optional[str]:
-        """
-        Construye la stream_url para un item.
-
-        Optimización clave: si el row tiene provider_id, lo usamos directamente
-        evitando el urlparse completo sobre la URL del proveedor.
-        """
         if persisted_stream_url:
             return self._interpolate_stream_url_template(persisted_stream_url, username, password)
 
@@ -240,13 +231,9 @@ class ContentService:
         """
         Parsea un item de contenido de Supabase o PostgreSQL directo.
 
-        Compatibilidad garantizada con rows de ambas fuentes:
-        - Supabase (dict con snake_case)
-        - psycopg2 RealDictCursor (igual, pero provider_id puede ser NULL)
-
-        Orden de prioridad para stream_id:
-          1. provider_id  (columna explícita, más rápido)
-          2. _extract_stream_id(url)  (fallback via urlparse)
+        FIX: Usa row['id'] como id del item (id interno de la BD).
+             stream_id se sigue derivando de provider_id para construir la stream_url,
+             pero el campo 'id' devuelto al frontend es siempre el id interno.
         """
         original_url = row.get('url') or ''
         persisted_stream_url = row.get('stream_url') or None
@@ -255,15 +242,18 @@ class ContentService:
         if persisted_stream_url == '':
             persisted_stream_url = None
 
-        # ── Determinar stream_id ──────────────────────────────────────────
+        # ── Determinar stream_id (para construir la URL de proxy) ────────────
+        # stream_id = provider_id si existe, si no extraer de la URL
         provider_id = row.get('provider_id') or None
         if provider_id:
             stream_id = str(provider_id)
             url_content_type = 'live' if content_type == 'channels' else content_type.rstrip('s')
         else:
-            # Fallback: parsear la URL original
             extracted_id, _ext, url_content_type = self._extract_stream_id(original_url)
             stream_id = extracted_id or ''
+
+        # ── id interno de la BD (FIX: este es el id real, no el stream_id) ──
+        internal_id = str(row.get('id') or stream_id)
 
         # ── Construir stream_url ──────────────────────────────────────────
         if persisted_stream_url and username and password:
@@ -275,7 +265,6 @@ class ContentService:
             if url_content_type == 'live':
                 stream_url = f"{base_url}/{username}/{password}/{stream_id}"
             else:
-                # Detectar extensión desde URL si la hay
                 if original_url and '.' in original_url.split('/')[-1]:
                     ext = original_url.split('/')[-1].rsplit('.', 1)[-1]
                 else:
@@ -285,7 +274,7 @@ class ContentService:
             stream_url = None
 
         base_item = {
-            'id': stream_id,
+            'id': internal_id,        # ← FIX: id interno de la BD, no el provider_id
             'num': row.get('numero'),
             'nombre': row.get('nombre') or '',
             'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre') or '',
@@ -377,13 +366,15 @@ class ContentService:
         for item in cached.get('items', []):
             r = dict(item)
             item_id = r.get('id') or ''
-            if item_id:
+            # Usar provider_id para construir la stream_url si está disponible
+            stream_id = r.get('provider_id') or item_id
+            if stream_id:
                 if content_type == 'channels':
-                    r['stream_url'] = f"{base_url}/{username}/{password}/{item_id}"
+                    r['stream_url'] = f"{base_url}/{username}/{password}/{stream_id}"
                 elif content_type == 'movies':
-                    r['stream_url'] = f"{base_url}/movie/{username}/{password}/{item_id}.ts"
+                    r['stream_url'] = f"{base_url}/movie/{username}/{password}/{stream_id}.ts"
                 elif content_type == 'series':
-                    r['stream_url'] = f"{base_url}/series/{username}/{password}/{item_id}.ts"
+                    r['stream_url'] = f"{base_url}/series/{username}/{password}/{stream_id}.ts"
             injected_items.append(r)
         return {**cached, 'items': injected_items}
 
@@ -400,7 +391,6 @@ class ContentService:
         page_size: int,
         extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Construye una respuesta paginada consistente."""
         pages = (total + page_size - 1) // page_size if total else 0
         payload = {
             'items': items,
@@ -417,7 +407,6 @@ class ContentService:
 
     @staticmethod
     def _is_requested_range_error(error: Exception) -> bool:
-        """Detecta el error 416 de rangos fuera de límite."""
         if not isinstance(error, APIError):
             return False
 
@@ -451,7 +440,6 @@ class ContentService:
         country: Optional[str] = None,
         search: Optional[str] = None,
     ) -> int:
-        """Obtiene el total filtrado sin aplicar paginación."""
         result = self._build_base_query(
             table,
             group=group,
@@ -494,12 +482,6 @@ class ContentService:
         username: str = '',
         password: str = '',
     ) -> Dict[str, Any]:
-        """
-        Obtiene lista paginada de contenido (canales, películas o series).
-
-        Para series y movies delega en métodos optimizados con caché.
-        Para channels sigue usando Supabase con count exact.
-        """
         table = self.TABLE_MAP.get(content_type)
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
@@ -511,7 +493,6 @@ class ContentService:
                 username=username, password=password,
             )
 
-        # Caché para movies (sin búsqueda; búsquedas son muy variables)
         if content_type == 'movies' and not search:
             cache_key = self._catalog_cache_key(content_type, page, page_size, group, country)
             cached = self._get_cached(cache_key)
@@ -540,7 +521,6 @@ class ContentService:
 
         data = self._build_paginated_payload(items, total, page, page_size)
 
-        # Guardar en caché sin stream_urls
         if content_type == 'movies' and not search:
             cache_key = self._catalog_cache_key(content_type, page, page_size, group, country)
             self._set_cached(cache_key, self._strip_stream_urls(data))
@@ -557,13 +537,6 @@ class ContentService:
         username: str = '',
         password: str = '',
     ) -> Dict[str, Any]:
-        """
-        Obtiene el catálogo de series agrupado por nombre de serie.
-
-        Con caché: la primera request golpea PostgreSQL, las siguientes
-        (mismo page/page_size/grupo/country, sin search) se sirven desde memoria.
-        """
-        # Solo cachear cuando no hay búsqueda libre
         use_cache = not search
         cache_key = self._catalog_cache_key('series', page, page_size, group, country)
 
@@ -601,12 +574,22 @@ class ContentService:
         username: str = '',
         password: str = '',
     ) -> Optional[Dict[str, Any]]:
-        """Obtiene un item específico de contenido."""
+        """
+        Obtiene un item específico de contenido.
+
+        FIX: Busca primero por id interno. Si no encuentra, busca por provider_id
+             como fallback para compatibilidad con IDs legacy.
+        """
         table = self.TABLE_MAP.get(content_type)
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
+        # 1. Buscar por id interno (caso normal)
         result = self.supabase.table(table).select('*').eq('id', item_id).execute()
+
+        # 2. Fallback: buscar por provider_id (para IDs legacy o del calendario)
+        if not result.data:
+            result = self.supabase.table(table).select('*').eq('provider_id', item_id).execute()
 
         if result.data:
             return self._parse_content_item(result.data[0], content_type, username, password)
@@ -638,7 +621,6 @@ class ContentService:
     # ── Groups / Countries ───────────────────────────────────────────────────
 
     def get_groups(self, content_type: str = 'channels', countries: Optional[List[str]] = None) -> List[str]:
-        """Obtiene lista de grupos disponibles, opcionalmente filtrados por países."""
         table = self.TABLE_MAP.get(content_type, 'channels')
         cache_key = f"groups:{table}:{','.join(sorted(countries)) if countries else 'all'}"
 
@@ -652,7 +634,6 @@ class ContentService:
         return result
 
     def get_countries(self, content_type: str = 'channels') -> List[Dict[str, str]]:
-        """Obtiene lista de países disponibles con código y nombre."""
         table = self.TABLE_MAP.get(content_type, 'channels')
         cache_key = f"countries:{table}"
 
@@ -666,7 +647,6 @@ class ContentService:
         return result
 
     def get_content_count(self) -> Dict[str, int]:
-        """Obtiene el número total de canales, películas y series."""
         channels = self.supabase.table('channels').select('id', count='exact').execute()
         movies = self.supabase.table('movies').select('id', count='exact').execute()
         series = self.supabase.table('series').select('id', count='exact').execute()
@@ -721,8 +701,6 @@ class ContentService:
         username: str = '',
         password: str = '',
     ) -> Dict[str, Any]:
-        # Para series, _get_series_catalog_page ya devuelve items en formato android.
-        # Llamar get_content_list + _to_android_catalog_item causaría doble parse.
         if content_type == 'series':
             return self._get_series_catalog_page(
                 page=page, page_size=page_size,
@@ -810,7 +788,6 @@ class ContentService:
         username: str = '',
         password: str = '',
     ) -> List[Dict[str, Any]]:
-        """Obtiene todos los episodios de una serie por su nombre."""
         result = (
             self.supabase.table('series')
             .select('*')
@@ -832,12 +809,6 @@ class ContentService:
         page: int = 1,
         page_size: int = 50,
     ) -> Dict[str, Any]:
-        """
-        Obtiene episodios de una serie paginados.
-
-        Optimización: la lista de temporadas usa una query SELECT temporada (ligera)
-        en lugar de traer todos los episodios completos solo para extraer las seasons.
-        """
         offset = self._calculate_offset(page, page_size)
 
         try:
@@ -869,7 +840,6 @@ class ContentService:
             total = count_result.count or 0
             items = []
 
-        # Query ligera: solo la columna temporada para construir el listado de seasons
         seasons_result = (
             self.supabase.table('series')
             .select('temporada')
@@ -903,7 +873,6 @@ class ContentService:
         event_type: Optional[str] = None,
         search: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Obtiene lista paginada de replays."""
         query = self.supabase.table('replays').select('*', count='exact')
 
         if event_type:
@@ -939,14 +908,12 @@ class ContentService:
         return self._build_paginated_payload(items, total, page, page_size)
 
     def get_replay(self, slug: str) -> Optional[Dict[str, Any]]:
-        """Obtiene un replay por slug."""
         result = self.supabase.table('replays').select('*').eq('slug', slug).limit(1).execute()
         if result.data:
             return self._parse_replay_item(result.data[0])
         return None
 
     def get_replay_source(self, slug: str, source_index: int, button_index: int) -> Optional[Dict[str, Any]]:
-        """Obtiene una fuente concreta de replay por slug e indices."""
         replay = self.get_replay(slug)
         if not replay:
             return None
@@ -964,7 +931,6 @@ class ContentService:
         source_index: int,
         button_index: int,
     ) -> Optional[Dict[str, Any]]:
-        """Resuelve una URL fresca para una fuente de replay."""
         source = self.get_replay_source(slug, source_index, button_index)
         if not source:
             return None
@@ -996,7 +962,6 @@ class ContentService:
 
     @staticmethod
     def _parse_replay_item(row: Dict[str, Any]) -> Dict[str, Any]:
-        """Normaliza un replay de Supabase para respuesta API."""
         video_sources = ContentService._normalize_replay_sources(
             row.get('video_sources') or [],
             row.get('event_date'),
