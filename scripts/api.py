@@ -608,18 +608,18 @@ async def search_content(
 async def get_content_item(
     content_type: str,
     item_id: str,
+    password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
-    """Obtiene un item específico de contenido. Requiere Bearer Token."""
     if content_type not in ['channels', 'movies', 'series']:
-        raise BadRequestException("Tipo de contenido inválido", {"valid_types": ["channels", "movies", "series"]})
+        raise BadRequestException("Tipo de contenido inválido")
 
     item = content_svc.get_content_item(
         content_type=content_type,
         item_id=item_id,
         username=auth.username,
-        password=''
+        password=password or ''  # ← usar el password del query param
     )
 
     if not item:
