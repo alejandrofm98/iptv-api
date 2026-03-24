@@ -545,6 +545,7 @@ async def get_content(
     group: Optional[str] = Query(None, description="Filtrar por grupo"),
     country: Optional[str] = Query(None, description="Filtrar por país"),
     search: Optional[str] = Query(None, description="Buscar por nombre"),
+    password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
@@ -557,7 +558,7 @@ async def get_content(
         country=country,
         search=search,
         username=auth.username,
-        password=''
+        password=password or ''
     )
 
 
@@ -576,11 +577,12 @@ async def get_content_filters(
 async def get_home(
     page_size: int = Query(12, ge=1, le=50, description="Items por bloque"),
     country: Optional[str] = Query(None, description="Filtrar home por country, por ejemplo ES o EN"),
+    password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
     """Obtiene bloques ligeros para la home de clientes TV."""
-    return content_svc.get_home_catalog(username=auth.username, page_size=page_size, country=country)
+    return content_svc.get_home_catalog(username=auth.username, page_size=page_size, country=country, password=password or '')
 
 
 @app.get("/api/search", tags=["Content"])
@@ -589,6 +591,7 @@ async def search_content(
     types: Optional[str] = Query(None, description="Tipos separados por coma: channels,movies,series"),
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(50, ge=1, le=100, description="Items por página"),
+    password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
@@ -600,7 +603,7 @@ async def search_content(
         page=page,
         page_size=page_size,
         username=auth.username,
-        password='',
+        password=password or '',
     )
 
 
@@ -838,6 +841,7 @@ async def get_serie_episodes(
     request: Request,
     page: Optional[int] = Query(None, ge=1, description="Número de página"),
     page_size: Optional[int] = Query(None, ge=1, le=100, description="Items por página"),
+    password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service)
 ):
@@ -846,7 +850,7 @@ async def get_serie_episodes(
         episodes = content_svc.get_episodes_by_serie_name(
             serie_name=serie_name,
             username=auth.username,
-            password='',
+            password=password or '',
         )
 
         if not episodes:
@@ -862,7 +866,7 @@ async def get_serie_episodes(
     episodes = content_svc.get_episodes_by_serie_name_paginated(
         serie_name=serie_name,
         username=auth.username,
-        password='',
+        password=password or '',
         page=page or 1,
         page_size=page_size or 50,
     )

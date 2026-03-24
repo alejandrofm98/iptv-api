@@ -659,12 +659,12 @@ class ContentService:
             'replays': replays.count or 0,
         }
 
-    def get_home_catalog(self, username: str, page_size: int = 12, country: Optional[str] = None) -> Dict[str, Any]:
+    def get_home_catalog(self, username: str, page_size: int = 12, country: Optional[str] = None, password: str = '') -> Dict[str, Any]:
         counts = self.get_content_count()
         return {
-            'featured_channels': self.get_android_home_items('channels', page_size=page_size, username=username, country=country),
-            'featured_movies': self.get_android_home_items('movies', page_size=page_size, username=username, country=country),
-            'featured_series': self.get_android_home_items('series', page_size=page_size, username=username, country=country),
+            'featured_channels': self.get_android_home_items('channels', page_size=page_size, username=username, password=password, country=country),
+            'featured_movies': self.get_android_home_items('movies', page_size=page_size, username=username, password=password, country=country),
+            'featured_series': self.get_android_home_items('series', page_size=page_size, username=username, password=password, country=country),
             'stats': {
                 'channels': counts['channels'],
                 'movies': counts['movies'],
