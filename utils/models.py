@@ -196,6 +196,7 @@ class ChannelResolved(BaseModel):
     logo: Optional[str] = None
     stream_url: Optional[str] = None
     content_type: Optional[str] = None
+    provider_id: Optional[str] = None
 
 
 class CalendarEvent(BaseModel):

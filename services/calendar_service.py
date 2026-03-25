@@ -14,6 +14,7 @@ class CalendarService:
 
     def __init__(self, pg_service: PostgresService):
         self.pg = pg_service
+        self._provider_id_cache: Dict[str, Optional[str]] = {}
 
     def _convert_dates_to_strings(self, eventos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Convierte objetos date a strings ISO en los eventos"""
@@ -37,6 +38,32 @@ class CalendarService:
         """
         results = self.pg.execute_query(sql, (fecha,))
         return self._convert_dates_to_strings(results)
+
+    def get_provider_ids(self, channel_ids: List[str]) -> Dict[str, str]:
+        """
+        Dado una lista de channel_id (ids internos de la BD), devuelve un dict
+        mapeando cada channel_id a su provider_id en la tabla de canales.
+        """
+        if not channel_ids:
+            return {}
+        # Filtrar solo los que no están en caché
+        missing = [cid for cid in channel_ids if cid not in self._provider_id_cache]
+        if missing:
+            # PostgreSQL IN con placeholders
+            placeholders = ','.join(['%s'] * len(missing))
+            sql = f"SELECT id::text, provider_id::text FROM channels WHERE id::text IN ({placeholders})"
+            try:
+                rows = self.pg.execute_query(sql, tuple(missing))
+                for row in rows:
+                    self._provider_id_cache[str(row['id'])] = row.get('provider_id')
+                # Marcar los que no se encontraron como None
+                for cid in missing:
+                    if cid not in self._provider_id_cache:
+                        self._provider_id_cache[cid] = None
+            except Exception:
+                for cid in missing:
+                    self._provider_id_cache[cid] = None
+        return {cid: self._provider_id_cache.get(cid) for cid in channel_ids}
 
     def get_event_by_id(self, event_id: str) -> Optional[Dict[str, Any]]:
         """

@@ -799,15 +799,26 @@ async def get_calendar_by_date(
     pwd = password or ""
     base_url = settings.public_domain.rstrip("/")
 
+    # Collect all channel_ids to batch lookup provider_ids
+    all_channel_ids = []
+    for evento in eventos_raw:
+        for ch in evento.get('canales_resueltos', []) or []:
+            cid = ch.get('channel_id')
+            if cid:
+                all_channel_ids.append(cid)
+
+    provider_map = calendar_svc.get_provider_ids(all_channel_ids) if all_channel_ids else {}
+
     eventos = []
     for evento in eventos_raw:
         canales_resueltos = evento.get('canales_resueltos', []) or []
         if username and pwd:
             for ch in canales_resueltos:
                 if not ch.get('stream_url'):
-                    ch_id = ch.get('channel_id') or ch.get('provider_id')
-                    if ch_id:
-                        ch['stream_url'] = f"{base_url}/{username}/{pwd}/{ch_id}"
+                    # Use provider_id (IPTV provider stream ID) instead of channel_id (internal DB ID)
+                    stream_id = ch.get('provider_id') or provider_map.get(ch.get('channel_id'))
+                    if stream_id:
+                        ch['stream_url'] = f"{base_url}/{username}/{pwd}/{stream_id}"
         eventos.append(CalendarEvent(
             id=str(evento['id']),
             fecha=evento.get('fecha'),
@@ -825,6 +836,7 @@ async def get_calendar_by_date(
 @app.get("/api/calendar/event/{event_id}", response_model=CalendarEvent, tags=["Calendar"])
 async def get_calendar_event(
     event_id: str,
+    password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     calendar_svc=Depends(get_calendar_service)
 ):
@@ -835,6 +847,21 @@ async def get_calendar_event(
         raise NotFoundException("Evento", event_id)
 
     canales_resueltos = evento.get('canales_resueltos', []) or []
+
+    # Build stream URLs using provider_id
+    username = auth.username or ""
+    pwd = password or ""
+    base_url = settings.public_domain.rstrip("/")
+
+    if username and pwd:
+        all_channel_ids = [ch.get('channel_id') for ch in canales_resueltos if ch.get('channel_id')]
+        provider_map = calendar_svc.get_provider_ids(all_channel_ids) if all_channel_ids else {}
+        for ch in canales_resueltos:
+            if not ch.get('stream_url'):
+                stream_id = ch.get('provider_id') or provider_map.get(ch.get('channel_id'))
+                if stream_id:
+                    ch['stream_url'] = f"{base_url}/{username}/{pwd}/{stream_id}"
+
     return CalendarEvent(
         id=str(evento['id']),
         fecha=evento.get('fecha'),
