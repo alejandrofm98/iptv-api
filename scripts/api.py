@@ -777,6 +777,7 @@ async def proxy_replay_source_stream(
 @app.get("/api/calendar/{fecha}", response_model=CalendarDayResponse, tags=["Calendar"])
 async def get_calendar_by_date(
     fecha: str,
+    password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     calendar_svc=Depends(get_calendar_service)
 ):
@@ -793,9 +794,20 @@ async def get_calendar_by_date(
     if not eventos_raw:
         return CalendarDayResponse(fecha=fecha, total_eventos=0, eventos=[])
 
+    # Build stream URLs for resolved channels when credentials are available
+    username = auth.username or ""
+    pwd = password or ""
+    base_url = settings.public_domain.rstrip("/")
+
     eventos = []
     for evento in eventos_raw:
         canales_resueltos = evento.get('canales_resueltos', []) or []
+        if username and pwd:
+            for ch in canales_resueltos:
+                if not ch.get('stream_url'):
+                    ch_id = ch.get('channel_id') or ch.get('provider_id')
+                    if ch_id:
+                        ch['stream_url'] = f"{base_url}/{username}/{pwd}/{ch_id}"
         eventos.append(CalendarEvent(
             id=str(evento['id']),
             fecha=evento.get('fecha'),

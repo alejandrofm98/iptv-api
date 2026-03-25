@@ -131,6 +131,11 @@ class ContentService:
 
     # ── URL helpers ─────────────────────────────────────────────────────────
 
+    @property
+    def _https_base_url(self) -> str:
+        """Base URL for stream URLs."""
+        return self.settings.public_domain.rstrip('/')
+
     def _extract_stream_id(self, url: str) -> tuple:
         """Extrae (stream_id, extension, content_type) de la URL original."""
         if not url:
@@ -174,7 +179,7 @@ class ContentService:
         if not stream_id:
             return ''
 
-        base_url = self.settings.public_domain.rstrip('/')
+        base_url = self._https_base_url
 
         if content_type == 'live':
             return f"{base_url}/{username}/{password}/{stream_id}"
@@ -211,7 +216,7 @@ class ContentService:
         if not stream_id:
             return None
 
-        base_url = self.settings.public_domain.rstrip('/')
+        base_url = self._https_base_url
 
         if content_type_detected == 'live':
             return f"{base_url}/{username}/{password}/{stream_id}"
@@ -261,7 +266,7 @@ class ContentService:
                 persisted_stream_url, username, password
             )
         elif stream_id and username and password:
-            base_url = self.settings.public_domain.rstrip('/')
+            base_url = self._https_base_url
             if url_content_type == 'live':
                 stream_url = f"{base_url}/{username}/{password}/{stream_id}"
             else:
@@ -361,7 +366,7 @@ class ContentService:
         if not username or not password:
             return cached
 
-        base_url = self.settings.public_domain.rstrip('/')
+        base_url = self._https_base_url
         injected_items = []
         for item in cached.get('items', []):
             r = dict(item)
