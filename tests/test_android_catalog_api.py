@@ -24,7 +24,7 @@ class StubContentService:
     def __init__(self):
         self.last_home_country = None
 
-    def get_home_catalog(self, username: str, page_size: int = 12, country: str | None = None) -> dict:
+    def get_home_catalog(self, username: str, page_size: int = 12, country: str | None = None, password: str = '') -> dict:
         self.last_home_country = country
         return {
             "featured_channels": [{"id": "1", "title": "Noticias 24", "type": "channel"}],
@@ -148,6 +148,9 @@ class StubCalendarService:
                 ],
             }
         ]
+
+    def get_provider_ids(self, channel_ids: list[str]) -> dict[str, str | None]:
+        return {cid: None for cid in channel_ids}
 
 
 def override_auth() -> AuthResult:
