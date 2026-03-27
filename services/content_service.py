@@ -315,7 +315,8 @@ class ContentService:
         group = parsed.get('grupo_normalizado') or original_group
 
         return {
-            'id': parsed.get('id') or '',
+            'id': parsed.get('provider_id') or parsed.get('id') or '',
+            'provider_id': parsed.get('provider_id') or '',
             'type': map_android_type(content_type),
             'title': title,
             'normalized_title': title,
