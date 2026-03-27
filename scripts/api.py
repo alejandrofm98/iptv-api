@@ -41,7 +41,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse, FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 
-from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService
+from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService, WatchProgressService
 from services.transcode_service import TranscodeService
 from services.postgres_service import get_postgres_service
 from utils.config import get_settings
@@ -55,6 +55,8 @@ from utils.models import (
     CalendarDayResponse,
     CalendarEvent,
     ReplayItem,
+    WatchProgressUpsert,
+    WatchProgressResponse,
 )
 from utils.constants import JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 from utils.exceptions import (
@@ -63,7 +65,8 @@ from utils.exceptions import (
 )
 from utils.dependencies import (
     set_services, get_user_service, get_device_service, get_playlist_service,
-    get_stream_service, get_content_service, get_transcode_service, get_calendar_service, get_current_user, require_admin,
+    get_stream_service, get_content_service, get_transcode_service, get_calendar_service,
+    get_watch_progress_service, get_current_user, require_admin,
     require_auth_with_credentials, require_auth_with_session, require_auth_with_jwt,
     AuthResult as AuthDep
 )
@@ -124,11 +127,12 @@ async def lifespan(app: FastAPI):
         stream_svc = StreamProxyService(supabase_client)
         content_svc = ContentService(supabase_client)
         transcode_svc = TranscodeService()
+        watch_progress_svc = WatchProgressService(supabase_client)
 
         pg_svc = get_postgres_service()
         calendar_svc = CalendarService(pg_svc)
 
-        set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc, transcode_svc, calendar_svc)
+        set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc, transcode_svc, calendar_svc, watch_progress_svc)
 
         stream_svc.preload_cache()
         asyncio.create_task(cleanup_sessions_task())
@@ -914,6 +918,59 @@ async def get_serie_episodes(
         raise NotFoundException("Serie", serie_name)
 
     return episodes
+
+
+# ============================================
+# API: Watch Progress
+# ============================================
+
+@app.get("/api/watch-progress", tags=["Watch Progress"])
+async def get_continue_watching(
+    limit: int = Query(20, ge=1, le=50, description="Máximo de items"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+):
+    """Obtiene items con progreso de visualización incompleto. Requiere Bearer Token."""
+    items = wp_svc.get_continue_watching(auth.user_id, limit=limit)
+    return {"items": items, "total": len(items)}
+
+
+@app.get("/api/watch-progress/{content_id}", tags=["Watch Progress"])
+async def get_watch_progress(
+    content_id: str,
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+):
+    """Obtiene el progreso de un item específico. Requiere Bearer Token."""
+    progress = wp_svc.get_progress(auth.user_id, content_id)
+    if not progress:
+        raise NotFoundException("WatchProgress", content_id)
+    return progress
+
+
+@app.put("/api/watch-progress/{content_id}", tags=["Watch Progress"])
+async def upsert_watch_progress(
+    content_id: str,
+    body: WatchProgressUpsert,
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+):
+    """Crea o actualiza el progreso de visualización. Requiere Bearer Token."""
+    result = wp_svc.upsert_progress(auth.user_id, content_id, body.model_dump())
+    return result
+
+
+@app.delete("/api/watch-progress/{content_id}", tags=["Watch Progress"])
+async def delete_watch_progress(
+    content_id: str,
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+):
+    """Elimina el progreso de visualización de un item. Requiere Bearer Token."""
+    deleted = wp_svc.delete_progress(auth.user_id, content_id)
+    if not deleted:
+        raise NotFoundException("WatchProgress", content_id)
+    return {"deleted": True}
 
 
 # ============================================

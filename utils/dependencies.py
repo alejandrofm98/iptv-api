@@ -6,7 +6,7 @@ from fastapi import Depends, Query, Request, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
-from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService
+from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService, WatchProgressService
 from services.transcode_service import TranscodeService
 from utils.config import get_settings
 from utils.exceptions import UnauthorizedException, ForbiddenException, ServiceUnavailableException
@@ -29,6 +29,7 @@ stream_service: Optional[StreamProxyService] = None
 content_service: Optional[ContentService] = None
 transcode_service: Optional[TranscodeService] = None
 calendar_service: Optional[CalendarService] = None
+watch_progress_service: Optional[WatchProgressService] = None
 
 
 def set_services(
@@ -38,10 +39,11 @@ def set_services(
     stream_svc: StreamProxyService,
     content_svc: ContentService,
     transcode_svc: TranscodeService,
-    calendar_svc: CalendarService
+    calendar_svc: CalendarService,
+    watch_progress_svc: WatchProgressService = None
 ):
     """Inicializa los servicios globales"""
-    global user_service, device_service, playlist_service, stream_service, content_service, transcode_service, calendar_service
+    global user_service, device_service, playlist_service, stream_service, content_service, transcode_service, calendar_service, watch_progress_service
     user_service = user_svc
     device_service = device_svc
     playlist_service = playlist_svc
@@ -49,6 +51,7 @@ def set_services(
     content_service = content_svc
     transcode_service = transcode_svc
     calendar_service = calendar_svc
+    watch_progress_service = watch_progress_svc
 
 
 # ============================================
@@ -95,6 +98,12 @@ def get_calendar_service() -> CalendarService:
     if not calendar_service:
         raise ServiceUnavailableException("Servicio de calendario no disponible")
     return calendar_service
+
+
+def get_watch_progress_service() -> WatchProgressService:
+    if not watch_progress_service:
+        raise ServiceUnavailableException("Servicio de progreso no disponible")
+    return watch_progress_service
 
 
 # ============================================

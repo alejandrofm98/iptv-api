@@ -158,3 +158,25 @@ CREATE TRIGGER update_replays_updated_at
     BEFORE UPDATE ON replays
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- 8. Tabla de progreso de visualización
+-- ============================================
+CREATE TABLE IF NOT EXISTS watch_progress (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content_id VARCHAR(100) NOT NULL,
+    content_type VARCHAR(20) NOT NULL CHECK (content_type IN ('movie', 'series')),
+    position_ms BIGINT NOT NULL DEFAULT 0,
+    duration_ms BIGINT NOT NULL DEFAULT 0,
+    series_name VARCHAR(255),
+    season_number INT,
+    episode_number INT,
+    title VARCHAR(255) NOT NULL DEFAULT '',
+    image_url TEXT NOT NULL DEFAULT '',
+    last_watched_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, content_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_watch_progress_user_recent ON watch_progress(user_id, last_watched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_watch_progress_incomplete ON watch_progress(user_id, content_type);

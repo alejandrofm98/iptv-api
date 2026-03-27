@@ -265,3 +265,33 @@ class ReplayItem(BaseModel):
 class ReplayStats(BaseModel):
     """Estadisticas de replays"""
     total_replays: int
+
+
+# ============================================
+# Watch Progress Models
+# ============================================
+
+class WatchProgressUpsert(BaseModel):
+    """Modelo para crear/actualizar progreso de visualización"""
+    content_type: str = Field(..., pattern="^(movie|series)$")
+    position_ms: int = Field(..., ge=0)
+    duration_ms: int = Field(..., ge=0)
+    series_name: Optional[str] = None
+    season_number: Optional[int] = None
+    episode_number: Optional[int] = None
+    title: str = Field("", max_length=255)
+    image_url: str = ""
+
+
+class WatchProgressResponse(BaseModel):
+    """Respuesta de progreso de visualización"""
+    content_id: str
+    content_type: str
+    position_ms: int
+    duration_ms: int
+    series_name: Optional[str] = None
+    season_number: Optional[int] = None
+    episode_number: Optional[int] = None
+    title: str
+    image_url: str
+    last_watched_at: str

@@ -9,6 +9,7 @@ from .content_service import ContentService
 from .postgres_service import PostgresService, get_postgres_service
 from .calendar_service import CalendarService
 from .resilience_service import ResilienceService, CircuitBreakerService, RetryService, StreamBuffer
+from .watch_progress_service import WatchProgressService
 
 __all__ = [
     'UserService',
@@ -22,5 +23,6 @@ __all__ = [
     'ResilienceService',
     'CircuitBreakerService',
     'RetryService',
-    'StreamBuffer'
+    'StreamBuffer',
+    'WatchProgressService',
 ]
