@@ -105,13 +105,28 @@ class WatchProgressService:
 
         if content_row:
             normalized["title"] = content_row.get("nombre") or row.get("title") or ""
+            normalized["normalized_title"] = self._normalized_title_for_content(content_type, content_row) or row.get("normalized_title") or normalized["title"]
             normalized["image_url"] = content_row.get("logo") or row.get("image_url") or ""
             if content_type == "series":
                 normalized["series_name"] = content_row.get("serie_name") or row.get("series_name")
                 normalized["season_number"] = self._safe_int(content_row.get("temporada")) or row.get("season_number")
                 normalized["episode_number"] = self._safe_int(content_row.get("episodio")) or row.get("episode_number")
+        else:
+            normalized["normalized_title"] = row.get("normalized_title") or row.get("title") or ""
 
         return normalized
+
+    def _normalized_title_for_content(self, content_type: Optional[str], content_row: Dict[str, Any]) -> str:
+        if content_type == "movie":
+            return str(content_row.get("nombre_normalizado") or content_row.get("nombre") or "")
+        if content_type == "series":
+            return str(
+                content_row.get("serie_name")
+                or content_row.get("nombre_normalizado")
+                or content_row.get("nombre")
+                or ""
+            )
+        return str(content_row.get("nombre_normalizado") or content_row.get("nombre") or "")
 
     def _canonical_content_id(self, content_type: Optional[str], content_id: str) -> str:
         content_row = self._find_content_row(content_type, content_id)
