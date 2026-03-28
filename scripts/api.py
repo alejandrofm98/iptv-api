@@ -610,7 +610,16 @@ async def get_home(
 ):
     """Obtiene bloques ligeros para la home de clientes TV."""
     payload = content_svc.get_home_catalog(username=auth.username, page_size=page_size, country=country, password=password or '')
-    payload['favorites'] = favorites_svc.list_favorites(auth.user_id)
+    payload['favorites'] = favorites_svc.get_favorite_channels(
+        user_id=auth.user_id,
+        content_svc=content_svc,
+        page=1,
+        page_size=page_size,
+        country=country,
+        search=None,
+        username=auth.username,
+        password=password or '',
+    )["items"]
     return payload
 
 

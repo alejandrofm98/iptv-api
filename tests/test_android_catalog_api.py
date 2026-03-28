@@ -167,6 +167,7 @@ class StubChannelFavoritesService:
             }
         ]
         self.last_content_params = None
+        self.last_home_params = None
 
     def list_favorites(self, user_id: str) -> list[dict]:
         assert user_id == "user-1"
@@ -198,7 +199,7 @@ class StubChannelFavoritesService:
         username: str,
         password: str = '',
     ) -> dict:
-        self.last_content_params = {
+        params = {
             "user_id": user_id,
             "page": page,
             "page_size": page_size,
@@ -207,6 +208,10 @@ class StubChannelFavoritesService:
             "username": username,
             "password": password,
         }
+        if search is None:
+            self.last_home_params = params
+        else:
+            self.last_content_params = params
         return {
             "items": [
                 {
@@ -268,7 +273,18 @@ def test_get_home_returns_lightweight_sections() -> None:
     payload = response.json()
     assert payload["featured_channels"][0]["title"] == "Noticias 24"
     assert payload["stats"] == {"channels": 10, "movies": 20, "series": 30}
-    assert payload["favorites"][0]["channel_provider_id"] == "fav-1"
+    assert payload["favorites"][0]["provider_id"] == "fav-1"
+    assert payload["favorites"][0]["type"] == "channel"
+    assert "channel_provider_id" not in payload["favorites"][0]
+    assert client.stub_favorites_service.last_home_params == {
+        "user_id": "user-1",
+        "page": 1,
+        "page_size": 12,
+        "country": None,
+        "search": None,
+        "username": "demo",
+        "password": "",
+    }
 
 
 def test_get_home_accepts_country_filter() -> None:
@@ -278,6 +294,7 @@ def test_get_home_accepts_country_filter() -> None:
 
     assert response.status_code == 200
     assert client.stub_content_service.last_home_country == "EN"
+    assert client.stub_favorites_service.last_home_params["country"] == "EN"
 
 
 def test_search_returns_paginated_catalog_results() -> None:
