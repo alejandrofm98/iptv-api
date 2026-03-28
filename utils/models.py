@@ -295,3 +295,16 @@ class WatchProgressResponse(BaseModel):
     title: str
     image_url: str
     last_watched_at: str
+
+
+class ChannelFavoriteCreate(BaseModel):
+    """Modelo para agregar un canal a favoritos."""
+    channel_provider_id: str = Field(..., min_length=1, max_length=100)
+
+
+class ChannelFavoriteResponse(BaseModel):
+    """Respuesta de favorito de canal."""
+    user_id: str
+    channel_provider_id: str
+    provider_id: str
+    created_at: Optional[str] = None

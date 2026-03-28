@@ -342,6 +342,15 @@ class ContentService:
             'stream_url': parsed.get('stream_url') or '',
         }
 
+    def to_android_catalog_item(
+        self,
+        row: Dict[str, Any],
+        content_type: str,
+        username: str = '',
+        password: str = '',
+    ) -> Dict[str, Any]:
+        return self._to_android_catalog_item(row, content_type, username, password)
+
     # ── Helpers de caché de catálogo ─────────────────────────────────────────
 
     @staticmethod
@@ -410,6 +419,16 @@ class ContentService:
         if extra:
             payload.update(extra)
         return payload
+
+    def build_paginated_payload(
+        self,
+        items: List[Dict[str, Any]],
+        total: int,
+        page: int,
+        page_size: int,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return self._build_paginated_payload(items, total, page, page_size, extra)
 
     @staticmethod
     def _is_requested_range_error(error: Exception) -> bool:

@@ -41,7 +41,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse, FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 
-from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService, WatchProgressService
+from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService, WatchProgressService, ChannelFavoritesService
 from services.transcode_service import TranscodeService
 from services.postgres_service import get_postgres_service
 from utils.config import get_settings
@@ -55,6 +55,8 @@ from utils.models import (
     CalendarDayResponse,
     CalendarEvent,
     ReplayItem,
+    ChannelFavoriteCreate,
+    ChannelFavoriteResponse,
     WatchProgressUpsert,
     WatchProgressResponse,
 )
@@ -66,7 +68,7 @@ from utils.exceptions import (
 from utils.dependencies import (
     set_services, get_user_service, get_device_service, get_playlist_service,
     get_stream_service, get_content_service, get_transcode_service, get_calendar_service,
-    get_watch_progress_service, get_current_user, require_admin,
+    get_watch_progress_service, get_channel_favorites_service, get_current_user, require_admin,
     require_auth_with_credentials, require_auth_with_session, require_auth_with_jwt,
     AuthResult as AuthDep
 )
@@ -128,11 +130,12 @@ async def lifespan(app: FastAPI):
         content_svc = ContentService(supabase_client)
         transcode_svc = TranscodeService()
         watch_progress_svc = WatchProgressService(supabase_client)
+        channel_favorites_svc = ChannelFavoritesService(supabase_client)
 
         pg_svc = get_postgres_service()
         calendar_svc = CalendarService(pg_svc)
 
-        set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc, transcode_svc, calendar_svc, watch_progress_svc)
+        set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc, transcode_svc, calendar_svc, watch_progress_svc, channel_favorites_svc)
 
         stream_svc.preload_cache()
         asyncio.create_task(cleanup_sessions_task())
@@ -504,7 +507,10 @@ async def get_groups_public(
     if countries:
         country_list = [c.strip().upper() for c in countries.split(',') if c.strip()]
 
-    return {"groups": content_svc.get_groups(content_type, country_list)}
+    groups = content_svc.get_groups(content_type, country_list)
+    if content_type == 'channels' and 'Favorites' not in groups:
+        groups = ['Favorites', *groups]
+    return {"groups": groups}
 
 
 @app.get("/api/content/countries", tags=["Content"])
@@ -551,9 +557,22 @@ async def get_content(
     search: Optional[str] = Query(None, description="Buscar por nombre"),
     password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
+    content_svc: ContentService = Depends(get_content_service),
+    favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
 ):
     """Obtiene lista paginada de contenido. Requiere Bearer Token."""
+    if content_type == 'channels' and group == 'Favorites':
+        return favorites_svc.get_favorite_channels(
+            user_id=auth.user_id,
+            content_svc=content_svc,
+            page=page,
+            page_size=page_size,
+            country=country,
+            search=search,
+            username=auth.username,
+            password=password or '',
+        )
+
     return content_svc.get_android_content_list(
         content_type=content_type,
         page=page,
@@ -574,7 +593,10 @@ async def get_content_filters(
     content_svc: ContentService = Depends(get_content_service)
 ):
     """Obtiene idiomas y grupos disponibles para filtros por tipo de contenido."""
-    return content_svc.get_catalog_filters(content_type=content_type, country=country)
+    payload = content_svc.get_catalog_filters(content_type=content_type, country=country)
+    if content_type == 'channels' and 'Favorites' not in payload['groups']:
+        payload = {**payload, 'groups': ['Favorites', *payload['groups']]}
+    return payload
 
 
 @app.get("/api/home", tags=["Content"])
@@ -583,10 +605,46 @@ async def get_home(
     country: Optional[str] = Query(None, description="Filtrar home por country, por ejemplo ES o EN"),
     password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
+    content_svc: ContentService = Depends(get_content_service),
+    favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
 ):
     """Obtiene bloques ligeros para la home de clientes TV."""
-    return content_svc.get_home_catalog(username=auth.username, page_size=page_size, country=country, password=password or '')
+    payload = content_svc.get_home_catalog(username=auth.username, page_size=page_size, country=country, password=password or '')
+    payload['favorites'] = favorites_svc.list_favorites(auth.user_id)
+    return payload
+
+
+@app.get("/api/channel-favorites", tags=["Channel Favorites"])
+async def list_channel_favorites(
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
+):
+    """Lista los favoritos del usuario autenticado."""
+    items = favorites_svc.list_favorites(auth.user_id)
+    return {"items": items, "total": len(items)}
+
+
+@app.post("/api/channel-favorites", response_model=ChannelFavoriteResponse, tags=["Channel Favorites"])
+async def add_channel_favorite(
+    body: ChannelFavoriteCreate,
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
+):
+    """Agrega o confirma un canal favorito por provider_id."""
+    return favorites_svc.add_favorite(auth.user_id, body.channel_provider_id)
+
+
+@app.delete("/api/channel-favorites/{channel_provider_id}", tags=["Channel Favorites"])
+async def delete_channel_favorite(
+    channel_provider_id: str,
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
+):
+    """Elimina un canal favorito por provider_id."""
+    deleted = favorites_svc.remove_favorite(auth.user_id, channel_provider_id)
+    if not deleted:
+        raise NotFoundException("ChannelFavorite", channel_provider_id)
+    return {"deleted": True, "channel_provider_id": channel_provider_id}
 
 
 @app.get("/api/search", tags=["Content"])

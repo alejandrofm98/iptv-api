@@ -16,7 +16,7 @@ sys.modules.setdefault("psycopg2.pool", psycopg2_pool_module)
 sys.modules.setdefault("psycopg2.extras", psycopg2_extras_module)
 
 from scripts.api import app
-from utils.dependencies import get_calendar_service, get_content_service, require_auth_with_jwt
+from utils.dependencies import get_calendar_service, get_channel_favorites_service, get_content_service, require_auth_with_jwt
 from utils.models import AuthResult
 
 
@@ -98,6 +98,9 @@ class StubContentService:
             "groups": ["Noticias", "Drama"],
         }
 
+    def get_groups(self, content_type: str, countries: list[str] | None = None) -> list[str]:
+        return ["Noticias", "Drama"]
+
     def get_episodes_by_serie_name_paginated(
         self,
         serie_name: str,
@@ -153,6 +156,80 @@ class StubCalendarService:
         return {cid: None for cid in channel_ids}
 
 
+class StubChannelFavoritesService:
+    def __init__(self):
+        self.items = [
+            {
+                "user_id": "user-1",
+                "channel_provider_id": "fav-1",
+                "provider_id": "fav-1",
+                "created_at": "2026-03-28T00:00:00Z",
+            }
+        ]
+        self.last_content_params = None
+
+    def list_favorites(self, user_id: str) -> list[dict]:
+        assert user_id == "user-1"
+        return list(self.items)
+
+    def add_favorite(self, user_id: str, channel_provider_id: str) -> dict:
+        item = {
+            "user_id": user_id,
+            "channel_provider_id": channel_provider_id,
+            "provider_id": channel_provider_id,
+            "created_at": "2026-03-28T00:00:00Z",
+        }
+        self.items = [item, *[existing for existing in self.items if existing["channel_provider_id"] != channel_provider_id]]
+        return item
+
+    def remove_favorite(self, user_id: str, channel_provider_id: str) -> bool:
+        original_count = len(self.items)
+        self.items = [item for item in self.items if item["channel_provider_id"] != channel_provider_id]
+        return len(self.items) != original_count
+
+    def get_favorite_channels(
+        self,
+        user_id: str,
+        content_svc,
+        page: int,
+        page_size: int,
+        country: str | None,
+        search: str | None,
+        username: str,
+        password: str = '',
+    ) -> dict:
+        self.last_content_params = {
+            "user_id": user_id,
+            "page": page,
+            "page_size": page_size,
+            "country": country,
+            "search": search,
+            "username": username,
+            "password": password,
+        }
+        return {
+            "items": [
+                {
+                    "id": "fav-1",
+                    "provider_id": "fav-1",
+                    "type": "channel",
+                    "title": "Canal Favorito",
+                    "normalized_title": "Canal Favorito",
+                    "subtitle": "Favorites",
+                    "group": "Favorites",
+                    "normalized_group": "Favorites",
+                    "stream_url": "https://stream/favorite.m3u8",
+                }
+            ],
+            "total": 1,
+            "page": page,
+            "page_size": page_size,
+            "pages": 1,
+            "has_next": False,
+            "has_prev": False,
+        }
+
+
 def override_auth() -> AuthResult:
     return AuthResult(
         valid=True,
@@ -167,11 +244,14 @@ def override_auth() -> AuthResult:
 
 def create_client() -> TestClient:
     stub_content_service = StubContentService()
+    stub_favorites_service = StubChannelFavoritesService()
     app.dependency_overrides[require_auth_with_jwt] = override_auth
     app.dependency_overrides[get_content_service] = lambda: stub_content_service
     app.dependency_overrides[get_calendar_service] = lambda: StubCalendarService()
+    app.dependency_overrides[get_channel_favorites_service] = lambda: stub_favorites_service
     client = TestClient(app)
     client.stub_content_service = stub_content_service
+    client.stub_favorites_service = stub_favorites_service
     return client
 
 
@@ -188,6 +268,7 @@ def test_get_home_returns_lightweight_sections() -> None:
     payload = response.json()
     assert payload["featured_channels"][0]["title"] == "Noticias 24"
     assert payload["stats"] == {"channels": 10, "movies": 20, "series": 30}
+    assert payload["favorites"][0]["channel_provider_id"] == "fav-1"
 
 
 def test_get_home_accepts_country_filter() -> None:
@@ -226,12 +307,61 @@ def test_content_returns_android_friendly_payload() -> None:
 def test_content_filters_returns_languages_and_groups() -> None:
     client = create_client()
 
-    response = client.get("/api/content/filters", params={"content_type": "movies", "country": "ES"})
+    response = client.get("/api/content/filters", params={"content_type": "channels", "country": "ES"})
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["languages"][0] == "ES"
+    assert payload["groups"][0] == "Favorites"
     assert "Drama" in payload["groups"]
+
+
+def test_content_groups_prepends_favorites_for_channels() -> None:
+    client = create_client()
+
+    response = client.get("/api/content/groups", params={"content_type": "channels"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["groups"][0] == "Favorites"
+
+
+def test_content_favorites_group_uses_channel_favorites_service() -> None:
+    client = create_client()
+
+    response = client.get(
+        "/api/content",
+        params={"content_type": "channels", "group": "Favorites", "page": 2, "page_size": 5, "country": "ES", "search": "deporte"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["title"] == "Canal Favorito"
+    assert client.stub_favorites_service.last_content_params == {
+        "user_id": "user-1",
+        "page": 2,
+        "page_size": 5,
+        "country": "ES",
+        "search": "deporte",
+        "username": "demo",
+        "password": "",
+    }
+
+
+def test_channel_favorites_endpoints_list_add_and_delete() -> None:
+    client = create_client()
+
+    list_response = client.get("/api/channel-favorites")
+    assert list_response.status_code == 200
+    assert list_response.json()["items"][0]["provider_id"] == "fav-1"
+
+    add_response = client.post("/api/channel-favorites", json={"channel_provider_id": "fav-2"})
+    assert add_response.status_code == 200
+    assert add_response.json()["channel_provider_id"] == "fav-2"
+
+    delete_response = client.delete("/api/channel-favorites/fav-2")
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"deleted": True, "channel_provider_id": "fav-2"}
 
 
 def test_series_episodes_endpoint_supports_pagination() -> None:

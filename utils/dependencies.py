@@ -6,7 +6,7 @@ from fastapi import Depends, Query, Request, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
-from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService, WatchProgressService
+from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService, WatchProgressService, ChannelFavoritesService
 from services.transcode_service import TranscodeService
 from utils.config import get_settings
 from utils.exceptions import UnauthorizedException, ForbiddenException, ServiceUnavailableException
@@ -30,6 +30,7 @@ content_service: Optional[ContentService] = None
 transcode_service: Optional[TranscodeService] = None
 calendar_service: Optional[CalendarService] = None
 watch_progress_service: Optional[WatchProgressService] = None
+channel_favorites_service: Optional[ChannelFavoritesService] = None
 
 
 def set_services(
@@ -40,10 +41,11 @@ def set_services(
     content_svc: ContentService,
     transcode_svc: TranscodeService,
     calendar_svc: CalendarService,
-    watch_progress_svc: WatchProgressService = None
+    watch_progress_svc: WatchProgressService = None,
+    channel_favorites_svc: ChannelFavoritesService = None,
 ):
     """Inicializa los servicios globales"""
-    global user_service, device_service, playlist_service, stream_service, content_service, transcode_service, calendar_service, watch_progress_service
+    global user_service, device_service, playlist_service, stream_service, content_service, transcode_service, calendar_service, watch_progress_service, channel_favorites_service
     user_service = user_svc
     device_service = device_svc
     playlist_service = playlist_svc
@@ -52,6 +54,7 @@ def set_services(
     transcode_service = transcode_svc
     calendar_service = calendar_svc
     watch_progress_service = watch_progress_svc
+    channel_favorites_service = channel_favorites_svc
 
 
 # ============================================
@@ -104,6 +107,12 @@ def get_watch_progress_service() -> WatchProgressService:
     if not watch_progress_service:
         raise ServiceUnavailableException("Servicio de progreso no disponible")
     return watch_progress_service
+
+
+def get_channel_favorites_service() -> ChannelFavoritesService:
+    if not channel_favorites_service:
+        raise ServiceUnavailableException("Servicio de favoritos no disponible")
+    return channel_favorites_service
 
 
 # ============================================

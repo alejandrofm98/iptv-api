@@ -180,3 +180,16 @@ CREATE TABLE IF NOT EXISTS watch_progress (
 
 CREATE INDEX IF NOT EXISTS idx_watch_progress_user_recent ON watch_progress(user_id, last_watched_at DESC);
 CREATE INDEX IF NOT EXISTS idx_watch_progress_incomplete ON watch_progress(user_id, content_type);
+
+-- ============================================
+-- 9. Tabla de favoritos de canales
+-- ============================================
+CREATE TABLE IF NOT EXISTS channel_favorites (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel_provider_id VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, channel_provider_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_channel_favorites_user_created_at
+    ON channel_favorites(user_id, created_at DESC);

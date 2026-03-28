@@ -2,6 +2,7 @@ import sys
 import types
 
 import pytest
+from postgrest.exceptions import APIError
 
 
 psycopg2_module = types.ModuleType("psycopg2")
@@ -271,4 +272,173 @@ def test_get_content_list_for_series_uses_distinct_series_catalog(monkeypatch: p
     assert payload['total'] == 1
     assert payload['page'] == 2
     assert payload['page_size'] == 10
-    assert payload['items'][0]['serie_name'] == 'Serie Uno'
+    assert payload['items'][0]['series_name'] == 'Serie Uno'
+
+
+class RangeAwareQuery:
+    def __init__(self, rows, fail_on_range: bool = False, error_payload=None):
+        self.rows = rows
+        self.fail_on_range = fail_on_range
+        self.error_payload = error_payload or {
+            'code': 'PGRST103',
+            'message': 'Requested range not satisfiable',
+            'details': 'An offset outside the result set was requested.',
+            'hint': None,
+        }
+        self.range_values = None
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def or_(self, _expression: str):
+        return self
+
+    def eq(self, _key: str, _value: str):
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def range(self, start: int, end: int):
+        self.range_values = (start, end)
+        return self
+
+    def limit(self, _value: int):
+        return self
+
+    def execute(self):
+        if self.fail_on_range and self.range_values is not None:
+            raise APIError(self.error_payload)
+
+        class Result:
+            def __init__(self, data, count):
+                self.data = data
+                self.count = count
+
+        if self.range_values is None:
+            return Result(self.rows[:1], len(self.rows))
+
+        start, end = self.range_values
+        return Result(self.rows[start:end + 1], len(self.rows))
+
+
+class RangeAwareSupabase:
+    def __init__(self, rows, fail_on_range: bool = False, error_payload=None):
+        self.rows = rows
+        self.fail_on_range = fail_on_range
+        self.error_payload = error_payload
+
+    def table(self, _name: str):
+        return RangeAwareQuery(
+            self.rows,
+            fail_on_range=self.fail_on_range,
+            error_payload=self.error_payload,
+        )
+
+
+def test_get_content_list_returns_empty_page_when_supabase_range_is_out_of_bounds():
+    rows = [
+        {
+            'numero': 1,
+            'nombre': 'Canal Uno',
+            'nombre_normalizado': 'Canal Uno',
+            'grupo': 'Noticias',
+            'grupo_normalizado': 'Noticias',
+            'logo': '',
+            'url': 'https://provider.test/live/user/pass/1.ts',
+        },
+        {
+            'numero': 2,
+            'nombre': 'Canal Dos',
+            'nombre_normalizado': 'Canal Dos',
+            'grupo': 'Noticias',
+            'grupo_normalizado': 'Noticias',
+            'logo': '',
+            'url': 'https://provider.test/live/user/pass/2.ts',
+        },
+    ]
+    service = ContentService(RangeAwareSupabase(rows, fail_on_range=True))
+
+    payload = service.get_content_list('channels', page=3, page_size=1)
+
+    assert payload == {
+        'items': [],
+        'total': 2,
+        'page': 3,
+        'page_size': 1,
+        'pages': 2,
+        'has_next': False,
+        'has_prev': True,
+    }
+
+
+def test_get_content_list_handles_numeric_416_range_error_from_postgrest():
+    rows = [
+        {
+            'numero': 1,
+            'nombre': 'Canal Uno',
+            'nombre_normalizado': 'Canal Uno',
+            'grupo': 'Noticias',
+            'grupo_normalizado': 'Noticias',
+            'logo': '',
+            'url': 'https://provider.test/live/user/pass/1.ts',
+        },
+        {
+            'numero': 2,
+            'nombre': 'Canal Dos',
+            'nombre_normalizado': 'Canal Dos',
+            'grupo': 'Noticias',
+            'grupo_normalizado': 'Noticias',
+            'logo': '',
+            'url': 'https://provider.test/live/user/pass/2.ts',
+        },
+    ]
+    service = ContentService(
+        RangeAwareSupabase(
+            rows,
+            fail_on_range=True,
+            error_payload={
+                'message': 'JSON could not be generated',
+                'code': 416,
+                'details': 'The result range exceeds the available rows.',
+                'hint': None,
+            },
+        )
+    )
+
+    payload = service.get_content_list('channels', page=19110, page_size=100)
+
+    assert payload == {
+        'items': [],
+        'total': 2,
+        'page': 19110,
+        'page_size': 100,
+        'pages': 1,
+        'has_next': False,
+        'has_prev': True,
+    }
+
+
+def test_get_replays_returns_empty_page_when_supabase_range_is_out_of_bounds():
+    rows = [
+        {
+            'title': 'Replay Uno',
+            'event_name': 'Evento Uno',
+            'slug': 'replay-uno',
+            'event_date': '2024-01-01',
+            'created_at': '2024-01-01T00:00:00',
+        },
+    ]
+    service = ContentService(RangeAwareSupabase(rows, fail_on_range=True))
+
+    payload = service.get_replays(page=2, page_size=1)
+
+    assert payload == {
+        'items': [],
+        'total': 1,
+        'page': 2,
+        'page_size': 1,
+        'pages': 1,
+        'has_next': False,
+        'has_prev': True,
+    }
