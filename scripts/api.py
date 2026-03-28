@@ -615,11 +615,12 @@ async def get_home(
         content_svc=content_svc,
         page=1,
         page_size=page_size,
-        country=country,
+        country=None,
         search=None,
         username=auth.username,
         password=password or '',
     )["items"]
+    logger.info("/api/home: user=%s country=%s favorites=%d", auth.username, country, len(payload['favorites']))
     return payload
 
 

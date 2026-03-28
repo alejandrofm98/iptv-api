@@ -294,7 +294,7 @@ def test_get_home_accepts_country_filter() -> None:
 
     assert response.status_code == 200
     assert client.stub_content_service.last_home_country == "EN"
-    assert client.stub_favorites_service.last_home_params["country"] == "EN"
+    assert client.stub_favorites_service.last_home_params["country"] is None
 
 
 def test_search_returns_paginated_catalog_results() -> None:

@@ -1,10 +1,13 @@
 """Servicio de favoritos de canales por usuario."""
 
+import logging
 from typing import Any, Dict, List, Optional
 
 from supabase import Client
 
 from .postgres_service import get_postgres_service
+
+log = logging.getLogger(__name__)
 
 
 class ChannelFavoritesService:
@@ -21,7 +24,9 @@ class ChannelFavoritesService:
             .order("created_at", desc=True)
             .execute()
         )
-        return [self._normalize_row(row) for row in (result.data or [])]
+        data = [self._normalize_row(row) for row in (result.data or [])]
+        log.info("list_favorites: user=%s returned %d rows", user_id, len(data))
+        return data
 
     def add_favorite(self, user_id: str, channel_provider_id: str) -> Dict[str, Any]:
         payload = {
@@ -59,7 +64,9 @@ class ChannelFavoritesService:
     ) -> Dict[str, Any]:
         favorites = self.list_favorites(user_id)
         provider_ids = [item["channel_provider_id"] for item in favorites if item.get("channel_provider_id")]
+        log.info("get_favorite_channels: user=%s provider_ids=%d country=%s", user_id, len(provider_ids), country)
         if not provider_ids:
+            log.info("get_favorite_channels: user=%s has no favorites, returning empty", user_id)
             return content_svc.build_paginated_payload([], 0, page, page_size)
 
         pg_service = get_postgres_service()
@@ -80,6 +87,7 @@ class ChannelFavoritesService:
             WHERE {' AND '.join(filters)}
         """
         rows = pg_service.execute_query(sql, tuple(params))
+        log.info("get_favorite_channels: user=%s channels_query returned %d rows (country=%s)", user_id, len(rows), country)
 
         favorite_order = {provider_id: index for index, provider_id in enumerate(provider_ids)}
         rows.sort(key=lambda row: favorite_order.get(str(row.get("provider_id") or ""), len(provider_ids)))
