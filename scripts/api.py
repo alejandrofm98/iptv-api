@@ -890,6 +890,7 @@ async def get_calendar_by_date(
                     # Use provider_id (IPTV provider stream ID) instead of channel_id (internal DB ID)
                     stream_id = ch.get('provider_id') or provider_map.get(ch.get('channel_id'))
                     if stream_id:
+                        ch['provider_id'] = stream_id
                         ch['stream_url'] = f"{base_url}/{username}/{pwd}/{stream_id}"
         eventos.append(CalendarEvent(
             id=str(evento['id']),
@@ -932,6 +933,7 @@ async def get_calendar_event(
             if not ch.get('stream_url'):
                 stream_id = ch.get('provider_id') or provider_map.get(ch.get('channel_id'))
                 if stream_id:
+                    ch['provider_id'] = stream_id
                     ch['stream_url'] = f"{base_url}/{username}/{pwd}/{stream_id}"
 
     return CalendarEvent(
