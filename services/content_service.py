@@ -1149,6 +1149,48 @@ class ContentService:
 
         return None
 
+    # ── Bulk endpoints for client caching ────────────────────────────────────
+
+    def get_content_stats(self, content_type: str) -> Dict[str, Any]:
+        """Obtiene estadísticas de contenido (total count)."""
+        table = self.TABLE_MAP.get(content_type)
+        if not table:
+            raise ValueError(f"Tipo de contenido inválido: {content_type}")
+
+        query = self.supabase.table(table).select('id', count='exact')
+        result = query.execute()
+        total = result.count or 0
+
+        return {content_type: {'total': total}}
+
+    def get_all_channels_bulk(self) -> Dict[str, Any]:
+        """Obtiene TODOS los canales en una sola llamada con campos mínimos para cache local."""
+        table = self.TABLE_MAP.get('channels')
+        fields = 'id,logo,provider_id,country,nombre_normalizado,grupo_normalizado,numero'
+
+        query = self.supabase.table(table).select(fields)
+        query = query.order('numero', desc=False)
+
+        result = query.execute()
+        items = result.data or []
+
+        parsed_items = []
+        for row in items:
+            parsed_items.append({
+                'id': str(row.get('id') or ''),
+                'logo': row.get('logo') or '',
+                'provider_id': str(row.get('provider_id') or ''),
+                'country': row.get('country') or '',
+                'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre') or '',
+                'grupo_normalizado': row.get('grupo_normalizado') or row.get('grupo') or '',
+                'numero': row.get('numero'),
+            })
+
+        return {
+            'items': parsed_items,
+            'total': len(parsed_items),
+        }
+
 
 def map_android_type(content_type: str) -> str:
     return {

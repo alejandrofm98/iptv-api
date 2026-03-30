@@ -599,6 +599,25 @@ async def get_content_filters(
     return payload
 
 
+@app.get("/api/content/stats", tags=["Content"])
+async def get_content_stats(
+    content_type: str = Query(..., enum=['channels', 'movies', 'series'], description="Tipo de contenido"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service),
+):
+    """Obtiene estadísticas de contenido (total de items). Para detectar cambios en cache local."""
+    return content_svc.get_content_stats(content_type=content_type)
+
+
+@app.get("/api/content/channels/all", tags=["Content"])
+async def get_all_channels_bulk(
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service),
+):
+    """Obtiene TODOS los canales en una sola llamada. Para cache local en cliente TV."""
+    return content_svc.get_all_channels_bulk()
+
+
 @app.get("/api/home", tags=["Content"])
 async def get_home(
     page_size: int = Query(12, ge=1, le=50, description="Items por bloque"),
