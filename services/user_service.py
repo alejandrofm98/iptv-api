@@ -2,7 +2,7 @@
 Servicio de gestión de usuarios
 """
 import bcrypt
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from utils.config import get_settings
@@ -126,22 +126,25 @@ class UserService:
             )
 
         if user['expires_at']:
-            expires_str = user['expires_at']
-            if expires_str.endswith('Z'):
-                expires_str = expires_str[:-1] + '+00:00'
-
-            try:
-                expires = datetime.fromisoformat(expires_str)
-                if datetime.now(expires.tzinfo) > expires:
-                    return AuthResult(
-                        valid=True,
-                        user_id=user['id'],
-                        message="Cuenta expirada",
-                        can_connect=False,
-                        max_devices=user['max_connections']
-                    )
-            except ValueError:
-                print("Error parseando fecha expiración")
+            expires = user['expires_at']
+            if isinstance(expires, str):
+                expires_str = expires
+                if expires_str.endswith('Z'):
+                    expires_str = expires_str[:-1] + '+00:00'
+                try:
+                    expires = datetime.fromisoformat(expires_str)
+                except ValueError:
+                    expires = None
+            if expires and expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if expires and datetime.now(timezone.utc) > expires:
+                return AuthResult(
+                    valid=True,
+                    user_id=user['id'],
+                    message="Cuenta expirada",
+                    can_connect=False,
+                    max_devices=user['max_connections']
+                )
 
         current_devices = self.pg.count_user_sessions(user['id'])
 
