@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from supabase import Client
+from .postgres_service import PostgresService
 
 
 class WatchProgressService:
@@ -14,26 +14,17 @@ class WatchProgressService:
         "series": "series",
     }
 
-    def __init__(self, supabase: Client):
-        self.supabase = supabase
+    def __init__(self, pg_service: PostgresService):
+        self.pg = pg_service
 
     def get_continue_watching(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Obtiene items con progreso incompleto (entre 5% y 95%)."""
-        result = (
-            self.supabase.table("watch_progress")
-            .select("*")
-            .eq("user_id", user_id)
-            .gt("position_ms", 0)
-            .order("last_watched_at", desc=True)
-            .limit(limit)
-            .execute()
-        )
-
-        if not result.data:
+        rows = self.pg.get_continue_watching(user_id, limit * 3)
+        if not rows:
             return []
 
         incomplete: List[Dict[str, Any]] = []
-        for item in result.data:
+        for item in rows:
             duration = item.get("duration_ms", 0) or 0
             position = item.get("position_ms", 0) or 0
             if duration <= 0:
@@ -41,6 +32,8 @@ class WatchProgressService:
             progress = position / duration
             if 0.05 < progress < 0.95:
                 incomplete.append(self._normalize_progress_row(item))
+                if len(incomplete) >= limit:
+                    break
         return incomplete
 
     def get_progress(self, user_id: str, content_id: str) -> Optional[Dict[str, Any]]:
@@ -66,14 +59,7 @@ class WatchProgressService:
             "image_url": data.get("image_url", ""),
             "last_watched_at": datetime.utcnow().isoformat() + "Z",
         }
-
-        result = (
-            self.supabase.table("watch_progress")
-            .upsert(payload, on_conflict="user_id,content_id")
-            .execute()
-        )
-
-        row = result.data[0] if result.data else payload
+        row = self.pg.upsert_watch_progress(user_id, canonical_content_id, payload)
         return self._normalize_progress_row(row)
 
     def delete_progress(self, user_id: str, content_id: str) -> bool:
@@ -84,14 +70,8 @@ class WatchProgressService:
 
         deleted_any = False
         for row in rows:
-            result = (
-                self.supabase.table("watch_progress")
-                .delete()
-                .eq("user_id", user_id)
-                .eq("content_id", row.get("content_id"))
-                .execute()
-            )
-            deleted_any = deleted_any or bool(result.data)
+            success = self.pg.delete_watch_progress(user_id, row.get("content_id"))
+            deleted_any = deleted_any or success
         return deleted_any
 
     def _normalize_progress_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -142,15 +122,10 @@ class WatchProgressService:
 
         rows: List[Dict[str, Any]] = []
         for candidate in candidates:
-            result = (
-                self.supabase.table("watch_progress")
-                .select("*")
-                .eq("user_id", user_id)
-                .eq("content_id", candidate)
-                .execute()
-            )
-            if result.data:
-                rows.extend(result.data)
+            result = self.pg.get_watch_progress_rows(user_id, candidate)
+            if result:
+                rows.extend(result)
+
         unique: Dict[str, Dict[str, Any]] = {}
         for row in rows:
             unique[str(row.get("id") or row.get("content_id"))] = row
@@ -167,9 +142,12 @@ class WatchProgressService:
         for field, value in (("provider_id", lookup_id), ("id", lookup_id), ("id", content_id)):
             if not value:
                 continue
-            result = self.supabase.table(table).select("*").eq(field, value).limit(1).execute()
-            if result.data:
-                return result.data[0]
+            if field == "provider_id":
+                result = self.pg.get_content_item_by_provider_id(table, value)
+            else:
+                result = self.pg.get_content_item_by_id(table, value)
+            if result:
+                return result
         return None
 
     @staticmethod

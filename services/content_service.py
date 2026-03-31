@@ -1,12 +1,6 @@
 """
 Servicio de gestión de contenido (canales, películas, series)
 Con soporte para paginación estándar y métodos genéricos
-
-Optimizaciones v2:
-- Caché de páginas de catálogo para series/movies/channels (TTL 5 min)
-- _parse_content_item usa provider_id directamente evitando urlparse innecesario
-- get_episodes_by_serie_name_paginated usa query ligera para seasons (solo columna necesaria)
-- _to_android_catalog_item evita doble parse llamando directamente a los datos parseados
 """
 from datetime import datetime
 import time
@@ -14,11 +8,9 @@ from typing import Optional, List, Dict, Any, Tuple
 import re
 from urllib.parse import parse_qs, urlparse
 import requests
-from postgrest.exceptions import APIError
-from supabase import Client
 
 from utils.config import get_settings
-from .postgres_service import get_postgres_service
+from .postgres_service import PostgresService
 
 
 class ContentService:
@@ -31,7 +23,6 @@ class ContentService:
         'replays': 'replays',
     }
 
-    # ── Caché estático (TTL 5 min) ──────────────────────────────────────────
     _cache: Dict[str, Tuple[Any, float]] = {}
     _CACHE_TTL_SECONDS = 300
 
@@ -50,7 +41,6 @@ class ContentService:
     def _set_cached(cls, key: str, value: Any):
         cls._cache[key] = (value, time.time())
 
-    # Mapeo de códigos de país a nombres completos
     COUNTRY_NAMES = {
         'AD': 'Andorra', 'AE': 'Emiratos Árabes Unidos', 'AF': 'Afganistán',
         'AG': 'Antigua y Barbuda', 'AI': 'Anguila', 'AL': 'Albania',
@@ -121,15 +111,13 @@ class ContentService:
         'VC': 'San Vicente y las Granadinas', 'VE': 'Venezuela',
         'VG': 'Islas Vírgenes Británicas', 'VI': 'Islas Vírgenes de los Estados Unidos',
         'VN': 'Vietnam', 'VU': 'Vanuatu', 'WF': 'Wallis y Futuna', 'WS': 'Samoa',
-        'YE': 'Yemen', 'YT': 'Mayotte', 'ZA': 'Sudáfrica', 'ZM': 'Zambia',
+        'YE': 'Yemen', 'YT': 'Mayotte', 'ZA': 'Sudáfica', 'ZM': 'Zambia',
         'ZW': 'Zimbabue',
     }
 
-    def __init__(self, supabase: Client):
-        self.supabase = supabase
+    def __init__(self, pg_service: PostgresService):
+        self.pg = pg_service
         self.settings = get_settings()
-
-    # ── URL helpers ─────────────────────────────────────────────────────────
 
     @property
     def _https_base_url(self) -> str:
@@ -224,8 +212,6 @@ class ContentService:
             return f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}.{extension}"
         return f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}"
 
-    # ── Parsing ──────────────────────────────────────────────────────────────
-
     def _parse_content_item(
         self,
         row: Dict[str, Any],
@@ -234,21 +220,14 @@ class ContentService:
         password: str = '',
     ) -> Dict[str, Any]:
         """
-        Parsea un item de contenido de Supabase o PostgreSQL directo.
-
-        FIX: Usa row['id'] como id del item (id interno de la BD).
-             stream_id se sigue derivando de provider_id para construir la stream_url,
-             pero el campo 'id' devuelto al frontend es siempre el id interno.
+        Parsea un item de contenido.
         """
         original_url = row.get('url') or ''
         persisted_stream_url = row.get('stream_url') or None
 
-        # Limpiar persisted_stream_url si es string vacío
         if persisted_stream_url == '':
             persisted_stream_url = None
 
-        # ── Determinar stream_id (para construir la URL de proxy) ────────────
-        # stream_id = provider_id si existe, si no extraer de la URL
         provider_id = row.get('provider_id') or None
         if provider_id:
             stream_id = str(provider_id)
@@ -257,10 +236,8 @@ class ContentService:
             extracted_id, _ext, url_content_type = self._extract_stream_id(original_url)
             stream_id = extracted_id or ''
 
-        # ── id interno de la BD (FIX: este es el id real, no el stream_id) ──
         internal_id = str(row.get('id') or stream_id)
 
-        # ── Construir stream_url ──────────────────────────────────────────
         if persisted_stream_url and username and password:
             stream_url = self._interpolate_stream_url_template(
                 persisted_stream_url, username, password
@@ -279,7 +256,7 @@ class ContentService:
             stream_url = None
 
         base_item = {
-            'id': internal_id,        # ← FIX: id interno de la BD, no el provider_id
+            'id': internal_id,
             'num': row.get('numero'),
             'nombre': row.get('nombre') or '',
             'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre') or '',
@@ -351,8 +328,6 @@ class ContentService:
     ) -> Dict[str, Any]:
         return self._to_android_catalog_item(row, content_type, username, password)
 
-    # ── Helpers de caché de catálogo ─────────────────────────────────────────
-
     @staticmethod
     def _catalog_cache_key(
         content_type: str, page: int, page_size: int,
@@ -381,7 +356,6 @@ class ContentService:
         for item in cached.get('items', []):
             r = dict(item)
             item_id = r.get('id') or ''
-            # Usar provider_id para construir la stream_url si está disponible
             stream_id = r.get('provider_id') or item_id
             if stream_id:
                 if content_type == 'channels':
@@ -392,8 +366,6 @@ class ContentService:
                     r['stream_url'] = f"{base_url}/series/{username}/{password}/{stream_id}.ts"
             injected_items.append(r)
         return {**cached, 'items': injected_items}
-
-    # ── Queries ──────────────────────────────────────────────────────────────
 
     def _calculate_offset(self, page: int, page_size: int) -> int:
         return (page - 1) * page_size
@@ -430,72 +402,6 @@ class ContentService:
     ) -> Dict[str, Any]:
         return self._build_paginated_payload(items, total, page, page_size, extra)
 
-    @staticmethod
-    def _is_requested_range_error(error: Exception) -> bool:
-        if not isinstance(error, APIError):
-            return False
-
-        raw_error = error.json()
-        if not isinstance(raw_error, dict):
-            raw_error = {}
-
-        raw_code = raw_error.get('code')
-        code = str(raw_code or error.code or '').upper()
-        status = str(raw_error.get('status') or '')
-        details = ' '.join(
-            str(value)
-            for value in [error.message, error.details, error.hint]
-            if value
-        ).lower()
-
-        return (
-            status == '416'
-            or raw_code == 416
-            or code == '416'
-            or code == 'PGRST103'
-            or 'requested range' in details
-            or 'range not satisfiable' in details
-            or 'offset outside the result set' in details
-        )
-
-    def _get_filtered_total(
-        self,
-        table: str,
-        group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-    ) -> int:
-        result = self._build_base_query(
-            table,
-            group=group,
-            country=country,
-            search=search,
-            include_count=True,
-            fields='id',
-        ).limit(1).execute()
-        return result.count or 0
-
-    def _build_base_query(
-        self,
-        table: str,
-        group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        include_count: bool = False,
-        fields: str = '*',
-    ):
-        count_param = 'exact' if include_count else None
-        query = self.supabase.table(table).select(fields, count=count_param)
-
-        if group:
-            query = query.or_(f'grupo_normalizado.ilike.%{group}%,grupo.ilike.%{group}%')
-        if country:
-            query = query.eq('country', country)
-        if search:
-            query = query.or_(f'nombre_normalizado.ilike.%{search}%,nombre.ilike.%{search}%')
-
-        return query
-
     def get_content_list(
         self,
         content_type: str,
@@ -524,27 +430,16 @@ class ContentService:
             if cached is not None:
                 return self._inject_stream_urls(cached, content_type, username, password)
 
-        query = self._build_base_query(table, group, country, search, include_count=True)
-        query = query.order('numero', desc=False)
+        items, total = self.pg.get_content_items_paginated(
+            table, page, page_size, group, country, search, 'numero'
+        )
 
-        offset = self._calculate_offset(page, page_size)
-        query = query.range(offset, offset + page_size - 1)
+        parsed_items = [
+            self._parse_content_item(row, content_type, username, password)
+            for row in items
+        ]
 
-        try:
-            result = query.execute()
-            total = result.count or 0
-            items = [
-                self._parse_content_item(row, content_type, username, password)
-                for row in (result.data or [])
-            ]
-        except Exception as error:
-            if not self._is_requested_range_error(error):
-                raise
-
-            total = self._get_filtered_total(table, group=group, country=country, search=search)
-            items = []
-
-        data = self._build_paginated_payload(items, total, page, page_size)
+        data = self._build_paginated_payload(parsed_items, total, page, page_size)
 
         if content_type == 'movies' and not search:
             cache_key = self._catalog_cache_key(content_type, page, page_size, group, country)
@@ -570,8 +465,7 @@ class ContentService:
             if cached is not None:
                 return self._inject_stream_urls(cached, 'series', username, password)
 
-        pg_service = get_postgres_service()
-        result = pg_service.get_distinct_series_page(
+        result = self.pg.get_distinct_series_page(
             page=page, page_size=page_size,
             group=group, country=country, search=search,
         )
@@ -601,26 +495,19 @@ class ContentService:
     ) -> Optional[Dict[str, Any]]:
         """
         Obtiene un item específico de contenido.
-
-        FIX: Busca primero por id interno. Si no encuentra, busca por provider_id
-             como fallback para compatibilidad con IDs legacy.
+        Busca primero por id interno, luego por provider_id.
         """
         table = self.TABLE_MAP.get(content_type)
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
-        # 1. Buscar por id interno (caso normal)
-        result = self.supabase.table(table).select('*').eq('id', item_id).execute()
+        row = self.pg.get_content_item_by_id(table, item_id)
+        if not row:
+            row = self.pg.get_content_item_by_provider_id(table, item_id)
 
-        # 2. Fallback: buscar por provider_id (para IDs legacy o del calendario)
-        if not result.data:
-            result = self.supabase.table(table).select('*').eq('provider_id', item_id).execute()
-
-        if result.data:
-            return self._parse_content_item(result.data[0], content_type, username, password)
+        if row:
+            return self._parse_content_item(row, content_type, username, password)
         return None
-
-    # ── Métodos legacy (compatibilidad) ──────────────────────────────────────
 
     def get_channels(self, page=1, page_size=50, group=None, country=None,
                      search=None, username='', password='') -> Dict[str, Any]:
@@ -643,8 +530,6 @@ class ContentService:
     def get_serie(self, series_id: str, username='', password='') -> Optional[Dict[str, Any]]:
         return self.get_content_item('series', series_id, username, password)
 
-    # ── Groups / Countries ───────────────────────────────────────────────────
-
     def get_groups(self, content_type: str = 'channels', countries: Optional[List[str]] = None) -> List[str]:
         table = self.TABLE_MAP.get(content_type, 'channels')
         cache_key = f"groups:{table}:{','.join(sorted(countries)) if countries else 'all'}"
@@ -653,8 +538,7 @@ class ContentService:
         if cached is not None:
             return cached
 
-        pg_service = get_postgres_service()
-        result = pg_service.get_distinct_groups(table, countries)
+        result = self.pg.get_distinct_groups(table, countries)
         self._set_cached(cache_key, result)
         return result
 
@@ -666,22 +550,17 @@ class ContentService:
         if cached is not None:
             return cached
 
-        pg_service = get_postgres_service()
-        result = pg_service.get_distinct_countries(table)
+        result = self.pg.get_distinct_countries(table)
         self._set_cached(cache_key, result)
         return result
 
     def get_content_count(self) -> Dict[str, int]:
-        channels = self.supabase.table('channels').select('id', count='exact').execute()
-        movies = self.supabase.table('movies').select('id', count='exact').execute()
-        series = self.supabase.table('series').select('id', count='exact').execute()
-        replays = self.supabase.table('replays').select('id', count='exact').execute()
-
+        counts = self.pg.get_content_counts()
         return {
-            'channels': channels.count or 0,
-            'movies': movies.count or 0,
-            'series': series.count or 0,
-            'replays': replays.count or 0,
+            'channels': counts.get('channels', 0),
+            'movies': counts.get('movies', 0),
+            'series': counts.get('series', 0),
+            'replays': counts.get('replays', 0),
         }
 
     def get_home_catalog(self, username: str, page_size: int = 12, country: Optional[str] = None, password: str = '') -> Dict[str, Any]:
@@ -709,11 +588,10 @@ class ContentService:
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
-        query = self.supabase.table(table).select('*')
-        if country:
-            query = query.eq('country', country)
-        result = query.order('numero', desc=False).limit(page_size).execute()
-        return [self._to_android_catalog_item(row, content_type, username, password) for row in (result.data or [])]
+        items, _ = self.pg.get_content_items_paginated(
+            table, 1, page_size, None, country, None, 'numero'
+        )
+        return [self._to_android_catalog_item(row, content_type, username, password) for row in items]
 
     def get_android_content_list(
         self,
@@ -776,16 +654,10 @@ class ContentService:
         merged_items: List[Dict[str, Any]] = []
         for content_type in requested_types:
             table = self.TABLE_MAP[content_type]
-            result = (
-                self.supabase.table(table)
-                .select('*')
-                .or_(f'nombre_normalizado.ilike.%{query}%,nombre.ilike.%{query}%')
-                .order('numero', desc=False)
-                .execute()
-            )
+            rows = self.pg.search_content(table, query)
             merged_items.extend(
                 self._to_android_catalog_item(row, content_type, username, password)
-                for row in (result.data or [])
+                for row in rows
             )
 
         merged_items.sort(key=lambda item: item.get('title') or '')
@@ -805,25 +677,16 @@ class ContentService:
             'types': requested_types,
         }
 
-    # ── Episodes ─────────────────────────────────────────────────────────────
-
     def get_episodes_by_serie_name(
         self,
         serie_name: str,
         username: str = '',
         password: str = '',
     ) -> List[Dict[str, Any]]:
-        result = (
-            self.supabase.table('series')
-            .select('*')
-            .eq('serie_name', serie_name)
-            .order('temporada')
-            .order('episodio')
-            .execute()
-        )
+        rows = self.pg.get_episodes_by_serie_name(serie_name)
         return [
             self._parse_content_item(row, 'series', username, password)
-            for row in result.data
+            for row in rows
         ]
 
     def get_episodes_by_serie_name_paginated(
@@ -834,62 +697,23 @@ class ContentService:
         page: int = 1,
         page_size: int = 50,
     ) -> Dict[str, Any]:
-        offset = self._calculate_offset(page, page_size)
-
-        try:
-            result = (
-                self.supabase.table('series')
-                .select('*', count='exact')
-                .eq('serie_name', serie_name)
-                .order('temporada')
-                .order('episodio')
-                .range(offset, offset + page_size - 1)
-                .execute()
-            )
-            total = result.count or 0
-            items = [
-                self._to_android_catalog_item(row, 'series', username, password)
-                for row in (result.data or [])
-            ]
-        except Exception as error:
-            if not self._is_requested_range_error(error):
-                raise
-
-            count_result = (
-                self.supabase.table('series')
-                .select('id', count='exact')
-                .eq('serie_name', serie_name)
-                .limit(1)
-                .execute()
-            )
-            total = count_result.count or 0
-            items = []
-
-        seasons_result = (
-            self.supabase.table('series')
-            .select('temporada')
-            .eq('serie_name', serie_name)
-            .execute()
-        )
-        seasons = sorted({
-            row['temporada'] for row in (seasons_result.data or [])
-            if row.get('temporada') is not None
-        })
+        rows, total, seasons = self.pg.get_episodes_paginated(serie_name, page, page_size)
 
         return self._build_paginated_payload(
-            items,
+            [
+                self._to_android_catalog_item(row, 'series', username, password)
+                for row in rows
+            ],
             total,
             page,
             page_size,
             extra={
                 'serie_name': serie_name,
-                'episodes': items,
+                'episodes': rows,
                 'total_episodes': total,
                 'seasons': seasons,
             },
         )
-
-    # ── Replays ───────────────────────────────────────────────────────────────
 
     def get_replays(
         self,
@@ -898,44 +722,18 @@ class ContentService:
         event_type: Optional[str] = None,
         search: Optional[str] = None,
     ) -> Dict[str, Any]:
-        query = self.supabase.table('replays').select('*', count='exact')
-
-        if event_type:
-            query = query.eq('event_type', event_type)
-
-        if search:
-            query = query.or_(
-                f"title.ilike.%{search}%,event_name.ilike.%{search}%,description.ilike.%{search}%"
-            )
-
-        offset = self._calculate_offset(page, page_size)
-        query = query.order('event_date', desc=True).order('created_at', desc=True)
-        query = query.range(offset, offset + page_size - 1)
-
-        try:
-            result = query.execute()
-            total = result.count or 0
-            items = [self._parse_replay_item(row) for row in (result.data or [])]
-        except Exception as error:
-            if not self._is_requested_range_error(error):
-                raise
-
-            count_query = self.supabase.table('replays').select('id', count='exact')
-            if event_type:
-                count_query = count_query.eq('event_type', event_type)
-            if search:
-                count_query = count_query.or_(
-                    f"title.ilike.%{search}%,event_name.ilike.%{search}%,description.ilike.%{search}%"
-                )
-            total = count_query.limit(1).execute().count or 0
-            items = []
-
-        return self._build_paginated_payload(items, total, page, page_size)
+        rows, total = self.pg.get_replays_paginated(page, page_size, event_type, search)
+        return self._build_paginated_payload(
+            [self._parse_replay_item(row) for row in rows],
+            total,
+            page,
+            page_size
+        )
 
     def get_replay(self, slug: str) -> Optional[Dict[str, Any]]:
-        result = self.supabase.table('replays').select('*').eq('slug', slug).limit(1).execute()
-        if result.data:
-            return self._parse_replay_item(result.data[0])
+        row = self.pg.get_replay_by_slug(slug)
+        if row:
+            return self._parse_replay_item(row)
         return None
 
     def get_replay_source(self, slug: str, source_index: int, button_index: int) -> Optional[Dict[str, Any]]:
@@ -1149,33 +947,21 @@ class ContentService:
 
         return None
 
-    # ── Bulk endpoints for client caching ────────────────────────────────────
-
     def get_content_stats(self, content_type: str) -> Dict[str, Any]:
         """Obtiene estadísticas de contenido (total count)."""
         table = self.TABLE_MAP.get(content_type)
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
-        query = self.supabase.table(table).select('id', count='exact')
-        result = query.execute()
-        total = result.count or 0
-
+        total = self.pg.count_table(table)
         return {content_type: {'total': total}}
 
     def get_all_channels_bulk(self) -> Dict[str, Any]:
         """Obtiene TODOS los canales en una sola llamada con campos mínimos para cache local."""
-        table = self.TABLE_MAP.get('channels')
-        fields = 'id,logo,provider_id,country,nombre_normalizado,grupo_normalizado,numero'
-
-        query = self.supabase.table(table).select(fields)
-        query = query.order('numero', desc=False)
-
-        result = query.execute()
-        items = result.data or []
+        rows, _ = self.pg.get_content_items_paginated('channels', 1, 999999, None, None, None, 'numero')
 
         parsed_items = []
-        for row in items:
+        for row in rows:
             parsed_items.append({
                 'id': str(row.get('id') or ''),
                 'logo': row.get('logo') or '',

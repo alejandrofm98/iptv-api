@@ -122,17 +122,16 @@ async def lifespan(app: FastAPI):
     if not settings.is_valid():
         print("❌ Error: Configuración incompleta")
     else:
-        supabase_client = settings.get_supabase_client()
-        user_svc = UserService(supabase_client)
-        device_svc = DeviceService(supabase_client)
-        playlist_svc = PlaylistService(supabase_client)
-        stream_svc = StreamProxyService(supabase_client)
-        content_svc = ContentService(supabase_client)
-        transcode_svc = TranscodeService()
-        watch_progress_svc = WatchProgressService(supabase_client)
-        channel_favorites_svc = ChannelFavoritesService(supabase_client)
-
         pg_svc = get_postgres_service()
+        user_svc = UserService(pg_svc)
+        device_svc = DeviceService(pg_svc)
+        playlist_svc = PlaylistService(pg_svc)
+        stream_svc = StreamProxyService(pg_svc)
+        content_svc = ContentService(pg_svc)
+        transcode_svc = TranscodeService()
+        watch_progress_svc = WatchProgressService(pg_svc)
+        channel_favorites_svc = ChannelFavoritesService(pg_svc)
+
         calendar_svc = CalendarService(pg_svc)
 
         set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc, transcode_svc, calendar_svc, watch_progress_svc, channel_favorites_svc)

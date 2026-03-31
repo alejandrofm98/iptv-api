@@ -21,7 +21,6 @@ ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 # Clientes de servicios (se inicializan en lifespan)
-supabase_client = None
 user_service: Optional[UserService] = None
 device_service: Optional[DeviceService] = None
 playlist_service: Optional[PlaylistService] = None

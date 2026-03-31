@@ -8,14 +8,15 @@ Optimizaciones v2:
 - get_distinct_groups usa grupo_normalizado (índice más selectivo)
 - Pool ampliado a 10 conexiones para carga concurrente
 """
-import os
-from typing import List, Dict, Any, Optional
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import logging
+from typing import List, Dict, Any, Optional, Tuple
+from psycopg2.extras import RealDictCursor, execute_batch
 from psycopg2 import pool
 from contextlib import contextmanager
 
 from utils.config import get_settings
+
+logger = logging.getLogger("postgres_service")
 
 
 # ============================================================
@@ -56,7 +57,6 @@ class PostgresService:
     def _init_pool(self):
         """Inicializa el pool de conexiones"""
         if PostgresService._pool is None:
-            # Ampliado de 5 a 10 para soportar más concurrencia
             PostgresService._pool = pool.SimpleConnectionPool(
                 2, 10,
                 self._connection_string
@@ -70,16 +70,9 @@ class PostgresService:
                 f"@{self.settings.pg_host}:{self.settings.pg_port}/{self.settings.pg_database}"
             )
 
-        supabase_url = self.settings.supabase_url
-        if supabase_url:
-            host = supabase_url.replace('https://', '').replace('http://', '').rstrip('/')
-            if '.supabase.co' in host:
-                pg_host = host.replace('.co', '.co:5432')
-                return f"postgresql://postgres:{self.settings.supabase_key}@{pg_host}/postgres"
-
         raise ValueError(
             "No se pudo construir string de conexión a PostgreSQL. "
-            "Configura PG_HOST/PG_USER/PG_PASSWORD o SUPABASE_URL/SUPABASE_KEY"
+            "Configura PG_HOST/PG_USER/PG_PASSWORD"
         )
 
     @contextmanager
@@ -96,13 +89,6 @@ class PostgresService:
     def execute_query(self, sql: str, params: Optional[tuple] = None) -> List[Dict[str, Any]]:
         """
         Ejecuta una consulta SELECT y retorna los resultados.
-
-        Args:
-            sql: Consulta SQL a ejecutar
-            params: Parámetros para la consulta (previene SQL injection)
-
-        Returns:
-            Lista de diccionarios con los resultados
         """
         with self.get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -113,13 +99,6 @@ class PostgresService:
     def execute_command(self, sql: str, params: Optional[tuple] = None) -> int:
         """
         Ejecuta un comando SQL (INSERT, UPDATE, DELETE).
-
-        Args:
-            sql: Comando SQL a ejecutar
-            params: Parámetros para la consulta
-
-        Returns:
-            Número de filas afectadas
         """
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
@@ -127,11 +106,479 @@ class PostgresService:
                 conn.commit()
                 return cursor.rowcount
 
+    def execute_insert(self, sql: str, params: Optional[tuple] = None) -> Dict[str, Any]:
+        """Ejecuta INSERT y retorna el row insertado usando RETURNING"""
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(sql, params)
+                conn.commit()
+                result = cursor.fetchone()
+                return dict(result) if result else {}
+
+    def bulk_insert(self, table: str, columns: List[str], rows: List[tuple]) -> int:
+        """Inserta múltiples filas en una tabla usando execute_batch"""
+        if not rows:
+            return 0
+        placeholders = ','.join(['%s'] * len(columns))
+        columns_str = ','.join(columns)
+        sql = f"INSERT INTO {table} ({columns_str}) VALUES ({placeholders})"
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                execute_batch(cursor, sql, rows)
+                conn.commit()
+                return len(rows)
+
+    # ============================================================
+    # HELPERS: Users
+    # ============================================================
+
+    def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        """Obtiene usuario por username (incluye password_hash para auth)"""
+        sql = "SELECT * FROM users WHERE username = %s"
+        results = self.execute_query(sql, (username,))
+        return results[0] if results else None
+
+    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene usuario por ID"""
+        sql = """
+            SELECT id, username, max_connections, is_active, expires_at, created_at, role
+            FROM users WHERE id = %s
+        """
+        results = self.execute_query(sql, (user_id,))
+        return results[0] if results else None
+
+    def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Crea un nuevo usuario"""
+        sql = """
+            INSERT INTO users (username, password_hash, max_connections, is_active, expires_at, role)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id, username, max_connections, is_active, expires_at, created_at, role
+        """
+        return self.execute_insert(sql, (
+            user_data['username'],
+            user_data['password_hash'],
+            user_data.get('max_connections', 5),
+            user_data.get('is_active', True),
+            user_data.get('expires_at'),
+            user_data.get('role', 'user')
+        ))
+
+    def update_user(self, user_id: str, user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Actualiza un usuario y retorna el usuario actualizado"""
+        set_clauses = []
+        params = []
+        for key, value in user_data.items():
+            if value is not None and key not in ('id', 'username', 'created_at'):
+                set_clauses.append(f"{key} = %s")
+                params.append(value)
+        if not set_clauses:
+            return self.get_user_by_id(user_id)
+        params.append(user_id)
+        sql = f"UPDATE users SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, username, max_connections, is_active, expires_at, created_at, role"
+        results = self.execute_query(sql, tuple(params))
+        return results[0] if results else None
+
+    def delete_user(self, user_id: str) -> bool:
+        """Elimina un usuario"""
+        sql = "DELETE FROM users WHERE id = %s"
+        count = self.execute_command(sql, (user_id,))
+        return count > 0
+
+    def list_users(self, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
+        """Lista usuarios con paginación"""
+        sql = """
+            SELECT id, username, max_connections, is_active, expires_at, created_at, role
+            FROM users ORDER BY created_at DESC LIMIT %s OFFSET %s
+        """
+        return self.execute_query(sql, (limit, skip))
+
+    def count_table(self, table: str) -> int:
+        """Cuenta registros en una tabla"""
+        sql = f"SELECT COUNT(*) as count FROM {table}"
+        result = self.execute_query(sql)
+        return result[0]['count'] if result else 0
+
+    # ============================================================
+    # HELPERS: Sessions
+    # ============================================================
+
+    def count_user_sessions(self, user_id: str) -> int:
+        """Cuenta sesiones activas de un usuario"""
+        sql = "SELECT COUNT(*) as count FROM active_sessions WHERE user_id = %s"
+        result = self.execute_query(sql, (user_id,))
+        return result[0]['count'] if result else 0
+
+    def get_active_sessions_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+        """Obtiene todas las sesiones activas de un usuario"""
+        sql = """
+            SELECT id, device_id, device_name, device_type, ip_address, last_activity, created_at
+            FROM active_sessions WHERE user_id = %s ORDER BY last_activity DESC
+        """
+        return self.execute_query(sql, (user_id,))
+
+    def get_session_by_user_and_device(self, user_id: str, device_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene sesión específica por user_id y device_id"""
+        sql = "SELECT * FROM active_sessions WHERE user_id = %s AND device_id = %s"
+        results = self.execute_query(sql, (user_id, device_id))
+        return results[0] if results else None
+
+    def upsert_session(self, session_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Inserta o actualiza una sesión"""
+        sql = """
+            INSERT INTO active_sessions (user_id, device_id, device_name, device_type, ip_address, user_agent, last_activity)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, device_id)
+            DO UPDATE SET last_activity = EXCLUDED.last_activity, ip_address = EXCLUDED.ip_address, user_agent = EXCLUDED.user_agent
+            RETURNING *
+        """
+        return self.execute_insert(sql, (
+            session_data['user_id'],
+            session_data['device_id'],
+            session_data['device_name'],
+            session_data['device_type'],
+            session_data['ip_address'],
+            session_data['user_agent'],
+            session_data['last_activity']
+        ))
+
+    def delete_session(self, user_id: str, device_id: str) -> bool:
+        """Elimina una sesión específica"""
+        sql = "DELETE FROM active_sessions WHERE user_id = %s AND device_id = %s"
+        count = self.execute_command(sql, (user_id, device_id))
+        return count > 0
+
+    def delete_all_user_sessions(self, user_id: str) -> int:
+        """Elimina todas las sesiones de un usuario"""
+        sql = "DELETE FROM active_sessions WHERE user_id = %s"
+        return self.execute_command(sql, (user_id,))
+
+    def cleanup_inactive_sessions(self, threshold_iso: str) -> int:
+        """Limpia sesiones inactivas antes de threshold"""
+        sql = "DELETE FROM active_sessions WHERE last_activity < %s"
+        return self.execute_command(sql, (threshold_iso,))
+
+    def get_all_sessions(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Obtiene todas las sesiones activas"""
+        sql = "SELECT * FROM active_sessions ORDER BY last_activity DESC LIMIT %s"
+        return self.execute_query(sql, (limit,))
+
+    def get_all_sessions_with_users(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Obtiene todas las sesiones con usernames"""
+        sql = """
+            SELECT s.*, u.username
+            FROM active_sessions s
+            LEFT JOIN users u ON s.user_id = u.id
+            ORDER BY s.last_activity DESC
+            LIMIT %s
+        """
+        return self.execute_query(sql, (limit,))
+
+    # ============================================================
+    # HELPERS: Content
+    # ============================================================
+
+    def get_content_item_by_id(self, table: str, item_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene item de contenido por ID interno"""
+        sql = f"SELECT * FROM {table} WHERE id = %s"
+        results = self.execute_query(sql, (item_id,))
+        return results[0] if results else None
+
+    def get_content_item_by_provider_id(self, table: str, provider_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene item de contenido por provider_id"""
+        sql = f"SELECT * FROM {table} WHERE provider_id = %s"
+        results = self.execute_query(sql, (provider_id,))
+        return results[0] if results else None
+
+    def get_content_items_paginated(
+        self,
+        table: str,
+        page: int,
+        page_size: int,
+        group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+        order_by: str = 'numero'
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Obtiene items de contenido con paginación y filtros"""
+        filters = []
+        params = []
+
+        if group:
+            filters.append("(grupo_normalizado ILIKE %s OR grupo ILIKE %s)")
+            params.extend([f"%{group}%", f"%{group}%"])
+
+        if country:
+            filters.append("country = %s")
+            params.append(country)
+
+        if search:
+            filters.append("(nombre_normalizado ILIKE %s OR nombre ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+        count_sql = f"SELECT COUNT(*) as total FROM {table} {where_clause}"
+        count_result = self.execute_query(count_sql, tuple(params))
+        total = count_result[0]['total'] if count_result else 0
+
+        offset = (page - 1) * page_size
+        data_sql = f"""
+            SELECT * FROM {table}
+            {where_clause}
+            ORDER BY {order_by} ASC
+            LIMIT %s OFFSET %s
+        """
+        data_params = tuple([*params, page_size, offset])
+        items = self.execute_query(data_sql, data_params)
+
+        return items, total
+
+    def search_content(self, table: str, query: str) -> List[Dict[str, Any]]:
+        """Busca contenido por nombre"""
+        sql = f"""
+            SELECT * FROM {table}
+            WHERE nombre_normalizado ILIKE %s OR nombre ILIKE %s
+            ORDER BY numero ASC
+        """
+        return self.execute_query(sql, (f"%{query}%", f"%{query}%"))
+
+    def get_content_counts(self) -> Dict[str, int]:
+        """Obtiene conteo de todas las tablas de contenido"""
+        return {
+            'channels': self.count_table('channels'),
+            'movies': self.count_table('movies'),
+            'series': self.count_table('series'),
+            'replays': self.count_table('replays'),
+        }
+
+    def get_channels_by_provider_ids(self, provider_ids: List) -> List[Dict[str, Any]]:
+        """Obtiene canales por lista de provider_ids"""
+        if not provider_ids:
+            return []
+        placeholders = ','.join(['%s'] * len(provider_ids))
+        sql = f"SELECT * FROM channels WHERE provider_id::text IN ({placeholders})"
+        return self.execute_query(sql, tuple(provider_ids))
+
+    def get_all_content_urls(self, table: str) -> List[Dict[str, Any]]:
+        """Obtiene todos los IDs y URLs de una tabla para precargar cache"""
+        sql = f"SELECT id, provider_id, url FROM {table} WHERE url IS NOT NULL AND url != ''"
+        return self.execute_query(sql)
+
+    # ============================================================
+    # HELPERS: Series
+    # ============================================================
+
+    def get_episodes_by_serie_name(self, serie_name: str) -> List[Dict[str, Any]]:
+        """Obtiene episodios de una serie ordenados"""
+        sql = """
+            SELECT * FROM series
+            WHERE serie_name = %s
+            ORDER BY temporada ASC, episodio ASC
+        """
+        return self.execute_query(sql, (serie_name,))
+
+    def get_episodes_paginated(
+        self,
+        serie_name: str,
+        page: int,
+        page_size: int
+    ) -> Tuple[List[Dict[str, Any]], int, List]:
+        """Obtiene episodios paginados de una serie"""
+        count_sql = "SELECT COUNT(*) as total FROM series WHERE serie_name = %s"
+        count_result = self.execute_query(count_sql, (serie_name,))
+        total = count_result[0]['total'] if count_result else 0
+
+        offset = (page - 1) * page_size
+        data_sql = """
+            SELECT * FROM series
+            WHERE serie_name = %s
+            ORDER BY temporada ASC, episodio ASC
+            LIMIT %s OFFSET %s
+        """
+        items = self.execute_query(data_sql, (serie_name, page_size, offset))
+
+        seasons_sql = "SELECT DISTINCT temporada FROM series WHERE serie_name = %s AND temporada IS NOT NULL ORDER BY temporada"
+        seasons_result = self.execute_query(seasons_sql, (serie_name,))
+        seasons = [r['temporada'] for r in seasons_result]
+
+        return items, total, seasons
+
+    def get_series_seasons(self, serie_name: str) -> List:
+        """Obtiene lista de temporadas distintas de una serie"""
+        sql = "SELECT DISTINCT temporada FROM series WHERE serie_name = %s AND temporada IS NOT NULL ORDER BY temporada"
+        results = self.execute_query(sql, (serie_name,))
+        return [r['temporada'] for r in results]
+
+    # ============================================================
+    # HELPERS: Replays
+    # ============================================================
+
+    def get_replays_paginated(
+        self,
+        page: int,
+        page_size: int,
+        event_type: Optional[str] = None,
+        search: Optional[str] = None
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Obtiene replays con paginación y filtros"""
+        filters = []
+        params = []
+
+        if event_type:
+            filters.append("event_type = %s")
+            params.append(event_type)
+
+        if search:
+            filters.append("(title ILIKE %s OR event_name ILIKE %s OR description ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+        count_sql = f"SELECT COUNT(*) as total FROM replays {where_clause}"
+        count_result = self.execute_query(count_sql, tuple(params))
+        total = count_result[0]['total'] if count_result else 0
+
+        offset = (page - 1) * page_size
+        data_sql = f"""
+            SELECT * FROM replays
+            {where_clause}
+            ORDER BY event_date DESC, created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        data_params = tuple([*params, page_size, offset])
+        items = self.execute_query(data_sql, data_params)
+
+        return items, total
+
+    def get_replay_by_slug(self, slug: str) -> Optional[Dict[str, Any]]:
+        """Obtiene replay por slug"""
+        sql = "SELECT * FROM replays WHERE slug = %s"
+        results = self.execute_query(sql, (slug,))
+        return results[0] if results else None
+
+    # ============================================================
+    # HELPERS: Watch Progress
+    # ============================================================
+
+    def get_watch_progress_rows(self, user_id: str, content_id: str) -> List[Dict[str, Any]]:
+        """Busca registros de watch_progress por user_id y content_id (con soporte para IDs legacy movie:/series:)"""
+        base_id = content_id.split(":", 1)[1] if ":" in content_id else content_id
+        candidates = [content_id, base_id]
+        if ":" not in content_id and base_id.isdigit():
+            candidates.extend([f"movie:{base_id}", f"series:{base_id}"])
+
+        results = []
+        for candidate in candidates:
+            sql = "SELECT * FROM watch_progress WHERE user_id = %s AND content_id = %s"
+            rows = self.execute_query(sql, (user_id, candidate))
+            results.extend(rows)
+
+        unique = {}
+        for row in results:
+            key = str(row.get("id") or row.get("content_id"))
+            unique[key] = row
+        return list(unique.values())
+
+    def get_continue_watching(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Obtiene items con progreso incompleto (entre 5% y 95%)"""
+        sql = """
+            SELECT * FROM watch_progress
+            WHERE user_id = %s AND position_ms > 0
+            ORDER BY last_watched_at DESC
+            LIMIT %s
+        """
+        return self.execute_query(sql, (user_id, limit))
+
+    def upsert_watch_progress(self, user_id: str, content_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Inserta o actualiza watch_progress"""
+        sql = """
+            INSERT INTO watch_progress (user_id, content_id, content_type, position_ms, duration_ms, series_name, season_number, episode_number, title, image_url, last_watched_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, content_id)
+            DO UPDATE SET
+                position_ms = EXCLUDED.position_ms,
+                duration_ms = EXCLUDED.duration_ms,
+                series_name = EXCLUDED.series_name,
+                season_number = EXCLUDED.season_number,
+                episode_number = EXCLUDED.episode_number,
+                title = EXCLUDED.title,
+                image_url = EXCLUDED.image_url,
+                last_watched_at = EXCLUDED.last_watched_at
+            RETURNING *
+        """
+        return self.execute_insert(sql, (
+            user_id,
+            content_id,
+            data.get("content_type"),
+            data.get("position_ms", 0),
+            data.get("duration_ms", 0),
+            data.get("series_name"),
+            data.get("season_number"),
+            data.get("episode_number"),
+            data.get("title", ""),
+            data.get("image_url", ""),
+            data.get("last_watched_at")
+        ))
+
+    def delete_watch_progress(self, user_id: str, content_id: str) -> bool:
+        """Elimina watch_progress"""
+        sql = "DELETE FROM watch_progress WHERE user_id = %s AND content_id = %s"
+        count = self.execute_command(sql, (user_id, content_id))
+        return count > 0
+
+    # ============================================================
+    # HELPERS: Favorites
+    # ============================================================
+
+    def list_favorites(self, user_id: str) -> List[Dict[str, Any]]:
+        """Lista favoritos de un usuario"""
+        sql = """
+            SELECT user_id, channel_provider_id, created_at
+            FROM channel_favorites
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+        """
+        return self.execute_query(sql, (user_id,))
+
+    def add_favorite(self, user_id: str, channel_provider_id: str) -> Dict[str, Any]:
+        """Agrega o actualiza un favorito"""
+        sql = """
+            INSERT INTO channel_favorites (user_id, channel_provider_id)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id, channel_provider_id) DO NOTHING
+            RETURNING user_id, channel_provider_id, created_at
+        """
+        return self.execute_insert(sql, (user_id, str(channel_provider_id)))
+
+    def remove_favorite(self, user_id: str, channel_provider_id: str) -> bool:
+        """Elimina un favorito"""
+        sql = "DELETE FROM channel_favorites WHERE user_id = %s AND channel_provider_id = %s"
+        count = self.execute_command(sql, (user_id, str(channel_provider_id)))
+        return count > 0
+
+    # ============================================================
+    # HELPERS: Config
+    # ============================================================
+
+    def get_config_value(self, key: str) -> Optional[str]:
+        """Obtiene valor de config por key"""
+        sql = "SELECT value FROM config WHERE key = %s"
+        results = self.execute_query(sql, (key,))
+        return results[0]['value'] if results else None
+
+    def get_all_config(self) -> Dict[str, str]:
+        """Obtiene todos los config como dict"""
+        sql = "SELECT key, value FROM config"
+        results = self.execute_query(sql)
+        return {r['key']: r['value'] for r in results if r.get('key')}
+
+    # ============================================================
+    # HELPERS: Groups / Countries
+    # ============================================================
+
     def get_distinct_groups(self, table: str, countries: Optional[List[str]] = None) -> List[str]:
         """
         Obtiene grupos distintos de una tabla.
-
-        Prioriza grupo_normalizado sobre grupo para mayor consistencia.
         """
         if countries and len(countries) > 0:
             placeholders = ','.join(['%s'] * len(countries))
@@ -190,7 +637,7 @@ class PostgresService:
             'SI': 'Eslovenia', 'SK': 'Eslovaquia', 'SL': 'Sierra Leona', 'SU': 'Sudán',
             'TH': 'Tailandia', 'TR': 'Turquía', 'TW': 'Taiwán', 'UA': 'Ucrania',
             'UK': 'Reino Unido', 'US': 'Estados Unidos', 'UZ': 'Uzbekistán',
-            'VT': 'Vaticano', 'WC': 'Islas Cook', 'ZA': 'Sudáfrica',
+            'VT': 'Vaticano', 'WC': 'Islas Cook', 'ZA': 'Sudáfica',
         }
 
         countries = []
@@ -211,13 +658,6 @@ class PostgresService:
     ) -> Dict[str, Any]:
         """
         Obtiene una página de series únicas.
-
-        Optimizaciones respecto a la versión anterior:
-        1. COUNT(*) OVER() — un solo viaje a la base de datos en lugar de dos queries.
-        2. Clave de deduplicación computada una sola vez en el CTE base.
-        3. DISTINCT ON sobre la clave limpia; ORDER BY alineado para que el planner
-           pueda usar el índice idx_series_serie_name directamente.
-        4. Params tipados como lista y pasados como tupla en un solo execute.
         """
         filters: List[str] = []
         params: List[Any] = []
@@ -239,19 +679,6 @@ class PostgresService:
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
         offset = (page - 1) * page_size
 
-        # ── Una sola query: deduplicación + count + paginación ──────────────
-        #
-        # Flujo:
-        #   base      → aplica filtros y calcula series_key una sola vez
-        #   deduped   → DISTINCT ON (series_key) ORDER BY series_key, numero
-        #               → elige el primer episodio de cada serie como representante
-        #   counted   → añade COUNT(*) OVER() para saber el total sin segunda query
-        #   resultado → ORDER BY + LIMIT/OFFSET para la página
-        #
-        # DISTINCT ON exige que la primera clave del ORDER BY coincida con la
-        # columna del DISTINCT ON. Si el índice idx_series_serie_name existe,
-        # PostgreSQL puede resolver el DISTINCT ON con un IndexScan en lugar de Sort.
-        # ────────────────────────────────────────────────────────────────────
         sql = f"""
             WITH base AS (
                 SELECT *,
@@ -283,7 +710,6 @@ class PostgresService:
 
         total = int(rows[0]['_total']) if rows else 0
 
-        # Limpiar la columna interna antes de devolver
         clean_rows = []
         for row in rows:
             r = dict(row)

@@ -2,10 +2,8 @@
 Constantes globales de configuración para IPTV
 """
 
-# ===== Supabase =====
-SUPABASE_ENV_URL = "SUPABASE_URL"
-SUPABASE_ENV_KEY = "SUPABASE_KEY"
-SUPABASE_CONFIG_TABLE = "config"
+# ===== Config =====
+CONFIG_TABLE = "config"
 
 # ===== API =====
 API_SECRET_ENV_KEY = "API_SECRET_KEY"

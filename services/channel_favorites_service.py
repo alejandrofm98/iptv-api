@@ -3,9 +3,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from supabase import Client
-
-from .postgres_service import get_postgres_service
+from .postgres_service import PostgresService
 
 log = logging.getLogger(__name__)
 
@@ -13,43 +11,21 @@ log = logging.getLogger(__name__)
 class ChannelFavoritesService:
     """CRUD y listados de favoritos de canales."""
 
-    def __init__(self, supabase: Client):
-        self.supabase = supabase
+    def __init__(self, pg_service: PostgresService):
+        self.pg = pg_service
 
     def list_favorites(self, user_id: str) -> List[Dict[str, Any]]:
-        result = (
-            self.supabase.table("channel_favorites")
-            .select("user_id,channel_provider_id,created_at")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .execute()
-        )
-        data = [self._normalize_row(row) for row in (result.data or [])]
+        rows = self.pg.list_favorites(user_id)
+        data = [self._normalize_row(row) for row in rows]
         log.info("list_favorites: user=%s returned %d rows", user_id, len(data))
         return data
 
     def add_favorite(self, user_id: str, channel_provider_id: str) -> Dict[str, Any]:
-        payload = {
-            "user_id": user_id,
-            "channel_provider_id": str(channel_provider_id),
-        }
-        result = (
-            self.supabase.table("channel_favorites")
-            .upsert(payload, on_conflict="user_id,channel_provider_id")
-            .execute()
-        )
-        row = result.data[0] if result.data else payload
+        row = self.pg.add_favorite(user_id, str(channel_provider_id))
         return self._normalize_row(row)
 
     def remove_favorite(self, user_id: str, channel_provider_id: str) -> bool:
-        result = (
-            self.supabase.table("channel_favorites")
-            .delete()
-            .eq("user_id", user_id)
-            .eq("channel_provider_id", str(channel_provider_id))
-            .execute()
-        )
-        return bool(result.data)
+        return self.pg.remove_favorite(user_id, str(channel_provider_id))
 
     def get_favorite_channels(
         self,
@@ -69,7 +45,6 @@ class ChannelFavoritesService:
             log.info("get_favorite_channels: user=%s has no favorites, returning empty", user_id)
             return content_svc.build_paginated_payload([], 0, page, page_size)
 
-        pg_service = get_postgres_service()
         filters = ["provider_id IS NOT NULL", "provider_id::text = ANY(%s)"]
         params: List[Any] = [provider_ids]
 
@@ -86,7 +61,7 @@ class ChannelFavoritesService:
             FROM channels
             WHERE {' AND '.join(filters)}
         """
-        rows = pg_service.execute_query(sql, tuple(params))
+        rows = self.pg.execute_query(sql, tuple(params))
         log.info("get_favorite_channels: user=%s channels_query returned %d rows (country=%s)", user_id, len(rows), country)
 
         favorite_order = {provider_id: index for index, provider_id in enumerate(provider_ids)}

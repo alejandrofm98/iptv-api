@@ -6,10 +6,10 @@ import hashlib
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Literal
 from urllib.parse import urlparse
-from supabase import Client
 
 from utils.config import get_settings
 import utils.constants as CONSTANTS
+from services.postgres_service import PostgresService
 
 ContentType = Literal['full', 'live', 'movie', 'series']
 
@@ -17,8 +17,8 @@ ContentType = Literal['full', 'live', 'movie', 'series']
 class PlaylistService:
     """Servicio para generación de playlists M3U"""
 
-    def __init__(self, supabase: Client):
-        self.supabase = supabase
+    def __init__(self, pg_service: PostgresService):
+        self.pg = pg_service
         self.settings = get_settings()
         self._templates: Dict[str, Optional[str]] = {
             'full': None,
@@ -155,32 +155,29 @@ class PlaylistService:
         return f'#EXTINF:-1 {attrs_str},{name}'
 
     def get_playlist_stats(self) -> Dict[str, int]:
-        channels = self.supabase.table('channels').select('id', count='exact').execute()
-        movies = self.supabase.table('movies').select('id', count='exact').execute()
-        series = self.supabase.table('series').select('id', count='exact').execute()
-
+        counts = self.pg.get_content_counts()
         return {
-            'total_channels': channels.count or 0,
-            'total_movies': movies.count or 0,
-            'total_series': series.count or 0
+            'total_channels': counts.get('channels', 0),
+            'total_movies': counts.get('movies', 0),
+            'total_series': counts.get('series', 0)
         }
 
     def get_available_groups(self) -> List[str]:
-        result = self.supabase.table('channels').select('grupo').execute()
-        groups = set()
-
-        for item in (result.data or []):
-            if item.get('grupo'):
-                groups.add(item['grupo'])
-
-        return sorted(list(groups))
+        sql = """
+            SELECT DISTINCT COALESCE(NULLIF(grupo_normalizado, ''), grupo) AS grupo
+            FROM channels
+            WHERE grupo IS NOT NULL AND grupo != ''
+            ORDER BY 1 ASC
+        """
+        results = self.pg.execute_query(sql)
+        return [r['grupo'] for r in results if r.get('grupo')]
 
     def get_available_countries(self) -> List[str]:
-        result = self.supabase.table('channels').select('country').execute()
-        countries = set()
-
-        for item in (result.data or []):
-            if item.get('country'):
-                countries.add(item['country'])
-
-        return sorted(list(countries))
+        sql = """
+            SELECT DISTINCT country
+            FROM channels
+            WHERE country IS NOT NULL AND country != ''
+            ORDER BY country ASC
+        """
+        results = self.pg.execute_query(sql)
+        return [r['country'] for r in results if r.get('country')]

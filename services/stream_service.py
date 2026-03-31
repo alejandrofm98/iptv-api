@@ -9,10 +9,10 @@ import asyncio
 import logging
 from typing import Optional, Dict, Any, AsyncIterator, Tuple, Union, cast
 from urllib.parse import urlparse, urljoin, quote
-from supabase import Client
 
 import utils.constants as CONSTANTS
 from services.resilience_service import ResilienceService, StreamBuffer
+from services.postgres_service import PostgresService
 
 logger = logging.getLogger("stream_service")
 logger.setLevel(logging.DEBUG)
@@ -21,21 +21,15 @@ logger.setLevel(logging.DEBUG)
 class StreamProxyService:
     """Servicio para proxificar streams IPTV"""
 
-    # Cache de redirects compartido entre instancias: url -> (final_url, timestamp)
     _redirect_cache: Dict[str, Tuple[str, float]] = {}
-    # TTL del cache de redirects en segundos (5 minutos)
     _REDIRECT_CACHE_TTL: float = 300.0
-    # TTL para errores de DNS (60 segundos) - evita reintentos constantes
     _DNS_ERROR_CACHE_TTL: float = 60.0
-    # Cache para configuración de proxy de bootstrap desde tabla config
     _proxy_bootstrap_cache: Optional[Tuple[Optional[str], float]] = None
     _PROXY_BOOTSTRAP_CACHE_TTL: float = 60.0
 
-    def __init__(self, supabase: Client):
-        self.supabase = supabase
-        # Cache de URLs originales: stream_id -> url original
+    def __init__(self, pg_service: PostgresService):
+        self.pg = pg_service
         self._url_cache: Dict[str, str] = {}
-        # Servicio de resiliencia: circuit breaker + retry + buffering
         self._resilience = ResilienceService()
 
     @staticmethod
@@ -66,14 +60,7 @@ class StreamProxyService:
                 return cached_value
 
         try:
-            result = self.supabase.table('config').select('key,value').execute()
-            rows = cast(list[dict[str, Any]], result.data or [])
-            config: Dict[str, str] = {}
-            for row in rows:
-                key = row.get('key')
-                value = row.get('value')
-                if isinstance(key, str) and key:
-                    config[key] = str(value) if value is not None else ''
+            config = self.pg.get_all_config()
 
             proxy_ip = (config.get('PROXY_IP') or '').strip()
             proxy_port = (config.get('PROXY_PORT') or '').strip()
@@ -112,14 +99,6 @@ class StreamProxyService:
 
         Sigue redirects 301, 302, 307 y 308.
         Incluye cache con TTL configurable (deshabilitable para streams live).
-
-        Args:
-            url: URL inicial que puede tener redirects
-            use_cache: Si False, ignora y no escribe en cache (recomendado para live)
-            use_proxy: Si True, utiliza proxy para la llamada inicial al proveedor
-
-        Returns:
-            URL final después de seguir todos los redirects, o URL original si hay error
         """
         import urllib.parse
 
@@ -158,11 +137,8 @@ class StreamProxyService:
 
                 while redirect_count < max_redirects:
                     try:
-                        # Usar GET con stream para no descargar el body
-                        # HEAD no funciona en todos los servidores IPTV
                         async with client.stream("GET",
                                                  current_url) as response:
-                            # Solo necesitamos los headers, cerramos inmediatamente
                             status = response.status_code
                             location = response.headers.get('Location')
                             logger.info(
@@ -233,20 +209,11 @@ class StreamProxyService:
     def get_original_url(self, provider_id: str, content_type: str = 'live') -> Optional[str]:
         """
         Obtiene la URL original de un stream a partir de su provider_id
-
-        Args:
-            provider_id: ID del proveedor (ej: "176861" de la URL)
-            content_type: 'live', 'movie' o 'series'
-
-        Returns:
-            URL original del stream o None
         """
-        # Primero buscar en cache
         cache_key = f"{content_type}:{provider_id}"
         if cache_key in self._url_cache:
             return self._url_cache[cache_key]
 
-        # Determinar tabla según tipo
         table_map = {
             'live': 'channels',
             'movie': 'movies',
@@ -255,15 +222,10 @@ class StreamProxyService:
 
         table = table_map.get(content_type, 'channels')
 
-        # Buscar en la base de datos por provider_id (mucho más rápido que hash)
-        result = self.supabase.table(table).select('url').eq('provider_id', provider_id).limit(1).execute()
-
-        rows_data = result.data or []
-        if rows_data and isinstance(rows_data[0], dict):
-            first_row = rows_data[0]
-            url_value = first_row.get('url')
-            if isinstance(url_value, str) and url_value:
-                # Guardar en cache
+        row = self.pg.get_content_item_by_provider_id(table, provider_id)
+        if row:
+            url_value = row.get('url')
+            if url_value:
                 self._url_cache[cache_key] = url_value
                 return url_value
 
@@ -277,14 +239,6 @@ class StreamProxyService:
     ) -> AsyncIterator[bytes]:
         """
         Proxifica un stream IPTV con retry logic, circuit breaker y pre-buffering.
-
-        Args:
-            original_url: URL original del stream
-            headers: Headers adicionales para la solicitud
-            use_buffer: Si True, usa pre-buffering para estabilidad
-
-        Yields:
-            Chunks de bytes del stream
         """
         default_headers = {
             'User-Agent': CONSTANTS.DEFAULT_USER_AGENT
@@ -293,14 +247,12 @@ class StreamProxyService:
         if headers:
             default_headers.update(headers)
 
-        # Verificar circuit breaker
         if not await self._resilience.circuit_breaker.can_execute(original_url):
             raise Exception(f"Circuit breaker OPEN para {original_url}")
 
         buffer = self._resilience.create_buffer() if use_buffer else None
         last_error = None
 
-        # Intentar con retry
         for attempt in range(self._resilience.retry_service.config.max_attempts):
             try:
                 async with httpx.AsyncClient(
@@ -315,27 +267,22 @@ class StreamProxyService:
                     async with client.stream('GET', original_url, headers=default_headers) as response:
                         response.raise_for_status()
 
-                        # Registrar éxito del circuit breaker
                         await self._resilience.circuit_breaker.record_success(original_url)
 
                         if buffer:
-                            # Modo con buffer: alimentar buffer primero
                             async def _buffer_task():
                                 async for chunk in response.aiter_bytes(chunk_size=8192):
                                     await buffer.feed(chunk)
                                 buffer.mark_complete()
 
-                            # Iniciar buffer en background
                             buffer_task = asyncio.create_task(_buffer_task())
 
-                            # Esperar a tener suficiente buffer
                             start_wait = time.time()
                             while not await buffer.should_start_streaming():
                                 await asyncio.sleep(0.1)
-                                if time.time() - start_wait > 10.0:  # Timeout de buffer
+                                if time.time() - start_wait > 10.0:
                                     break
 
-                            # Empezar a servir desde buffer
                             while True:
                                 chunk = await buffer.get_chunk()
                                 if chunk is None:
@@ -344,11 +291,10 @@ class StreamProxyService:
 
                             await buffer_task
                         else:
-                            # Modo sin buffer: stream directo
                             async for chunk in response.aiter_bytes(chunk_size=8192):
                                 yield chunk
 
-                        return  # Éxito, salir
+                        return
 
             except Exception as e:
                 last_error = e
@@ -365,29 +311,22 @@ class StreamProxyService:
         raise last_error or Exception("Stream failed")
 
     def _rewrite_m3u8_url(self, url: str, base_url: str) -> str:
-        """
-        Reescribe URLs dentro de un M3U8 para evitar Mixed Content.
-        Convierte HTTP a HTTPS o las pasa por el proxy si es necesario.
-        """
+        """Reescribe URLs dentro de un M3U8 para evitar Mixed Content."""
         if not url:
             return url
 
-        # Si ya es HTTPS, dejarlo así
         if url.startswith('https://'):
             return url
 
-        # Si es HTTP, convertir a HTTPS si es posible
         if url.startswith('http://'):
             https_url = url.replace('http://', 'https://', 1)
             return https_url
 
-        # Si es una URL relativa, convertirla a absoluta
         if url.startswith('/'):
             parsed_base = urlparse(base_url)
             return f"{parsed_base.scheme}://{parsed_base.netloc}{url}"
 
         if not url.startswith('http'):
-            # URL relativa sin slash inicial
             return urljoin(base_url, url)
 
         return url
@@ -401,15 +340,6 @@ class StreamProxyService:
         """
         Obtiene respuesta de stream con headers.
         Si el contenido es M3U8, lo procesa y reescribe URLs HTTP a HTTPS.
-        Soporta Range Requests para permitir seek en videos (VOD).
-
-        Args:
-            original_url: URL del stream
-            headers: Headers adicionales
-            use_resilience: Si True, usa circuit breaker y retry
-
-        Returns:
-            (status_code, response_headers, body_iterator o contenido_m3u8)
         """
         default_headers = {
             'User-Agent': CONSTANTS.DEFAULT_USER_AGENT
@@ -418,7 +348,6 @@ class StreamProxyService:
         if headers:
             default_headers.update(headers)
 
-        # Verificar circuit breaker antes de intentar
         if use_resilience and not await self._resilience.circuit_breaker.can_execute(original_url):
             logger.warning(f"⚠️ Circuit breaker OPEN para {original_url[:80]}")
             raise Exception(f"Servicio no disponible - circuit breaker abierto")
@@ -432,7 +361,7 @@ class StreamProxyService:
                 client = httpx.AsyncClient(
                     timeout=httpx.Timeout(
                         connect=10.0,
-                        read=300.0,  # 5 min timeout de lectura
+                        read=300.0,
                         write=10.0,
                         pool=10.0
                     ),
@@ -453,7 +382,6 @@ class StreamProxyService:
                     stream=True
                 )
 
-                # Verificar status code - reintentar en errores temporales
                 retryable_codes = {401, 403, 502, 503, 504, 511, 520, 521, 522, 523, 524}
                 if response.status_code >= 500 or response.status_code in retryable_codes:
                     await client.aclose()
@@ -470,13 +398,11 @@ class StreamProxyService:
                     else:
                         raise Exception(error_msg)
 
-                # Registrar éxito en circuit breaker
                 if use_resilience:
                     await self._resilience.circuit_breaker.record_success(original_url)
 
                 logger.info(f"📺 Stream started: {original_url[:60]}...")
 
-                # Headers relevantes para pasar al cliente
                 pass_headers = {}
                 important_headers = [
                     'content-type', 'content-length', 'accept-ranges', 'content-range',
@@ -486,11 +412,9 @@ class StreamProxyService:
                     if header in response.headers:
                         pass_headers[header] = response.headers[header]
 
-                # Siempre indicar que aceptamos Range Requests (para VOD)
                 if 'accept-ranges' not in pass_headers:
                     pass_headers['accept-ranges'] = 'bytes'
 
-                # Detectar si es M3U8 por content-type o extensión
                 content_type = response.headers.get('content-type', '').lower()
                 is_m3u8 = ('mpegurl' in content_type or
                            'm3u8' in content_type or
@@ -498,7 +422,6 @@ class StreamProxyService:
                            '.m3u8' in original_url.lower())
 
                 if is_m3u8:
-                    # Procesar M3U8 y reescribir URLs
                     content = await response.aread()
                     await client.aclose()
 
@@ -513,7 +436,6 @@ class StreamProxyService:
                         logger.error(f"Error procesando M3U8: {e}")
                         return (response.status_code, pass_headers, content.decode('utf-8', errors='ignore'))
 
-                # Para streams de video (TS), usar el proxy con iterador
                 async def body_iterator():
                     try:
                         async for chunk in response.aiter_bytes(chunk_size=8192):
@@ -548,20 +470,16 @@ class StreamProxyService:
         raise last_error or Exception("Stream failed")
 
     def _process_m3u8(self, content: str, base_url: str) -> str:
-        """
-        Procesa el contenido de un archivo M3U8 y reescribe URLs HTTP a HTTPS.
-        """
+        """Procesa el contenido de un archivo M3U8 y reescribe URLs HTTP a HTTPS."""
         lines = content.split('\n')
         processed_lines = []
 
         for line in lines:
             stripped = line.strip()
 
-            # Si la línea es un URL (no empieza con # y no está vacía)
             if stripped and not stripped.startswith('#'):
                 rewritten_url = self._rewrite_m3u8_url(stripped, base_url)
                 processed_lines.append(rewritten_url)
-            # Si es una línea EXT-X-KEY con URI
             elif 'URI="' in stripped:
                 def rewrite_uri(match):
                     uri = match.group(1)
@@ -585,17 +503,15 @@ class StreamProxyService:
         type_map = {'channels': 'live', 'movies': 'movie', 'series': 'series'}
 
         for table in tables:
-            result = self.supabase.table(table).select('url').execute()
+            rows = self.pg.get_all_content_urls(table)
             content_type = type_map[table]
 
-            rows = cast(list[dict[str, Any]], result.data or [])
             for item in rows:
                 url_value = item.get('url')
-                if isinstance(url_value, str) and url_value:
-                    url = url_value
-                    stream_id = self._hash_url(url)
+                if url_value:
+                    stream_id = self._hash_url(url_value)
                     cache_key = f"{content_type}:{stream_id}"
-                    self._url_cache[cache_key] = url
+                    self._url_cache[cache_key] = url_value
 
         logger.info(f"✅ Cache precargado: {len(self._url_cache)} URLs")
 

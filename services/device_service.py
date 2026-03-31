@@ -5,23 +5,21 @@ import hashlib
 import re
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
-from supabase import Client
 
 from utils.config import get_settings
 from utils.models import DeviceType
+from services.postgres_service import PostgresService
 
 
 class DeviceService:
     """Servicio para gestión de dispositivos y sesiones"""
 
-    def __init__(self, supabase: Client):
-        self.supabase = supabase
+    def __init__(self, pg_service: PostgresService):
+        self.pg = pg_service
         self.settings = get_settings()
 
     def _generate_device_id(self, ip_address: str) -> str:
         """Genera un ID único basado solo en la IP (cada IP = 1 dispositivo)"""
-        # Usamos solo la IP para identificar dispositivos
-        # Esto permite que múltiples apps desde la misma red cuenten como 1 sesión
         return hashlib.sha256(ip_address.encode()).hexdigest()[:32]
 
     def _parse_device_info(self, user_agent: str) -> Tuple[str, DeviceType]:
@@ -33,7 +31,6 @@ class DeviceService:
         """
         ua_lower = user_agent.lower()
 
-        # Detectar apps IPTV comunes
         iptv_apps = {
             'tivimate': ('TiviMate', DeviceType.TV),
             'iptv smarters': ('IPTV Smarters', DeviceType.MOBILE),
@@ -56,7 +53,6 @@ class DeviceService:
             if key in ua_lower:
                 return (name, dtype)
 
-        # Detectar Smart TVs
         tv_patterns = [
             (r'smarttv', 'Smart TV'),
             (r'smart-tv', 'Smart TV'),
@@ -76,7 +72,6 @@ class DeviceService:
             if re.search(pattern, ua_lower):
                 return (name, DeviceType.TV)
 
-        # Detectar móviles
         mobile_patterns = [
             (r'iphone', 'iPhone'),
             (r'ipad', 'iPad'),
@@ -88,7 +83,6 @@ class DeviceService:
             if re.search(pattern, ua_lower):
                 return (name, DeviceType.MOBILE)
 
-        # Detectar navegadores desktop
         browser_patterns = [
             (r'chrome', 'Chrome'),
             (r'firefox', 'Firefox'),
@@ -99,7 +93,6 @@ class DeviceService:
 
         for pattern, name in browser_patterns:
             if re.search(pattern, ua_lower):
-                # Detectar SO
                 os_name = 'Desktop'
                 if 'windows' in ua_lower:
                     os_name = 'Windows'
@@ -128,29 +121,24 @@ class DeviceService:
         device_id = self._generate_device_id(ip_address)
         device_name, device_type = self._parse_device_info(user_agent)
 
-        # Buscar sesión existente para este dispositivo
-        existing = self.supabase.table('active_sessions').select('*').eq(
-            'user_id', user_id
-        ).eq('device_id', device_id).execute()
+        existing = self.pg.get_session_by_user_and_device(user_id, device_id)
 
         now = datetime.utcnow().isoformat()
 
-        if existing.data:
-            # Actualizar last_activity
-            result = self.supabase.table('active_sessions').update({
-                'last_activity': now,
+        if existing:
+            session_data = {
+                'user_id': user_id,
+                'device_id': device_id,
+                'device_name': device_name,
+                'device_type': device_type.value,
                 'ip_address': ip_address,
-                'user_agent': user_agent
-            }).eq('id', existing.data[0]['id']).execute()
+                'user_agent': user_agent,
+                'last_activity': now
+            }
+            result = self.pg.upsert_session(session_data)
+            return (True, "Sesión actualizada", result)
 
-            return (True, "Sesión actualizada", result.data[0] if result.data else None)
-
-        # Verificar límite de conexiones
-        sessions_count = self.supabase.table('active_sessions').select(
-            'id', count='exact'
-        ).eq('user_id', user_id).execute()
-
-        current_count = sessions_count.count or 0
+        current_count = self.pg.count_user_sessions(user_id)
 
         if current_count >= max_connections:
             return (
@@ -159,7 +147,6 @@ class DeviceService:
                 None
             )
 
-        # Crear nueva sesión
         session_data = {
             'user_id': user_id,
             'device_id': device_id,
@@ -170,36 +157,20 @@ class DeviceService:
             'last_activity': now
         }
 
-        result = self.supabase.table('active_sessions').insert(session_data).execute()
-
-        if result.data:
-            return (True, "Nueva sesión registrada", result.data[0])
-
-        return (False, "Error al crear sesión", None)
+        result = self.pg.upsert_session(session_data)
+        return (True, "Nueva sesión registrada", result)
 
     def get_user_devices(self, user_id: str) -> List[Dict[str, Any]]:
         """Obtiene todos los dispositivos activos de un usuario"""
-        result = self.supabase.table('active_sessions').select(
-            'id, device_id, device_name, device_type, ip_address, last_activity, created_at'
-        ).eq('user_id', user_id).order('last_activity', desc=True).execute()
-
-        return result.data or []
+        return self.pg.get_active_sessions_by_user(user_id)
 
     def disconnect_device(self, user_id: str, device_id: str) -> bool:
         """Desconecta un dispositivo específico"""
-        result = self.supabase.table('active_sessions').delete().eq(
-            'user_id', user_id
-        ).eq('device_id', device_id).execute()
-
-        return bool(result.data)
+        return self.pg.delete_session(user_id, device_id)
 
     def disconnect_all_devices(self, user_id: str) -> int:
         """Desconecta todos los dispositivos de un usuario"""
-        result = self.supabase.table('active_sessions').delete().eq(
-            'user_id', user_id
-        ).execute()
-
-        return len(result.data) if result.data else 0
+        return self.pg.delete_all_user_sessions(user_id)
 
     def cleanup_inactive_sessions(self, timeout_minutes: int = None) -> int:
         """
@@ -212,12 +183,7 @@ class DeviceService:
             timeout_minutes = self.settings.session_timeout_minutes
 
         threshold = datetime.utcnow() - timedelta(minutes=timeout_minutes)
-
-        result = self.supabase.table('active_sessions').delete().lt(
-            'last_activity', threshold.isoformat()
-        ).execute()
-
-        return len(result.data) if result.data else 0
+        return self.pg.cleanup_inactive_sessions(threshold.isoformat())
 
     def is_device_allowed(
         self,
@@ -234,20 +200,11 @@ class DeviceService:
         """
         device_id = self._generate_device_id(ip_address)
 
-        # Verificar si ya está registrado
-        existing = self.supabase.table('active_sessions').select('id').eq(
-            'user_id', user_id
-        ).eq('device_id', device_id).execute()
-
-        if existing.data:
+        existing = self.pg.get_session_by_user_and_device(user_id, device_id)
+        if existing:
             return (True, "Dispositivo registrado")
 
-        # Verificar límite
-        sessions_count = self.supabase.table('active_sessions').select(
-            'id', count='exact'
-        ).eq('user_id', user_id).execute()
-
-        current_count = sessions_count.count or 0
+        current_count = self.pg.count_user_sessions(user_id)
 
         if current_count >= max_connections:
             return (
@@ -259,23 +216,4 @@ class DeviceService:
 
     def get_all_sessions(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Obtiene todas las sesiones activas (para admin)"""
-        # Obtener sesiones
-        result = self.supabase.table('active_sessions').select(
-            '*'
-        ).order('last_activity', desc=True).limit(limit).execute()
-
-        sessions = result.data or []
-        
-        # Obtener usernames de los usuarios
-        user_ids = [s['user_id'] for s in sessions if s.get('user_id')]
-        if user_ids:
-            users_result = self.supabase.table('users').select(
-                'id,username'
-            ).in_('id', user_ids).execute()
-            users_map = {u['id']: u['username'] for u in (users_result.data or [])}
-            
-            # Añadir username a cada sesión
-            for session in sessions:
-                session['username'] = users_map.get(session.get('user_id'), 'Unknown')
-
-        return sessions
+        return self.pg.get_all_sessions_with_users(limit)
