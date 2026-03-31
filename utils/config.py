@@ -27,10 +27,6 @@ def _load_environment() -> None:
       return
 
 
-# Cargar .env al importar el módulo
-_load_environment()
-
-
 class Settings:
   """
   Configuración centralizada de la aplicación
@@ -38,13 +34,6 @@ class Settings:
   - Variables de entorno locales (.env)
   - Configuración dinámica (tabla config en PostgreSQL)
   """
-
-  # ===== PostgreSQL =====
-  pg_host: str = os.getenv('PG_HOST', '')
-  pg_port: int = int(os.getenv('PG_PORT', '5432'))
-  pg_database: str = os.getenv('PG_DATABASE', 'postgres')
-  pg_user: str = os.getenv('PG_USER', '')
-  pg_password: str = os.getenv('PG_PASSWORD', '')
 
   # ===== API =====
   api_secret_key: str = os.getenv(CONSTANTS.API_SECRET_ENV_KEY)
@@ -69,17 +58,29 @@ class Settings:
   _config_loaded: bool = False
 
   def __init__(self):
+    self.pg_host = os.getenv('PG_HOST', '')
+    self.pg_port = int(os.getenv('PG_PORT', '5432'))
+    self.pg_database = os.getenv('PG_DATABASE', 'postgres')
+    self.pg_user = os.getenv('PG_USER', '')
+    self.pg_password = os.getenv('PG_PASSWORD', '')
     self._load_config()
 
   def _load_config(self) -> None:
-    """Carga configuración dinámica desde PostgreSQL"""
+    """Carga configuración dinámica desde PostgreSQL usando psycopg2 directamente."""
     if not self.pg_host:
       return
 
     try:
-      from services.postgres_service import PostgresService
-      pg = PostgresService()
-      config = pg.get_all_config()
+      import psycopg2
+      from psycopg2.extras import RealDictCursor
+      conn_str = f"postgresql://{self.pg_user}:{self.pg_password}@{self.pg_host}:{self.pg_port}/{self.pg_database}"
+      conn = psycopg2.connect(conn_str, connect_timeout=5)
+      try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+          cur.execute("SELECT key, value FROM config")
+          config = {r['key']: r['value'] for r in cur.fetchall() if r.get('key')}
+      finally:
+        conn.close()
 
       self.iptv_user = config.get(CONSTANTS.IPTV_USERNAME_KEY)
       self.iptv_pass = config.get(CONSTANTS.IPTV_PASSWORD_KEY)
