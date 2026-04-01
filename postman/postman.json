@@ -1,14 +1,14 @@
 {
   "info": {
-    "_postman_id": "iptv-api-v2.1",
-    "name": "IPTV API v2.1",
+    "_postman_id": "iptv-api-v2.2",
+    "name": "IPTV API v2.2",
     "description": "API para gestión de usuarios IPTV",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3000",
+      "value": "http://localhost:3010",
       "type": "text"
     },
     {
@@ -37,6 +37,36 @@
       "value": "",
       "type": "text",
       "description": "UUID del evento del calendario"
+    },
+    {
+      "key": "content_id",
+      "value": "",
+      "type": "text",
+      "description": "ID de contenido (canal, película o serie)"
+    },
+    {
+      "key": "serie_name",
+      "value": "",
+      "type": "text",
+      "description": "Nombre de la serie para obtener episodios"
+    },
+    {
+      "key": "channel_provider_id",
+      "value": "",
+      "type": "text",
+      "description": "Provider ID del canal para favoritos"
+    },
+    {
+      "key": "stream_id",
+      "value": "1",
+      "type": "text",
+      "description": "ID del stream para proxy"
+    },
+    {
+      "key": "search_query",
+      "value": "football",
+      "type": "text",
+      "description": "Texto de búsqueda"
     }
   ],
   "item": [
@@ -607,6 +637,720 @@
               "path": ["api", "content", "stats"]
             },
             "description": "Obtiene estadísticas de canales, películas y series. Requiere Bearer Token."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Channel Favorites",
+      "item": [
+        {
+          "name": "Listar favoritos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/channel-favorites",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "channel-favorites"]
+            },
+            "description": "Lista los favoritos del usuario autenticado"
+          }
+        },
+        {
+          "name": "Agregar favorito",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/channel-favorites",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "channel-favorites"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_provider_id\": \"{{channel_provider_id}}\"\n}"
+            },
+            "description": "Agrega un canal favorito por provider_id"
+          }
+        },
+        {
+          "name": "Eliminar favorito",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/channel-favorites/{{channel_provider_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "channel-favorites", "{{channel_provider_id}}"]
+            },
+            "description": "Elimina un canal favorito por provider_id"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Watch Progress",
+      "item": [
+        {
+          "name": "Continuar viendo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/watch-progress?limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "watch-progress"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Obtiene items con progreso incompleto"
+          }
+        },
+        {
+          "name": "Obtener progreso item",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/watch-progress/{{content_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "watch-progress", "{{content_id}}"]
+            },
+            "description": "Obtiene el progreso de un item específico"
+          }
+        },
+        {
+          "name": "Actualizar progreso",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/watch-progress/{{content_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "watch-progress", "{{content_id}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position\": 1200,\n  \"duration\": 3600,\n  \"percentage\": 33.3\n}"
+            },
+            "description": "Crea o actualiza el progreso de visualización"
+          }
+        },
+        {
+          "name": "Eliminar progreso",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/watch-progress/{{content_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "watch-progress", "{{content_id}}"]
+            },
+            "description": "Elimina el progreso de un item"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Home & Search",
+      "item": [
+        {
+          "name": "Home",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/home?page_size=12",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "home"],
+              "query": [
+                {
+                  "key": "page_size",
+                  "value": "12"
+                }
+              ]
+            },
+            "description": "Obtiene bloques ligeros para la home de clientes TV"
+          }
+        },
+        {
+          "name": "Buscar contenido",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/search?q={{search_query}}&types=channels,movies,series",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{search_query}}"
+                },
+                {
+                  "key": "types",
+                  "value": "channels,movies,series"
+                }
+              ]
+            },
+            "description": "Busca contenido multi-tipo sin descargar playlist completa"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Content Extended",
+      "item": [
+        {
+          "name": "Filtros disponibles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/content/filters?content_type=channels",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "content", "filters"],
+              "query": [
+                {
+                  "key": "content_type",
+                  "value": "channels"
+                }
+              ]
+            },
+            "description": "Obtiene idiomas y grupos disponibles para filtros"
+          }
+        },
+        {
+          "name": "Canales bulk (gzip)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/content/channels/full",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "content", "channels", "full"]
+            },
+            "description": "Obtiene TODOS los canales desde JSON estático con gzip"
+          }
+        },
+        {
+          "name": "Películas bulk (gzip)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/content/movies/full",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "content", "movies", "full"]
+            },
+            "description": "Obtiene TODAS las películas desde JSON estático con gzip"
+          }
+        },
+        {
+          "name": "Series bulk (gzip)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/content/series/full",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "content", "series", "full"]
+            },
+            "description": "Obtiene TODAS las series desde JSON estático con gzip"
+          }
+        },
+        {
+          "name": "Item específico",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/content/channels/{{content_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "content", "channels", "{{content_id}}"]
+            },
+            "description": "Obtiene detalle de un canal, película o serie"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Series Episodes",
+      "item": [
+        {
+          "name": "Episodios de serie",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/series/{{serie_name}}/episodes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "series", "{{serie_name}}", "episodes"]
+            },
+            "description": "Obtiene todos los episodios de una serie"
+          }
+        },
+        {
+          "name": "Episodios paginados",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/series/{{serie_name}}/episodes?page=1&page_size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "series", "{{serie_name}}", "episodes"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Obtiene episodios paginados de una serie"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Replays",
+      "item": [
+        {
+          "name": "Listar replays",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/replays?page=1&page_size=24",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "replays"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "24"
+                }
+              ]
+            },
+            "description": "Lista replays con paginación"
+          }
+        },
+        {
+          "name": "Replay por slug",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/replays/{slug}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "replays", "{slug}"]
+            },
+            "description": "Obtiene un replay específico por slug"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Resilience",
+      "item": [
+        {
+          "name": "Estado de resiliencia",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/resilience",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "resilience"]
+            },
+            "description": "Obtiene estado de circuit breaker, retry y buffer de streams"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stream HLS / Chromecast",
+      "item": [
+        {
+          "name": "Stream directo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/{{username}}/{{password}}/{{stream_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{username}}", "{{password}}", "{{stream_id}}"]
+            },
+            "description": "Proxy stream para canales en vivo (HLS para web)"
+          }
+        },
+        {
+          "name": "Stream con tipo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/live/{{username}}/{{password}}/{{stream_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["live", "{{username}}", "{{password}}", "{{stream_id}}"]
+            },
+            "description": "Proxy stream con tipo (live/movie/series)"
+          }
+        },
+        {
+          "name": "Chromecast playlist",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cast/live/{{username}}/{{password}}/{{stream_id}}/playlist.m3u8",
+              "host": ["{{baseUrl}}"],
+              "path": ["cast", "live", "{{username}}", "{{password}}", "{{stream_id}}", "playlist.m3u8"]
+            },
+            "description": "Playlist HLS para Chromecast"
+          }
+        },
+        {
+          "name": "Validar stream (nginx)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/validate-stream/live/{{username}}/{{password}}/{{stream_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "validate-stream", "live", "{{username}}", "{{password}}", "{{stream_id}}"]
+            },
+            "description": "Valida credenciales para nginx auth_request"
+          }
+        },
+        {
+          "name": "URL stream interno",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/stream-url?user={{username}}&password={{password}}&id={{stream_id}}&type=live",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "stream-url"],
+              "query": [
+                {
+                  "key": "user",
+                  "value": "{{username}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                },
+                {
+                  "key": "id",
+                  "value": "{{stream_id}}"
+                },
+                {
+                  "key": "type",
+                  "value": "live"
+                }
+              ]
+            },
+            "description": "Obtiene redirect 307 a stream para proxy nginx"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Playlist M3U",
+      "item": [
+        {
+          "name": "Playlist completa",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/get.php?username={{username}}&password={{password}}&type=m3u_plus",
+              "host": ["{{baseUrl}}"],
+              "path": ["get.php"],
+              "query": [
+                {
+                  "key": "username",
+                  "value": "{{username}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                },
+                {
+                  "key": "type",
+                  "value": "m3u_plus"
+                }
+              ]
+            },
+            "description": "Genera playlist M3U (formato estándar IPTV)"
+          }
+        },
+        {
+          "name": "Solo canales",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/get.php?username={{username}}&password={{password}}&content=live",
+              "host": ["{{baseUrl}}"],
+              "path": ["get.php"],
+              "query": [
+                {
+                  "key": "username",
+                  "value": "{{username}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                },
+                {
+                  "key": "content",
+                  "value": "live"
+                }
+              ]
+            },
+            "description": "Playlist solo con canales en vivo"
+          }
+        },
+        {
+          "name": "Solo películas",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/get.php?username={{username}}&password={{password}}&content=movie",
+              "host": ["{{baseUrl}}"],
+              "path": ["get.php"],
+              "query": [
+                {
+                  "key": "username",
+                  "value": "{{username}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                },
+                {
+                  "key": "content",
+                  "value": "movie"
+                }
+              ]
+            },
+            "description": "Playlist solo con películas"
+          }
+        },
+        {
+          "name": "Solo series",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/get.php?username={{username}}&password={{password}}&content=series",
+              "host": ["{{baseUrl}}"],
+              "path": ["get.php"],
+              "query": [
+                {
+                  "key": "username",
+                  "value": "{{username}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                },
+                {
+                  "key": "content",
+                  "value": "series"
+                }
+              ]
+            },
+            "description": "Playlist solo con series"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Logo Proxy",
+      "item": [
+        {
+          "name": "Proxy logo",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/logo?url=https://example.com/logo.png&type=channel",
+              "host": ["{{baseUrl}}"],
+              "path": ["logo"],
+              "query": [
+                {
+                  "key": "url",
+                  "value": "https://example.com/logo.png"
+                },
+                {
+                  "key": "type",
+                  "value": "channel"
+                }
+              ]
+            },
+            "description": "Proxy de imágenes/logos para resolver Mixed Content"
           }
         }
       ]

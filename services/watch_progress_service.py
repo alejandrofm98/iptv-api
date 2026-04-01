@@ -79,7 +79,10 @@ class WatchProgressService:
         lookup_id = self._lookup_id(row.get("content_id"))
         content_row = self._find_content_row(content_type, row.get("content_id"))
 
-        canonical_content_id = str(content_row.get("provider_id") or lookup_id or row.get("content_id") or "")
+        if content_row:
+            canonical_content_id = str(content_row.get("provider_id") or lookup_id or row.get("content_id") or "")
+        else:
+            canonical_content_id = str(lookup_id or row.get("content_id") or "")
         normalized = dict(row)
         normalized["content_id"] = canonical_content_id
 
