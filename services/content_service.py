@@ -2,8 +2,12 @@
 Servicio de gestión de contenido (canales, películas, series)
 Con soporte para paginación estándar y métodos genéricos
 """
-from datetime import datetime
+import gzip
+import json
+import logging
+import os
 import time
+from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 import re
 from urllib.parse import parse_qs, urlparse
@@ -11,6 +15,8 @@ import requests
 
 from utils.config import get_settings
 from .postgres_service import PostgresService
+
+logger = logging.getLogger("content_service")
 
 
 class ContentService:
@@ -948,7 +954,13 @@ class ContentService:
         return None
 
     def get_content_stats(self, content_type: str) -> Dict[str, Any]:
-        """Obtiene estadísticas de contenido (total count)."""
+        """Obtiene estadísticas de contenido (total count y generatedAt)."""
+        # Intentar leer del archivo JSON estático si existe
+        json_data = self._load_static_json(content_type)
+        if json_data:
+            return {content_type: {'total': json_data.get('total', 0), 'generatedAt': json_data.get('generated_at', '')}}
+        
+        # Fallback: usar PostgreSQL
         table = self.TABLE_MAP.get(content_type)
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
@@ -956,8 +968,88 @@ class ContentService:
         total = self.pg.count_table(table)
         return {content_type: {'total': total}}
 
+    def get_all_content_bulk(self, content_type: str) -> Dict[str, Any]:
+        """Obtiene TODOS los items de un tipo en una sola llamada desde archivo JSON estático."""
+        json_data = self._load_static_json(content_type)
+        if json_data:
+            return json_data
+        
+        # Fallback: generar desde PostgreSQL (método antiguo)
+        if content_type == 'channels':
+            return self._get_all_channels_from_db()
+        elif content_type == 'movies':
+            return self._get_all_movies_from_db()
+        elif content_type == 'series':
+            return self._get_all_series_from_db()
+        
+        raise ValueError(f"Tipo de contenido inválido: {content_type}")
+
     def get_all_channels_bulk(self) -> Dict[str, Any]:
-        """Obtiene TODOS los canales en una sola llamada con campos mínimos para cache local."""
+        """Obtiene TODOS los canales en una sola llamada. Deprecated: usar get_all_content_bulk('channels')"""
+        json_data = self._load_static_json('channels')
+        if json_data:
+            return {'items': json_data.get('channels', []), 'total': json_data.get('total', 0)}
+        return self._get_all_channels_from_db()
+    
+    def _load_static_json(self, content_type: str) -> Optional[Dict[str, Any]]:
+        """Carga JSON estático desde disco con cache en memoria."""
+        cache_key = f"static_json_{content_type}"
+        
+        # Verificar cache en memoria
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+        
+        # Buscar archivo JSON
+        json_path = self._get_static_json_path(content_type)
+        if not json_path or not os.path.exists(json_path):
+            return None
+        
+        try:
+            # Intentar leer versión gzip primero
+            gz_path = f"{json_path}.gz"
+            if os.path.exists(gz_path):
+                with gzip.open(gz_path, 'rt', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            
+            # Guardar en cache
+            self._set_cached(cache_key, data)
+            return data
+        except Exception as e:
+            logger.error(f"Error cargando JSON estático {content_type}: {e}")
+            return None
+    
+    def _get_static_json_path(self, content_type: str) -> Optional[str]:
+        """Obtiene la ruta al archivo JSON estático."""
+        # Posibles ubicaciones del archivo JSON
+        base_dirs = [
+            '/app/data/json',  # Docker
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json'),  # Desarrollo local
+            'data/json',  # Relative
+        ]
+        
+        filename_map = {
+            'channels': 'channels.json',
+            'movies': 'movies.json',
+            'series': 'series.json',
+        }
+        
+        filename = filename_map.get(content_type)
+        if not filename:
+            return None
+        
+        for base_dir in base_dirs:
+            path = os.path.join(base_dir, filename)
+            if os.path.exists(path):
+                return path
+        
+        return None
+    
+    def _get_all_channels_from_db(self) -> Dict[str, Any]:
+        """Genera JSON de canales desde PostgreSQL (fallback)."""
         rows, _ = self.pg.get_content_items_paginated('channels', 1, 999999, None, None, None, 'numero')
 
         parsed_items = []
@@ -970,6 +1062,49 @@ class ContentService:
                 'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre') or '',
                 'grupo_normalizado': row.get('grupo_normalizado') or row.get('grupo') or '',
                 'numero': row.get('numero'),
+            })
+
+        return {
+            'items': parsed_items,
+            'total': len(parsed_items),
+        }
+    
+    def _get_all_movies_from_db(self) -> Dict[str, Any]:
+        """Genera JSON de películas desde PostgreSQL (fallback)."""
+        rows, _ = self.pg.get_content_items_paginated('movies', 1, 999999, None, None, None, None)
+
+        parsed_items = []
+        for row in rows:
+            parsed_items.append({
+                'id': str(row.get('id') or ''),
+                'provider_id': str(row.get('provider_id') or ''),
+                'logo': row.get('logo') or '',
+                'country': row.get('country') or '',
+                'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre') or '',
+                'grupo_normalizado': row.get('grupo_normalizado') or row.get('grupo') or '',
+            })
+
+        return {
+            'items': parsed_items,
+            'total': len(parsed_items),
+        }
+    
+    def _get_all_series_from_db(self) -> Dict[str, Any]:
+        """Genera JSON de series desde PostgreSQL (fallback)."""
+        rows, _ = self.pg.get_content_items_paginated('series', 1, 999999, None, None, None, None)
+
+        parsed_items = []
+        for row in rows:
+            parsed_items.append({
+                'id': str(row.get('id') or ''),
+                'provider_id': str(row.get('provider_id') or ''),
+                'logo': row.get('logo') or '',
+                'country': row.get('country') or '',
+                'temporada': row.get('temporada'),
+                'episodio': row.get('episodio'),
+                'serie_name': row.get('serie_name') or '',
+                'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre') or '',
+                'grupo_normalizado': row.get('grupo_normalizado') or row.get('grupo') or '',
             })
 
         return {

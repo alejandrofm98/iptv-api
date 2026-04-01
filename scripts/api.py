@@ -604,8 +604,106 @@ async def get_content_stats(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
 ):
-    """Obtiene estadísticas de contenido (total de items). Para detectar cambios en cache local."""
+    """Obtiene estadísticas de contenido (total de items y timestamp). Para detectar cambios en cache local."""
     return content_svc.get_content_stats(content_type=content_type)
+
+
+@app.get("/api/content/channels/full", response_class=JSONResponse, tags=["Content"])
+async def get_channels_full(
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service),
+):
+    """Obtiene TODOS los canales desde archivo JSON estático con gzip. Para cache local en cliente TV."""
+    from fastapi.responses import Response
+    import gzip
+    import os
+    
+    json_data = content_svc.get_all_content_bulk('channels')
+    
+    # Verificar si existe versión gzip para servir directamente
+    content_type = 'channels'
+    base_dirs = [
+        '/app/data/json',
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json'),
+    ]
+    
+    for base_dir in base_dirs:
+        gz_path = os.path.join(base_dir, 'channels.json.gz')
+        if os.path.exists(gz_path):
+            with open(gz_path, 'rb') as f:
+                gz_data = f.read()
+            return Response(
+                content=gz_data,
+                media_type='application/json',
+                headers={
+                    'Content-Encoding': 'gzip',
+                    'Content-Length': str(len(gz_data)),
+                    'X-Content-Type': 'channels.json',
+                }
+            )
+    
+    # Fallback: devolver como JSON normal
+    return json_data
+
+
+@app.get("/api/content/movies/full", response_class=JSONResponse, tags=["Content"])
+async def get_movies_full(
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service),
+):
+    """Obtiene TODAS las películas desde archivo JSON estático con gzip. Para cache local en cliente TV."""
+    from fastapi.responses import Response
+    import gzip
+    import os
+    
+    json_data = content_svc.get_all_content_bulk('movies')
+    
+    for base_dir in ['/app/data/json', os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json')]:
+        gz_path = os.path.join(base_dir, 'movies.json.gz')
+        if os.path.exists(gz_path):
+            with open(gz_path, 'rb') as f:
+                gz_data = f.read()
+            return Response(
+                content=gz_data,
+                media_type='application/json',
+                headers={
+                    'Content-Encoding': 'gzip',
+                    'Content-Length': str(len(gz_data)),
+                    'X-Content-Type': 'movies.json',
+                }
+            )
+    
+    return json_data
+
+
+@app.get("/api/content/series/full", response_class=JSONResponse, tags=["Content"])
+async def get_series_full(
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service),
+):
+    """Obtiene TODAS las series desde archivo JSON estático con gzip. Para cache local en cliente TV."""
+    from fastapi.responses import Response
+    import gzip
+    import os
+    
+    json_data = content_svc.get_all_content_bulk('series')
+    
+    for base_dir in ['/app/data/json', os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json')]:
+        gz_path = os.path.join(base_dir, 'series.json.gz')
+        if os.path.exists(gz_path):
+            with open(gz_path, 'rb') as f:
+                gz_data = f.read()
+            return Response(
+                content=gz_data,
+                media_type='application/json',
+                headers={
+                    'Content-Encoding': 'gzip',
+                    'Content-Length': str(len(gz_data)),
+                    'X-Content-Type': 'series.json',
+                }
+            )
+    
+    return json_data
 
 
 @app.get("/api/content/channels/all", tags=["Content"])
@@ -613,7 +711,7 @@ async def get_all_channels_bulk(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
 ):
-    """Obtiene TODOS los canales en una sola llamada. Para cache local en cliente TV."""
+    """Obtiene TODOS los canales en una sola llamada. Deprecated: usar /api/content/channels/full"""
     return content_svc.get_all_channels_bulk()
 
 
