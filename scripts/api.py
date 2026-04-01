@@ -37,7 +37,7 @@ import requests
 from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 # ✏️ CAMBIO 1: añadido FileResponse para servir ficheros HLS
-from fastapi.responses import PlainTextResponse, StreamingResponse, FileResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse, FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 
