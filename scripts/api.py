@@ -36,7 +36,6 @@ import uvicorn
 import requests
 from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status, Response
 from fastapi.middleware.cors import CORSMiddleware
-# ✏️ CAMBIO 1: añadido FileResponse para servir ficheros HLS
 from fastapi.responses import PlainTextResponse, StreamingResponse, FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
@@ -81,7 +80,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
-# ✏️ CAMBIO 2: constante con los origins permitidos (reutilizada en _proxy_stream_handler)
 ALLOWED_WEB_ORIGINS = ['https://walactvweb.walerike.com', 'http://localhost:4200']
 
 
@@ -102,7 +100,6 @@ async def cleanup_sessions_task():
             print(f"❌ Error en limpieza de sesiones: {e}")
 
 
-# ✏️ CAMBIO 3: nueva tarea de limpieza de sesiones HLS
 async def cleanup_hls_task():
     """Tarea periódica para limpiar sesiones HLS expiradas (cada 2 min)"""
     while True:
@@ -138,13 +135,12 @@ async def lifespan(app: FastAPI):
 
         stream_svc.preload_cache()
         asyncio.create_task(cleanup_sessions_task())
-        asyncio.create_task(cleanup_hls_task())  # ✏️ CAMBIO 3b: arrancar tarea HLS
+        asyncio.create_task(cleanup_hls_task())
         print("✅ IPTV API iniciada correctamente")
 
     yield
 
     print("🛑 Cerrando IPTV API...")
-    # ✏️ CAMBIO 3c: parar todos los procesos ffmpeg al cerrar
     try:
         transcode_svc = get_transcode_service()
         await transcode_svc.stop_all()
@@ -608,25 +604,26 @@ async def get_content_stats(
     return content_svc.get_content_stats(content_type=content_type)
 
 
+# ============================================
+# IMPORTANTE: rutas /full y /all ANTES de /{content_type}/{item_id}
+# para evitar que el endpoint genérico las capture primero.
+# ============================================
+
 @app.get("/api/content/channels/full", response_class=JSONResponse, tags=["Content"])
 async def get_channels_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
 ):
     """Obtiene TODOS los canales desde archivo JSON estático con gzip. Para cache local en cliente TV."""
-    from fastapi.responses import Response
-    import gzip
     import os
-    
+
     json_data = content_svc.get_all_content_bulk('channels')
-    
-    # Verificar si existe versión gzip para servir directamente
-    content_type = 'channels'
+
     base_dirs = [
         '/app/data/json',
         os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json'),
     ]
-    
+
     for base_dir in base_dirs:
         gz_path = os.path.join(base_dir, 'channels.json.gz')
         if os.path.exists(gz_path):
@@ -641,8 +638,7 @@ async def get_channels_full(
                     'X-Content-Type': 'channels.json',
                 }
             )
-    
-    # Fallback: devolver como JSON normal
+
     return json_data
 
 
@@ -652,12 +648,10 @@ async def get_movies_full(
     content_svc: ContentService = Depends(get_content_service),
 ):
     """Obtiene TODAS las películas desde archivo JSON estático con gzip. Para cache local en cliente TV."""
-    from fastapi.responses import Response
-    import gzip
     import os
-    
+
     json_data = content_svc.get_all_content_bulk('movies')
-    
+
     for base_dir in ['/app/data/json', os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json')]:
         gz_path = os.path.join(base_dir, 'movies.json.gz')
         if os.path.exists(gz_path):
@@ -672,7 +666,7 @@ async def get_movies_full(
                     'X-Content-Type': 'movies.json',
                 }
             )
-    
+
     return json_data
 
 
@@ -682,12 +676,10 @@ async def get_series_full(
     content_svc: ContentService = Depends(get_content_service),
 ):
     """Obtiene TODAS las series desde archivo JSON estático con gzip. Para cache local en cliente TV."""
-    from fastapi.responses import Response
-    import gzip
     import os
-    
+
     json_data = content_svc.get_all_content_bulk('series')
-    
+
     for base_dir in ['/app/data/json', os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json')]:
         gz_path = os.path.join(base_dir, 'series.json.gz')
         if os.path.exists(gz_path):
@@ -702,7 +694,7 @@ async def get_series_full(
                     'X-Content-Type': 'series.json',
                 }
             )
-    
+
     return json_data
 
 
@@ -713,6 +705,36 @@ async def get_all_channels_bulk(
 ):
     """Obtiene TODOS los canales en una sola llamada. Deprecated: usar /api/content/channels/full"""
     return content_svc.get_all_channels_bulk()
+
+
+# ============================================
+# IMPORTANTE: este endpoint genérico va DESPUÉS de todos los
+# endpoints con segmentos literales bajo /api/content/{x}/{y}
+# ============================================
+
+@app.get("/api/content/{content_type}/{item_id}", tags=["Content"])
+async def get_content_item(
+    content_type: str,
+    item_id: str,
+    password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service)
+):
+    if content_type not in ['channels', 'movies', 'series']:
+        raise BadRequestException("Tipo de contenido inválido")
+
+    item = content_svc.get_content_item(
+        content_type=content_type,
+        item_id=item_id,
+        username=auth.username,
+        password=password or ''
+    )
+
+    if not item:
+        content_name = {"channels": "Canal", "movies": "Película", "series": "Serie"}[content_type]
+        raise NotFoundException(content_name, item_id)
+
+    return item
 
 
 @app.get("/api/home", tags=["Content"])
@@ -793,47 +815,6 @@ async def search_content(
         username=auth.username,
         password=password or '',
     )
-
-
-@app.get("/api/content/{content_type}/{item_id}", tags=["Content"])
-async def get_content_item(
-    content_type: str,
-    item_id: str,
-    password: Optional[str] = Query(None, description="Password para construir stream_url"),
-    auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
-):
-    if content_type not in ['channels', 'movies', 'series']:
-        raise BadRequestException("Tipo de contenido inválido")
-
-    item = content_svc.get_content_item(
-        content_type=content_type,
-        item_id=item_id,
-        username=auth.username,
-        password=password or ''  # ← usar el password del query param
-    )
-
-    if not item:
-        content_name = {"channels": "Canal", "movies": "Película", "series": "Serie"}[content_type]
-        raise NotFoundException(content_name, item_id)
-
-    return item
-
-
-@app.get("/api/content/stats", tags=["Content"])
-async def get_content_stats(
-    auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
-):
-    """Obtiene el total de canales, películas y series disponibles. Requiere Bearer Token."""
-    counts = content_svc.get_content_count()
-    return {
-        "channels": counts['channels'],
-        "movies": counts['movies'],
-        "series": counts['series'],
-        "replays": counts.get('replays', 0),
-        "total": counts['channels'] + counts['movies'] + counts['series'] + counts.get('replays', 0)
-    }
 
 
 @app.get("/api/replays", tags=["Replays"])
@@ -982,12 +963,10 @@ async def get_calendar_by_date(
     if not eventos_raw:
         return CalendarDayResponse(fecha=fecha, total_eventos=0, eventos=[])
 
-    # Build stream URLs for resolved channels when credentials are available
     username = auth.username or ""
     pwd = password or ""
     base_url = settings.public_domain.rstrip("/")
 
-    # Collect all channel_ids to batch lookup provider_ids
     all_channel_ids = []
     for evento in eventos_raw:
         for ch in evento.get('canales_resueltos', []) or []:
@@ -1003,7 +982,6 @@ async def get_calendar_by_date(
         if username and pwd:
             for ch in canales_resueltos:
                 if not ch.get('stream_url'):
-                    # Use provider_id (IPTV provider stream ID) instead of channel_id (internal DB ID)
                     stream_id = ch.get('provider_id') or provider_map.get(ch.get('channel_id'))
                     if stream_id:
                         ch['provider_id'] = stream_id
@@ -1037,7 +1015,6 @@ async def get_calendar_event(
 
     canales_resueltos = evento.get('canales_resueltos', []) or []
 
-    # Build stream URLs using provider_id
     username = auth.username or ""
     pwd = password or ""
     base_url = settings.public_domain.rstrip("/")
@@ -1177,19 +1154,19 @@ async def get_playlist_standard(
 ):
     """
     Genera playlist M3U — Formato estándar de proveedores IPTV.
-    
+
     Parámetro 'content':
         - full: Todo el contenido (por defecto)
         - live: Solo canales en vivo
         - movie: Solo películas
         - series: Solo series
-    
+
     Nota: Para reproductores móviles, usar content=live reduce significativamente el tamaño.
     """
     valid_content = ['full', 'live', 'movie', 'series']
     if content not in valid_content:
         content = 'full'
-    
+
     auth = user_svc.validate_credentials(username, password)
 
     if not auth.valid:
@@ -1216,16 +1193,16 @@ async def get_playlist_standard(
     m3u_content = playlist_svc.generate_m3u(username=username, password=password, content_type=content)
 
     content_bytes = m3u_content.encode('utf-8')
-    
+
     content_length = len(content_bytes)
-    
+
     SIZE_THRESHOLD = 5 * 1024 * 1024
     if content_length > SIZE_THRESHOLD:
         content_bytes = gzip.compress(content_bytes, compresslevel=6)
         is_gzip = True
     else:
         is_gzip = False
-    
+
     content_length = len(content_bytes)
 
     filename = f"playlist_{username}_{content}.m3u" if content != 'full' else f"playlist_{username}.m3u"
@@ -1238,7 +1215,7 @@ async def get_playlist_standard(
         "Pragma": "public",
         "Expires": "0",
     }
-    
+
     if is_gzip:
         headers["Content-Encoding"] = "gzip"
 
@@ -1250,7 +1227,7 @@ async def get_playlist_standard(
 
 
 # ============================================
-# ✏️ CAMBIO 4: Endpoints HLS — sirven ficheros generados por ffmpeg
+# Endpoints HLS — sirven ficheros generados por ffmpeg
 # ============================================
 
 @app.get("/hls/{session_id}/playlist.m3u8", tags=["HLS"])
@@ -1434,7 +1411,6 @@ async def _proxy_stream_handler(
     if not original_url:
         raise NotFoundException("Stream", stream_id)
 
-    # ✏️ CAMBIO 5: lógica HLS correcta — sesión ffmpeg en disco + redirect al playlist
     origin = request.headers.get('origin') or request.headers.get('referer', '')
     is_from_allowed_web = any(orig in origin for orig in ALLOWED_WEB_ORIGINS if origin)
     logger.info(
@@ -1470,7 +1446,6 @@ async def _proxy_stream_handler(
         logger.info(f"🎬 HLS redirect: session={session.session_id}")
         return RedirectResponse(url=f"/hls/{session.session_id}/playlist.m3u8", status_code=302)
 
-    # Desde reproductores externos: bootstrap de redirects con proxy y stream directo
     use_cache_for_redirect = content_type != 'live'
     stream_url = await stream_svc.resolve_redirects(
         original_url,
