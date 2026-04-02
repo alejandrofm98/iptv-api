@@ -1,10 +1,13 @@
 """
 Dependencias reutilizables para la API
 """
+import logging
 from typing import Optional
 from fastapi import Depends, Query, Request, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+
+logger = logging.getLogger("iptv-api")
 
 from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService, WatchProgressService, ChannelFavoritesService
 from services.transcode_service import TranscodeService
@@ -162,10 +165,12 @@ async def require_auth_with_jwt(
         user_id: str = payload.get("sub")
         
         if user_id is None:
+            logger.warning("[DIAG] JWT auth: token has no 'sub' claim")
             raise UnauthorizedException("Token inválido")
         
         # Obtener usuario para verificar estado
         user = user_svc.get_user(user_id)
+        logger.info(f"[DIAG] JWT auth: user_id={user_id}, user_found={user is not None}")
         
         if user is None:
             raise UnauthorizedException("Usuario no encontrado")

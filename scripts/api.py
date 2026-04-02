@@ -615,6 +615,7 @@ async def get_channels_full(
     content_svc: ContentService = Depends(get_content_service),
 ):
     """Obtiene TODOS los canales desde archivo JSON estático con gzip. Para cache local en cliente TV."""
+    logger.info("[DIAG] /api/full/channels endpoint reached")
     import os
 
     json_data = content_svc.get_all_content_bulk('channels')
@@ -648,6 +649,7 @@ async def get_movies_full(
     content_svc: ContentService = Depends(get_content_service),
 ):
     """Obtiene TODAS las películas desde archivo JSON estático con gzip. Para cache local en cliente TV."""
+    logger.info("[DIAG] /api/full/movies endpoint reached")
     import os
 
     json_data = content_svc.get_all_content_bulk('movies')
@@ -676,6 +678,7 @@ async def get_series_full(
     content_svc: ContentService = Depends(get_content_service),
 ):
     """Obtiene TODAS las series desde archivo JSON estático con gzip. Para cache local en cliente TV."""
+    logger.info("[DIAG] /api/full/series endpoint reached")
     import os
 
     json_data = content_svc.get_all_content_bulk('series')
@@ -1528,7 +1531,9 @@ async def proxy_stream_content(
     Formato: /{live|movie|series}/{username}/{password}/{stream_id}
     """
     if content_type in _RESERVED_PREFIXES:
+        logger.warning(f"[DIAG] Catch-all 4-seg BLOCKED: content_type={content_type}, user={username}, stream_id={stream_id}")
         raise BadRequestException(f"Ruta no válida: '{content_type}' es un prefijo reservado")
+    logger.info(f"[DIAG] Catch-all 4-seg ENTERED: /{content_type}/{username}/{password}/{stream_id}")
     return await _proxy_stream_handler(
         content_type=content_type,
         username=username,
@@ -1557,7 +1562,9 @@ async def proxy_stream_channel(
 ):
     """Proxy de streams para canales en vivo (sin tipo en URL)."""
     if username in _RESERVED_PREFIXES or password in _RESERVED_PREFIXES:
+        logger.warning(f"[DIAG] Catch-all 3-seg BLOCKED: username={username}, password={password}, stream_id={stream_id}")
         raise BadRequestException(f"Ruta no válida: '{username}' o '{password}' son prefijos reservados")
+    logger.info(f"[DIAG] Catch-all 3-seg ENTERED: /{username}/{password}/{stream_id}")
     return await _proxy_stream_handler(
         content_type='live',
         username=username,
