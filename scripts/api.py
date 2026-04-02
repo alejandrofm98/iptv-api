@@ -609,7 +609,7 @@ async def get_content_stats(
 # para evitar que el endpoint genérico las capture primero.
 # ============================================
 
-@app.get("/api/bulk/channels", response_class=JSONResponse, tags=["Content"])
+@app.get("/api/full/channels", response_class=JSONResponse, tags=["Content"])
 async def get_channels_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
@@ -642,7 +642,7 @@ async def get_channels_full(
     return json_data
 
 
-@app.get("/api/bulk/movies", response_class=JSONResponse, tags=["Content"])
+@app.get("/api/full/movies", response_class=JSONResponse, tags=["Content"])
 async def get_movies_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
@@ -670,7 +670,7 @@ async def get_movies_full(
     return json_data
 
 
-@app.get("/api/bulk/series", response_class=JSONResponse, tags=["Content"])
+@app.get("/api/full/series", response_class=JSONResponse, tags=["Content"])
 async def get_series_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
@@ -698,7 +698,7 @@ async def get_series_full(
     return json_data
 
 
-@app.get("/api/bulk/channels/legacy", tags=["Content"])
+@app.get("/api/full/channels/legacy", tags=["Content"])
 async def get_all_channels_bulk(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
