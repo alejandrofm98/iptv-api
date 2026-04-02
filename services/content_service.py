@@ -1071,7 +1071,7 @@ class ContentService:
     
     def _get_all_movies_from_db(self) -> Dict[str, Any]:
         """Genera JSON de películas desde PostgreSQL (fallback)."""
-        rows, _ = self.pg.get_content_items_paginated('movies', 1, 999999, None, None, None, None)
+        rows, _ = self.pg.get_content_items_paginated('movies', 1, 999999, 'nombre_normalizado', None, None, None)
 
         parsed_items = []
         for row in rows:
@@ -1091,7 +1091,7 @@ class ContentService:
     
     def _get_all_series_from_db(self) -> Dict[str, Any]:
         """Genera JSON de series desde PostgreSQL (fallback)."""
-        rows, _ = self.pg.get_content_items_paginated('series', 1, 999999, None, None, None, None)
+        rows, _ = self.pg.get_content_items_paginated('series', 1, 999999, 'nombre_normalizado', None, None, None)
 
         parsed_items = []
         for row in rows:

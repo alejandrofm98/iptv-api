@@ -1502,6 +1502,15 @@ async def _proxy_stream_handler(
         raise BadRequestException(f"Error al obtener stream: {str(e)}")
 
 
+# ============================================
+# IMPORTANTE: rutas genéricas de streams VAN DESPUÉS de todas las
+# rutas /api/* para evitar colisiones. Además, validamos que no
+# capturen paths que empiezan por "api" u otros prefijos reservados.
+# ============================================
+
+_RESERVED_PREFIXES = {'api', 'cast', 'hls', 'auth', 'internal', 'logo', 'get.php', 'health'}
+
+
 @app.get("/{content_type}/{username}/{password}/{stream_id}", tags=["Stream"])
 async def proxy_stream_content(
     content_type: str,
@@ -1518,6 +1527,8 @@ async def proxy_stream_content(
     Proxy de streams para live, movie y series.
     Formato: /{live|movie|series}/{username}/{password}/{stream_id}
     """
+    if content_type in _RESERVED_PREFIXES:
+        raise BadRequestException(f"Ruta no válida: '{content_type}' es un prefijo reservado")
     return await _proxy_stream_handler(
         content_type=content_type,
         username=username,
@@ -1545,6 +1556,8 @@ async def proxy_stream_channel(
     transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
     """Proxy de streams para canales en vivo (sin tipo en URL)."""
+    if username in _RESERVED_PREFIXES or password in _RESERVED_PREFIXES:
+        raise BadRequestException(f"Ruta no válida: '{username}' o '{password}' son prefijos reservados")
     return await _proxy_stream_handler(
         content_type='live',
         username=username,
