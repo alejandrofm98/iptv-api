@@ -609,7 +609,7 @@ async def get_content_stats(
 # para evitar que el endpoint genérico las capture primero.
 # ============================================
 
-@app.get("/api/content/channels/full", response_class=JSONResponse, tags=["Content"])
+@app.get("/api/bulk/channels", response_class=JSONResponse, tags=["Content"])
 async def get_channels_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
@@ -642,7 +642,7 @@ async def get_channels_full(
     return json_data
 
 
-@app.get("/api/content/movies/full", response_class=JSONResponse, tags=["Content"])
+@app.get("/api/bulk/movies", response_class=JSONResponse, tags=["Content"])
 async def get_movies_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
@@ -670,7 +670,7 @@ async def get_movies_full(
     return json_data
 
 
-@app.get("/api/content/series/full", response_class=JSONResponse, tags=["Content"])
+@app.get("/api/bulk/series", response_class=JSONResponse, tags=["Content"])
 async def get_series_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
@@ -698,7 +698,7 @@ async def get_series_full(
     return json_data
 
 
-@app.get("/api/content/channels/all", tags=["Content"])
+@app.get("/api/bulk/channels/legacy", tags=["Content"])
 async def get_all_channels_bulk(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
@@ -712,6 +712,9 @@ async def get_all_channels_bulk(
 # endpoints con segmentos literales bajo /api/content/{x}/{y}
 # ============================================
 
+# Valores reservados que tienen su propio endpoint — nunca deben llegar aquí
+_RESERVED_ITEM_IDS = {'full', 'all'}
+
 @app.get("/api/content/{content_type}/{item_id}", tags=["Content"])
 async def get_content_item(
     content_type: str,
@@ -722,6 +725,14 @@ async def get_content_item(
 ):
     if content_type not in ['channels', 'movies', 'series']:
         raise BadRequestException("Tipo de contenido inválido")
+
+    # Protección extra: si item_id es un valor reservado de otro endpoint
+    # significa que el router lo capturó por error (fichero viejo en producción, etc.)
+    if item_id in _RESERVED_ITEM_IDS:
+        raise BadRequestException(
+            f"'{item_id}' no es un ID válido. "
+            f"Para obtener todo el contenido usa /api/content/{content_type}/{item_id}"
+        )
 
     item = content_svc.get_content_item(
         content_type=content_type,
