@@ -26,12 +26,12 @@
       "value": "admin123",
       "type": "secret"
     },
-    {
-      "key": "today",
-      "value": "2024-01-15",
-      "type": "text",
-      "description": "Fecha para consultar eventos del calendario (YYYY-MM-DD)"
-    },
+      {
+        "key": "today",
+        "value": "2026-04-02",
+        "type": "text",
+        "description": "Fecha para consultar eventos del calendario (YYYY-MM-DD)"
+      },
     {
       "key": "event_id",
       "value": "",
@@ -62,14 +62,67 @@
       "type": "text",
       "description": "ID del stream para proxy"
     },
-    {
-      "key": "search_query",
-      "value": "football",
-      "type": "text",
-      "description": "Texto de búsqueda"
-    }
-  ],
+      {
+        "key": "search_query",
+        "value": "football",
+        "type": "text",
+        "description": "Texto de búsqueda"
+      },
+      {
+        "key": "session_id",
+        "value": "",
+        "type": "text",
+        "description": "Session ID para HLS"
+      },
+      {
+        "key": "slug",
+        "value": "",
+        "type": "text",
+        "description": "Slug del replay"
+      },
+      {
+        "key": "source_index",
+        "value": "0",
+        "type": "text",
+        "description": "Índice de fuente del replay"
+      },
+      {
+        "key": "button_index",
+        "value": "0",
+        "type": "text",
+        "description": "Índice de botón del replay"
+      }
+    ],
   "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Verifica que la API esté funcionando"
+          }
+        },
+        {
+          "name": "Root",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [""]
+            },
+            "description": "Información general de la API"
+          }
+        }
+      ]
+    },
     {
       "name": "Auth",
       "item": [
@@ -100,6 +153,9 @@
           ],
           "request": {
             "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
             "header": [
               {
                 "key": "Content-Type",
@@ -125,35 +181,6 @@
                   "type": "text"
                 }
               ]
-            }
-          }
-        },
-        {
-          "name": "Logout",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.collectionVariables.set('token', '');",
-                  "console.log('Token limpiado');"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/session",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "session"]
             }
           }
         }
@@ -496,9 +523,19 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/sessions",
+              "raw": "{{baseUrl}}/api/admin/sessions?page=1&page_size=100",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "sessions"]
+              "path": ["api", "admin", "sessions"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "100"
+                }
+              ]
             }
           }
         },
@@ -632,9 +669,15 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/content/stats",
+              "raw": "{{baseUrl}}/api/content/stats?content_type=channels",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "content", "stats"]
+              "path": ["api", "content", "stats"],
+              "query": [
+                {
+                  "key": "content_type",
+                  "value": "channels"
+                }
+              ]
             },
             "description": "Obtiene estadísticas de canales, películas y series. Requiere Bearer Token."
           }
@@ -894,9 +937,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/content/channels/full",
+              "raw": "{{baseUrl}}/api/full/channels",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "content", "channels", "full"]
+              "path": ["api", "full", "channels"]
             },
             "description": "Obtiene TODOS los canales desde JSON estático con gzip"
           }
@@ -912,9 +955,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/content/movies/full",
+              "raw": "{{baseUrl}}/api/full/movies",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "content", "movies", "full"]
+              "path": ["api", "full", "movies"]
             },
             "description": "Obtiene TODAS las películas desde JSON estático con gzip"
           }
@@ -930,11 +973,29 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/content/series/full",
+              "raw": "{{baseUrl}}/api/full/series",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "content", "series", "full"]
+              "path": ["api", "full", "series"]
             },
             "description": "Obtiene TODAS las series desde JSON estático con gzip"
+          }
+        },
+        {
+          "name": "Canales legacy",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/full/channels/legacy",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "full", "channels", "legacy"]
+            },
+            "description": "Obtiene TODOS los canales (versión legacy)"
           }
         },
         {
@@ -953,57 +1014,6 @@
               "path": ["api", "content", "channels", "{{content_id}}"]
             },
             "description": "Obtiene detalle de un canal, película o serie"
-          }
-        }
-      ]
-    },
-    {
-      "name": "Series Episodes",
-      "item": [
-        {
-          "name": "Episodios de serie",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/series/{{serie_name}}/episodes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "series", "{{serie_name}}", "episodes"]
-            },
-            "description": "Obtiene todos los episodios de una serie"
-          }
-        },
-        {
-          "name": "Episodios paginados",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/series/{{serie_name}}/episodes?page=1&page_size=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "series", "{{serie_name}}", "episodes"],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "page_size",
-                  "value": "20"
-                }
-              ]
-            },
-            "description": "Obtiene episodios paginados de una serie"
           }
         }
       ]
@@ -1055,6 +1065,58 @@
               "path": ["api", "replays", "{slug}"]
             },
             "description": "Obtiene un replay específico por slug"
+          }
+        },
+        {
+          "name": "Proxy replay stream",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/replay-proxy?url=https://example.com/stream.m3u8&token={{token}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "replay-proxy"],
+              "query": [
+                {
+                  "key": "url",
+                  "value": "https://example.com/stream.m3u8"
+                },
+                {
+                  "key": "token",
+                  "value": "{{token}}"
+                }
+              ]
+            },
+            "description": "Proxy de manifests HLS para evitar problemas CORS"
+          }
+        },
+        {
+          "name": "Replay stream URL",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/replays/{{slug}}/stream/{{source_index}}/{{button_index}}?token={{token}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "replays", "{{slug}}", "stream", "{{source_index}}", "{{button_index}}"],
+              "query": [
+                {
+                  "key": "token",
+                  "value": "{{token}}"
+                }
+              ]
+            },
+            "description": "Resuelve URL fresca para fuente de replay y la proxya"
           }
         }
       ]
@@ -1191,6 +1253,152 @@
               ]
             },
             "description": "Obtiene redirect 307 a stream para proxy nginx"
+          }
+        },
+        {
+          "name": "Cast stream playlist",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cast/{{username}}/{{password}}/{{stream_id}}/playlist.m3u8",
+              "host": ["{{baseUrl}}"],
+              "path": ["cast", "{{username}}", "{{password}}", "{{stream_id}}", "playlist.m3u8"]
+            },
+            "description": "Playlist HLS para Chromecast (movie/series)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Series Episodes",
+      "item": [
+        {
+          "name": "Episodios de serie",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/series/{{serie_name}}/episodes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "series", "{{serie_name}}", "episodes"]
+            },
+            "description": "Obtiene todos los episodios de una serie"
+          }
+        },
+        {
+          "name": "Episodios paginados",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/series/{{serie_name}}/episodes?page=1&page_size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "series", "{{serie_name}}", "episodes"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Obtiene episodios paginados de una serie"
+          }
+        }
+      ]
+    },
+    {
+      "name": "HLS",
+      "item": [
+        {
+          "name": "HLS playlist",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hls/{{session_id}}/playlist.m3u8",
+              "host": ["{{baseUrl}}"],
+              "path": ["hls", "{{session_id}}", "playlist.m3u8"]
+            },
+            "description": "Sirve el playlist .m3u8 de una sesión HLS activa"
+          }
+        },
+        {
+          "name": "HLS segment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hls/{{session_id}}/segment000.ts",
+              "host": ["{{baseUrl}}"],
+              "path": ["hls", "{{session_id}}", "segment000.ts"]
+            },
+            "description": "Sirve un segmento .ts de una sesión HLS activa"
+          }
+        },
+        {
+          "name": "Cast HLS segment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "User-Agent",
+                "value": "PostmanRuntime/7.43.0"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cast/hls/{{session_id}}/segment000.ts",
+              "host": ["{{baseUrl}}"],
+              "path": ["cast", "hls", "{{session_id}}", "segment000.ts"]
+            },
+            "description": "Sirve segmentos HLS para Chromecast"
+          }
+        },
+        {
+          "name": "Cast HLS segment OPTIONS",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "*"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cast/hls/{{session_id}}/segment000.ts",
+              "host": ["{{baseUrl}}"],
+              "path": ["cast", "hls", "{{session_id}}", "segment000.ts"]
+            },
+            "description": "CORS preflight para Chromecast HLS"
           }
         }
       ]
