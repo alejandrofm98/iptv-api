@@ -27,6 +27,9 @@ def _load_environment() -> None:
       return
 
 
+_load_environment()
+
+
 class Settings:
   """
   Configuración centralizada de la aplicación
@@ -35,34 +38,36 @@ class Settings:
   - Configuración dinámica (tabla config en PostgreSQL)
   """
 
-  # ===== API =====
-  api_secret_key: str = os.getenv(CONSTANTS.API_SECRET_ENV_KEY)
-
-  # ===== JWT Authentication =====
-  jwt_secret: str = os.getenv(CONSTANTS.JWT_SECRET_ENV_KEY, CONSTANTS.JWT_SECRET_DEFAULT)
-
-  # ===== IPTV =====
-  iptv_user: Optional[str] = None
-  iptv_pass: Optional[str] = None
-  iptv_base_url: Optional[str] = None
-  iptv_source_url: Optional[str] = None
-
-  # ===== Servidor =====
-  session_timeout_minutes: int = CONSTANTS.DEFAULT_SESSION_TIMEOUT_MINUTES
-  cleanup_interval_minutes: int = CONSTANTS.DEFAULT_CLEANUP_INTERVAL_MINUTES
-
-  # ===== Public Domain =====
-  public_domain: str = os.getenv(CONSTANTS.PUBLIC_DOMAIN_ENV, CONSTANTS.PUBLIC_DOMAIN_DEFAULT_LOCAL)
-
-  # ===== Estado interno =====
-  _config_loaded: bool = False
-
   def __init__(self):
+    # ===== API =====
+    self.api_secret_key: str = os.getenv(CONSTANTS.API_SECRET_ENV_KEY, CONSTANTS.API_SECRET_DEFAULT)
+
+    # ===== JWT Authentication =====
+    self.jwt_secret: str = os.getenv(CONSTANTS.JWT_SECRET_ENV_KEY, CONSTANTS.JWT_SECRET_DEFAULT)
+
+    # ===== Servidor =====
+    self.session_timeout_minutes: int = CONSTANTS.DEFAULT_SESSION_TIMEOUT_MINUTES
+    self.cleanup_interval_minutes: int = CONSTANTS.DEFAULT_CLEANUP_INTERVAL_MINUTES
+
+    # ===== Public Domain =====
+    self.public_domain: str = os.getenv(CONSTANTS.PUBLIC_DOMAIN_ENV, CONSTANTS.PUBLIC_DOMAIN_DEFAULT_LOCAL)
+
+    # ===== PostgreSQL =====
     self.pg_host = os.getenv('PG_HOST', '')
     self.pg_port = int(os.getenv('PG_PORT', '5432'))
     self.pg_database = os.getenv('PG_DATABASE', 'postgres')
     self.pg_user = os.getenv('PG_USER', '')
     self.pg_password = os.getenv('PG_PASSWORD', '')
+
+    # ===== IPTV =====
+    self.iptv_user: Optional[str] = None
+    self.iptv_pass: Optional[str] = None
+    self.iptv_base_url: Optional[str] = None
+    self.iptv_source_url: Optional[str] = None
+
+    # ===== Estado interno =====
+    self._config_loaded: bool = False
+
     self._load_config()
 
   def _load_config(self) -> None:

@@ -198,6 +198,13 @@ class PostgresService:
         result = self.execute_query(sql)
         return result[0]['count'] if result else 0
 
+    def get_sync_metadata(self) -> Optional[Dict[str, Any]]:
+        """Obtiene metadata de sincronización (totales y generated_at por tipo)."""
+        from utils.constants import SYNC_METADATA_TABLE, SYNC_METADATA_ID
+        sql = f"SELECT * FROM {SYNC_METADATA_TABLE} WHERE id = %s"
+        result = self.execute_query(sql, (SYNC_METADATA_ID,))
+        return result[0] if result else None
+
     # ============================================================
     # HELPERS: Sessions
     # ============================================================

@@ -960,13 +960,27 @@ class ContentService:
         if json_data:
             return {content_type: {'total': json_data.get('total', 0), 'generatedAt': json_data.get('generated_at', '')}}
         
-        # Fallback: usar PostgreSQL
+        # Fallback: usar PostgreSQL con sync_metadata
+        metadata = self.pg.get_sync_metadata()
+        if metadata:
+            type_map = {
+                'channels': ('total_canales', 'channels_generated_at'),
+                'movies': ('total_movies', 'movies_generated_at'),
+                'series': ('total_series', 'series_generated_at'),
+            }
+            total_key, generated_key = type_map.get(content_type, (None, None))
+            if total_key and generated_key:
+                total = metadata.get(total_key, 0)
+                generated_at = metadata.get(generated_key, '')
+                return {content_type: {'total': total, 'generatedAt': generated_at}}
+        
+        # Último fallback: COUNT directo en la tabla
         table = self.TABLE_MAP.get(content_type)
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
         total = self.pg.count_table(table)
-        return {content_type: {'total': total}}
+        return {content_type: {'total': total, 'generatedAt': datetime.utcnow().isoformat()}}
 
     def get_all_content_bulk(self, content_type: str) -> Dict[str, Any]:
         """Obtiene TODOS los items de un tipo en una sola llamada desde archivo JSON estático."""
