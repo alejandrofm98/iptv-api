@@ -1002,7 +1002,7 @@ class ContentService:
         """Obtiene TODOS los canales en una sola llamada. Deprecated: usar get_all_content_bulk('channels')"""
         json_data = self._load_static_json('channels')
         if json_data:
-            return {'items': json_data.get('channels', []), 'total': json_data.get('total', 0)}
+            return {'items': json_data.get('items', []), 'total': json_data.get('total', 0)}
         return self._get_all_channels_from_db()
     
     def _load_static_json(self, content_type: str) -> Optional[Dict[str, Any]]:
@@ -1078,9 +1078,12 @@ class ContentService:
                 'numero': row.get('numero'),
             })
 
+        generated_at = self.pg.get_sync_metadata_field('channels_generated_at') or datetime.utcnow().isoformat()
+
         return {
             'items': parsed_items,
             'total': len(parsed_items),
+            'generated_at': generated_at,
         }
     
     def _get_all_movies_from_db(self) -> Dict[str, Any]:
@@ -1098,9 +1101,12 @@ class ContentService:
                 'grupo_normalizado': row.get('grupo_normalizado') or row.get('grupo') or '',
             })
 
+        generated_at = self.pg.get_sync_metadata_field('movies_generated_at') or datetime.utcnow().isoformat()
+
         return {
             'items': parsed_items,
             'total': len(parsed_items),
+            'generated_at': generated_at,
         }
     
     def _get_all_series_from_db(self) -> Dict[str, Any]:
@@ -1121,9 +1127,12 @@ class ContentService:
                 'grupo_normalizado': row.get('grupo_normalizado') or row.get('grupo') or '',
             })
 
+        generated_at = self.pg.get_sync_metadata_field('series_generated_at') or datetime.utcnow().isoformat()
+
         return {
             'items': parsed_items,
             'total': len(parsed_items),
+            'generated_at': generated_at,
         }
 
 

@@ -205,6 +205,16 @@ class PostgresService:
         result = self.execute_query(sql, (SYNC_METADATA_ID,))
         return result[0] if result else None
 
+    def get_sync_metadata_field(self, field: str) -> Optional[str]:
+        """Obtiene un campo específico de la tabla sync_metadata."""
+        from utils.constants import SYNC_METADATA_TABLE, SYNC_METADATA_ID
+        sql = f"SELECT {field} FROM {SYNC_METADATA_TABLE} WHERE id = %s"
+        result = self.execute_query(sql, (SYNC_METADATA_ID,))
+        if result and result[0].get(field):
+            val = result[0][field]
+            return val.isoformat() if hasattr(val, 'isoformat') else str(val)
+        return None
+
     # ============================================================
     # HELPERS: Sessions
     # ============================================================
