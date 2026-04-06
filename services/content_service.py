@@ -1095,6 +1095,7 @@ class ContentService:
             parsed_items.append({
                 'id': str(row.get('id') or ''),
                 'provider_id': str(row.get('provider_id') or ''),
+                'nombre': row.get('nombre') or '',
                 'logo': row.get('logo') or '',
                 'country': row.get('country') or '',
                 'nombre_normalizado': row.get('nombre_normalizado') or row.get('nombre') or '',
