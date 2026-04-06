@@ -572,15 +572,82 @@ class ContentService:
     def get_home_catalog(self, username: str, page_size: int = 12, country: Optional[str] = None, password: str = '') -> Dict[str, Any]:
         counts = self.get_content_count()
         return {
-            'featured_channels': self.get_android_home_items('channels', page_size=page_size, username=username, password=password, country=country),
-            'featured_movies': self.get_android_home_items('movies', page_size=page_size, username=username, password=password, country=country),
-            'featured_series': self.get_android_home_items('series', page_size=page_size, username=username, password=password, country=country),
+            'events': self.get_android_home_items('channels', page_size=page_size, username=username, password=password, country=country),
+            'movie_sections': self.get_grouped_home_sections(
+                content_type='movies',
+                group_patterns=[
+                    {'title': '2026 ESTRENOS', 'pattern': '2026 ESTRENOS'},
+                    {'title': 'NETFLIX', 'pattern': 'NETFLIX'},
+                    {'title': 'HBO MAX', 'pattern': 'HBO MAX'},
+                    {'title': 'DISNEY+', 'pattern': 'DISNEY'},
+                ],
+                page_size=page_size, username=username, password=password, country=country,
+            ),
+            'series_sections': self.get_grouped_home_sections(
+                content_type='series',
+                group_patterns=[
+                    {'title': 'DISNEY+', 'pattern': 'DISNEY'},
+                    {'title': 'NETFLIX', 'pattern': 'NETFLIX'},
+                    {'title': 'HBO', 'pattern': 'HBO'},
+                ],
+                page_size=page_size, username=username, password=password, country=country,
+            ),
             'stats': {
                 'channels': counts['channels'],
                 'movies': counts['movies'],
                 'series': counts['series'],
             },
         }
+
+    def get_grouped_home_sections(
+        self,
+        content_type: str,
+        group_patterns: List[Dict[str, str]],
+        page_size: int = 12,
+        username: str = '',
+        password: str = '',
+        country: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        table = self.TABLE_MAP.get(content_type)
+        if not table:
+            return []
+
+        sections = []
+        seen_titles: set = set()
+
+        for gp in group_patterns:
+            items, _ = self.pg.get_content_items_paginated(
+                table, 1, page_size, gp['pattern'], country, None, 'numero'
+            )
+            catalog_items = [self._to_android_catalog_item(row, content_type, username, password) for row in items]
+
+            if content_type == 'movies':
+                catalog_items = self._deduplicate_movies(catalog_items, seen_titles)
+
+            if catalog_items:
+                sections.append({'title': gp['title'], 'items': catalog_items})
+
+        return sections
+
+    def _deduplicate_movies(self, items: List[Dict[str, Any]], seen_titles: set) -> List[Dict[str, Any]]:
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for item in items:
+            key = (item.get('normalized_title') or item.get('title') or '').lower().strip()
+            if not key or key in seen_titles:
+                continue
+            if key not in grouped:
+                grouped[key] = {**item, 'stream_options': []}
+            if item.get('stream_url'):
+                grouped[key]['stream_options'].append({
+                    'label': item.get('badge_text') or 'Ver',
+                    'url': item['stream_url'],
+                })
+
+        result = []
+        for key, item in grouped.items():
+            seen_titles.add(key)
+            result.append(item)
+        return result
 
     def get_android_home_items(
         self,
