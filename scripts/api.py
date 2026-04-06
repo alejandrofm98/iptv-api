@@ -1873,6 +1873,41 @@ async def proxy_logo(
 
 
 # ============================================
+# Anime Video Resolver
+# ============================================
+
+@app.get("/api/anime/resolve")
+async def resolve_anime_video(
+    url: str = Query(..., description="URL de embed del hosting"),
+    current_user: dict = Depends(require_auth_with_jwt),
+):
+    """
+    Resuelve una URL de embed de hosting de anime a una URL directa reproducible.
+
+    Soporta: Mega, StreamWish, YourUpload, Netu, Streamtape, Maru, 1fichier, etc.
+    Usa yt-dlp internamente para extraer la URL directa del video.
+    """
+    from services.video_resolver_service import VideoResolverService
+
+    resolver = VideoResolverService()
+    result = resolver.resolve(url)
+
+    if result["success"]:
+        return {
+            "success": True,
+            "url": result["url"],
+        }
+    else:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "success": False,
+                "error": result.get("error", "No se pudo resolver la URL"),
+            },
+        )
+
+
+# ============================================
 # Main
 # ============================================
 

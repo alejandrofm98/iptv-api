@@ -11,6 +11,7 @@ from .calendar_service import CalendarService
 from .resilience_service import ResilienceService, CircuitBreakerService, RetryService, StreamBuffer
 from .watch_progress_service import WatchProgressService
 from .channel_favorites_service import ChannelFavoritesService
+from .video_resolver_service import VideoResolverService
 
 __all__ = [
     'UserService',
@@ -27,4 +28,5 @@ __all__ = [
     'StreamBuffer',
     'WatchProgressService',
     'ChannelFavoritesService',
+    'VideoResolverService',
 ]
