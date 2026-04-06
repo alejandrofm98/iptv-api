@@ -572,7 +572,6 @@ class ContentService:
     def get_home_catalog(self, username: str, page_size: int = 12, country: Optional[str] = None, password: str = '') -> Dict[str, Any]:
         counts = self.get_content_count()
         return {
-            'events': self.get_android_home_items('channels', page_size=page_size, username=username, password=password, country=country),
             'movie_sections': self.get_grouped_home_sections(
                 content_type='movies',
                 group_patterns=[
@@ -616,9 +615,20 @@ class ContentService:
         seen_titles: set = set()
 
         for gp in group_patterns:
-            items, _ = self.pg.get_content_items_paginated(
-                table, 1, page_size, gp['pattern'], country, None, 'numero'
-            )
+            if content_type == 'series':
+                result = self.pg.get_distinct_series_page(
+                    page=1,
+                    page_size=page_size,
+                    group=gp['pattern'],
+                    country=country,
+                    search=None,
+                )
+                items = result.get('items', [])
+            else:
+                items, _ = self.pg.get_content_items_paginated(
+                    table, 1, page_size, gp['pattern'], country, None, 'numero'
+                )
+
             catalog_items = [self._to_android_catalog_item(row, content_type, username, password) for row in items]
 
             if content_type == 'movies':
