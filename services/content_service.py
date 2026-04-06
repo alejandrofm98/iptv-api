@@ -868,10 +868,16 @@ class ContentService:
 
     @staticmethod
     def _parse_replay_item(row: Dict[str, Any]) -> Dict[str, Any]:
+        from datetime import date
+
         video_sources = ContentService._normalize_replay_sources(
             row.get('video_sources') or [],
             row.get('event_date'),
         )
+
+        event_date = row.get('event_date')
+        if isinstance(event_date, date):
+            event_date = event_date.isoformat()
 
         return {
             'slug': row.get('slug', ''),
@@ -879,7 +885,7 @@ class ContentService:
             'title': row.get('title', ''),
             'event_name': row.get('event_name'),
             'event_type': row.get('event_type'),
-            'event_date': row.get('event_date'),
+            'event_date': event_date,
             'post_url': row.get('post_url', ''),
             'featured_image_url': row.get('featured_image_url'),
             'description': row.get('description'),
