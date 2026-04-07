@@ -25,6 +25,8 @@ services:
       - M3U_DIR=/app/data/m3u
       # Public domain (para generar URLs en M3U)
       - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-https://localhost}
+      # Microservicio Playwright para extracción de video
+      - VIDEO_EXTRACTOR_URL=http://video-extractor:8001
     volumes:
       # Volumen compartido entre todos los servicios
       - iptv-data:/app/data
@@ -107,6 +109,26 @@ services:
       # ── Servicio compartido ────────────────────────────────────────
       - "traefik.http.services.iptv-service.loadbalancer.server.port=80"
       - "traefik.http.routers.iptv-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (Path(`/get.php`) || Path(`/player_api.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
+
+  # ============================================
+  # Video Extractor Service (Playwright)
+  # ============================================
+  video-extractor:
+    build:
+      context: ..
+      dockerfile: video-extractor-service/Dockerfile
+    container_name: video-extractor
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    networks:
+      - iptv-network
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 # ============================================
 # Networks
