@@ -74,23 +74,18 @@ async def _post(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response
 
 async def _extract_streamtape(client: httpx.AsyncClient, url: str) -> dict:
     """
-    Streamtape parte la URL final en dos trozos dentro del JS.
-    El DOM tiene:  document.getElementById('robotlink').innerHTML = '/some/path'
-    Y luego concatena un substring del mismo elemento.
+    Streamtape: la URL directa está en <div id="robotlink"> (display:none).
     """
     r = await _fetch(client, url, headers={"Referer": "https://streamtape.com"})
     html = r.text
 
-    # El truco de Streamtape: dos fragmentos concatenados
-    part1 = _first(r"getElementById\('robotlink'\)\.innerHTML = '(/[^']+)'", html)
-    part2 = _first(r"getElementById\('robotlink'\)\.innerHTML \+ '([^']+)'", html)
-
-    if part1 and part2:
-        direct = f"https://streamtape.com{part1}{part2}"
+    match = _first(r'<div id="robotlink"[^>]*>(/streamtape\.com/get_video\?[^<]+)', html)
+    if match:
+        direct = f"https:{match}" if match.startswith("//") else f"https://{match.lstrip('/')}"
         return {"url": direct, "provider": "streamtape", "type": "mp4"}
 
-    # Fallback: buscar get_video directamente
-    match = _first(r"(https?://streamtape\.com/get_video\?[^\"' ]+)", html)
+    # Fallback: buscar get_video en cualquier parte del HTML
+    match = _first(r"(https?://streamtape\.com/get_video\?[^\"' >]+)", html)
     if match:
         return {"url": match, "provider": "streamtape", "type": "mp4"}
 
@@ -181,7 +176,25 @@ async def _extract_fembed_like(
 
 
 async def _extract_netu(client: httpx.AsyncClient, url: str) -> dict:
-    return await _extract_fembed_like(client, url, "netu")
+    """
+    Netu/HQQ: busca el src m3u8 directamente en el HTML.
+    El player videojs tiene la URL en: src: 'https://...m3u8'
+    """
+    r = await _fetch(client, url, headers={"Referer": "https://hqq.tv"})
+    html = r.text
+
+    # Buscar src con m3u8 en el HTML del player
+    match = _first(r'''src\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]''', html)
+    if match:
+        return {"url": match, "provider": "netu", "type": "hls"}
+
+    # Fallback: intentar API Fembed-like
+    try:
+        return await _extract_fembed_like(client, url, "netu")
+    except Exception:
+        pass
+
+    raise ValueError("Netu: no se encontró fuente de video")
 
 
 async def _extract_streamhide(client: httpx.AsyncClient, url: str) -> dict:
