@@ -91,6 +91,12 @@
         "value": "0",
         "type": "text",
         "description": "Índice de botón del replay"
+      },
+      {
+        "key": "video_extract_url",
+        "value": "https://streamtape.com/e/abc123",
+        "type": "text",
+        "description": "URL de embed de proveedor de video (streamtape, netu, etc.)"
       }
     ],
   "item": [
@@ -1537,7 +1543,7 @@
       ]
     },
     {
-      "name": "Logo Proxy",
+      "name": "Proxy logo",
       "item": [
         {
           "name": "Proxy logo",
@@ -1559,6 +1565,61 @@
               ]
             },
             "description": "Proxy de imágenes/logos para resolver Mixed Content"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Video Extractor",
+      "item": [
+        {
+          "name": "Extraer video (GET)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/video-extract?url={{video_extract_url}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "video-extract"],
+              "query": [
+                {
+                  "key": "url",
+                  "value": "{{video_extract_url}}"
+                }
+              ]
+            },
+            "description": "Extrae la URL directa de reproducción a partir de una URL de embed.\n\nProveedores soportados: streamtape, stape, netu, streamhide, vidhide, streamwish, filelions, vidmoly, doodstream, filemoon, mp4upload, okru, uqload, upstream, voe, lulustream.\n\nRequiere Bearer Token."
+          }
+        },
+        {
+          "name": "Extraer múltiples videos (POST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/video-extract/multi",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "video-extract", "multi"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"urls\": [\n    \"https://streamtape.com/e/abc123\",\n    \"https://netu.ac/e/def456\"\n  ]\n}"
+            },
+            "description": "Extrae múltiples URLs en paralelo (máximo 10).\nÚtil cuando un episodio tiene varios espejos/proveedores.\n\nBody: { \"urls\": [\"https://streamtape.com/e/...\", \"https://netu.ac/e/...\"] }\n\nRequiere Bearer Token."
           }
         }
       ]
