@@ -19,7 +19,8 @@ FAKE_URL_PATTERNS = [
     "vast.", "vpaid", "/ad/", "-ad-", "ads.", "advertising",
     "player/jw", "jwplayer.", "vast.js", "tracking.",
     "ssp.yahoo", "doubleclick", "googlesyndication",
-    "playNixes", "playnixes.com/player", "player/jw",
+    "playnixes.com/player", "player/jw", "rtmark.net",
+    "tiktokcdn.com/ad-site",
 ]
 
 # Headers requeridos por provider
@@ -107,13 +108,23 @@ async def _extract_with_playwright(
             logger.info(f"[{provider}] Cargando {url}")
             await page.goto(url, wait_until="networkidle", timeout=DEFAULT_TIMEOUT)
 
-            # Esperar a que el contenido se renderice
-            if extra_wait_for:
-                try:
-                    await page.wait_for_selector(extra_wait_for, timeout=wait_ms)
-                except Exception:
-                    pass  # Timeout, continuar igual
+            # StreamWish/Filemoon cargan el player en un iframe - buscar el iframe primero
+            try:
+                iframe = page.frame_locator('iframe').first
+                await iframe.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
 
+            # Intentar hacer click en el botón de play si existe (necesario para que carga el stream)
+            try:
+                play_button = page.get_by_role("button", name="Reproducir")
+                if play_button:
+                    await play_button.click(timeout=5000)
+                    logger.info(f"[{provider}] Click en play realizado")
+            except Exception:
+                pass
+
+            # Esperar a que el stream se cargue
             await page.wait_for_timeout(wait_ms)
 
             # Estrategia 0: Buscar iframes con el player
