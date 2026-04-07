@@ -72,6 +72,11 @@ from utils.dependencies import (
     AuthResult as AuthDep
 )
 
+from services.video_extractor_service import VideoExtractorService
+from fastapi import FastAPI, HTTPException, Request, Query, Depends, Body
+from pydantic import BaseModel, HttpUrl
+from typing import Optional, List
+
 # Configuración
 settings = get_settings()
 SECRET_KEY = settings.jwt_secret
@@ -183,6 +188,21 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"error": "Internal Server Error", "message": str(exc)}
     )
 
+
+def get_video_extractor() -> VideoExtractorService:
+    """Dependencia reutilizable — instancia sin estado, segura para concurrencia."""
+    return VideoExtractorService()
+
+
+# ─── modelos Pydantic ────────────────────────────────────────────────────────
+class ExtractRequest(BaseModel):
+    url: str
+    """URL de embed del proveedor (streamtape, netu, streamwish, etc.)"""
+
+
+class ExtractMultiRequest(BaseModel):
+    urls: List[str]
+    """Lista de URLs a extraer en paralelo (máximo 10)."""
 
 # ============================================
 # Funciones de Utilidad
@@ -1375,6 +1395,78 @@ async def cast_hls_segment_options(session_id: str, segment: str, request: Reque
     return _build_cast_options_response(request)
 
 
+@app.get("/api/video-extract", tags=["Video Extractor"])
+async def extract_video_get(
+    url: str = Query(..., description="URL del proveedor a extraer"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    extractor: VideoExtractorService = Depends(get_video_extractor),
+):
+    """
+    Extrae la URL directa de reproducción a partir de una URL de embed.
+
+    Proveedores soportados: streamtape, stape, netu, streamhide, vidhide,
+    streamwish, filelions, vidmoly, doodstream, filemoon, mp4upload,
+    okru, uqload, upstream, voe, lulustream.
+
+    Requiere Bearer Token.
+    """
+    provider = extractor.detect_provider(url)
+    if not provider:
+        raise BadRequestException(
+            f"Proveedor no soportado. URL: {url[:100]}. "
+            f"Soportados: {', '.join(extractor.supported_providers())}"
+        )
+
+    try:
+        result = await extractor.extract(url)
+        return {
+            "success": True,
+            "provider": result["provider"],
+            "type": result["type"],
+            "url": result["url"],
+            "sources": result.get("sources"),
+            # None si el proveedor no da múltiples calidades
+        }
+    except ValueError as e:
+        raise BadRequestException(str(e))
+    except Exception as e:
+        logger.error(f"[/api/video-extract] Error inesperado: {e}")
+        raise HTTPException(status_code=502,
+                            detail=f"Error al extraer video: {str(e)}")
+
+
+@app.post("/api/video-extract/multi", tags=["Video Extractor"])
+async def extract_video_multi(
+    body: ExtractMultiRequest,
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    extractor: VideoExtractorService = Depends(get_video_extractor),
+):
+    """
+    Extrae múltiples URLs en paralelo (máximo 10).
+    Útil cuando un episodio tiene varios espejos/proveedores.
+
+    Body: { "urls": ["https://streamtape.com/e/...", "https://netu.ac/e/..."] }
+    Requiere Bearer Token.
+    """
+    if len(body.urls) > 10:
+        raise BadRequestException("Máximo 10 URLs por petición")
+
+    if not body.urls:
+        raise BadRequestException("Debes proporcionar al menos una URL")
+
+    results = await extractor.extract_multi(body.urls)
+
+    successes = [r for r in results if not r.get("error")]
+    failures = [r for r in results if r.get("error")]
+
+    return {
+        "total": len(results),
+        "success_count": len(successes),
+        "failure_count": len(failures),
+        "results": results,
+    }
+
+
 # ============================================
 # API: Stream Proxy
 # ============================================
@@ -1503,41 +1595,6 @@ async def _proxy_stream_handler(
         )
     except Exception as e:
         raise BadRequestException(f"Error al obtener stream: {str(e)}")
-
-
-# ============================================
-# Anime Video Resolver
-# ============================================
-
-@app.get("/api/anime/resolve")
-async def resolve_anime_video(
-    url: str = Query(..., description="URL de embed del hosting"),
-    current_user: dict = Depends(require_auth_with_jwt),
-):
-    """
-    Resuelve una URL de embed de hosting de anime a una URL directa reproducible.
-
-    Soporta: Mega, StreamWish, YourUpload, Netu, Streamtape, Maru, 1fichier, etc.
-    Usa yt-dlp internamente para extraer la URL directa del video.
-    """
-    from services.video_resolver_service import VideoResolverService
-
-    resolver = VideoResolverService()
-    result = resolver.resolve(url)
-
-    if result["success"]:
-        return {
-            "success": True,
-            "url": result["url"],
-        }
-    else:
-        return JSONResponse(
-            status_code=422,
-            content={
-                "success": False,
-                "error": result.get("error", "No se pudo resolver la URL"),
-            },
-        )
 
 
 # ============================================
