@@ -26,6 +26,7 @@ Uso:
 import re
 import logging
 import asyncio
+import os
 from typing import Optional
 from urllib.parse import urlparse, urljoin, unquote
 import json
@@ -48,6 +49,16 @@ DEFAULT_HEADERS = {
 }
 
 TIMEOUT = httpx.Timeout(20.0)
+
+# URL del microservicio Playwright (configurable por variable de entorno)
+PLAYWRIGHT_SERVICE_URL = os.environ.get("VIDEO_EXTRACTOR_URL", "http://video-extractor:8001")
+
+
+class _PlaywrightRequired(Exception):
+    """Señal interno: este provider necesita el microservicio Playwright."""
+    def __init__(self, provider: str):
+        self.provider = provider
+        super().__init__(f"{provider} requiere Playwright")
 
 
 def _first(pattern: str, text: str, group: int = 1, flags: int = 0) -> Optional[str]:
@@ -207,34 +218,16 @@ async def _extract_vidhide(client: httpx.AsyncClient, url: str) -> dict:
 
 async def _extract_streamwish(client: httpx.AsyncClient, url: str) -> dict:
     """
-    StreamWish a veces embebe directamente la URL m3u8 en el JS,
-    y otras veces usa la API Fembed-like.
+    StreamWish: requiere JavaScript → usar microservicio Playwright.
     """
-    r = await _fetch(client, url, headers={"Referer": "https://streamwish.com"})
-    html = r.text
-
-    # Intento 1: m3u8 directo en el JS (más común)
-    for pattern in [
-        r'file\s*:\s*"(https?://[^"]+\.m3u8[^"]*)"',
-        r"file\s*:\s*'(https?://[^']+\.m3u8[^']*)'",
-        r'src\s*:\s*"(https?://[^"]+\.m3u8[^"]*)"',
-        r"jwplayer[^)]+\)\s*\.setup\([^}]+file\s*:\s*['\"]([^'\"]+)['\"]",
-    ]:
-        match = _first(pattern, html)
-        if match:
-            return {"url": match, "provider": "streamwish", "type": "hls"}
-
-    # Intento 2: API Fembed-like
-    try:
-        return await _extract_fembed_like(client, url, "streamwish")
-    except Exception:
-        pass
-
-    raise ValueError("StreamWish: no se encontró fuente de video")
+    raise _PlaywrightRequired("streamwish")
 
 
-async def _extract_filelions(client: httpx.AsyncClient, url: str) -> dict:
-    return await _extract_fembed_like(client, url, "filelions")
+async def _extract_filemoon(client: httpx.AsyncClient, url: str) -> dict:
+    """
+    Filemoon: packed JS → usar microservicio Playwright.
+    """
+    raise _PlaywrightRequired("filemoon")
 
 
 async def _extract_vidmoly(client: httpx.AsyncClient, url: str) -> dict:
@@ -281,26 +274,9 @@ async def _extract_doodstream(client: httpx.AsyncClient, url: str) -> dict:
 
 async def _extract_filemoon(client: httpx.AsyncClient, url: str) -> dict:
     """
-    Filemoon usa packed JS (p,a,c,k,e,d). Hay que desempaquetar
-    o buscar el m3u8 directamente en el HTML.
+    Filemoon usa packed JS → usar microservicio Playwright.
     """
-    r = await _fetch(client, url, headers={"Referer": "https://filemoon.sx"})
-    html = r.text
-
-    # Buscar m3u8 directo (a veces aparece sin obfuscación)
-    match = _first(r'["\']?(https?://[^"\']+\.m3u8[^"\']*)["\']?', html)
-    if match:
-        return {"url": match, "provider": "filemoon", "type": "hls"}
-
-    # Buscar en el bloque eval(function(p,a,c,k,e,d)
-    packed = _first(r"(eval\(function\(p,a,c,k,e,d\).*?)</script>", html, flags=re.DOTALL)
-    if packed:
-        unpacked = _unpack_js(packed)
-        match = _first(r'["\']?(https?://[^"\']+\.m3u8[^"\']*)["\']?', unpacked)
-        if match:
-            return {"url": match, "provider": "filemoon", "type": "hls"}
-
-    raise ValueError("Filemoon: no se encontró fuente de video")
+    raise _PlaywrightRequired("filemoon")
 
 
 async def _extract_mp4upload(client: httpx.AsyncClient, url: str) -> dict:
@@ -478,6 +454,40 @@ def _unpack_js(packed: str) -> str:
         return packed
 
 
+# ─────────────────────────── Playwright service call ────────────────────────
+
+async def _call_playwright_service(url: str, provider: str) -> dict:
+    """Llama al microservicio Playwright para extraer video."""
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            response = await client.post(
+                f"{PLAYWRIGHT_SERVICE_URL}/extract",
+                json={"url": url},
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            if not data.get("success"):
+                raise ValueError(f"{provider}: microservicio falló — {data.get('error', 'unknown')}")
+
+            return {
+                "url": data["url"],
+                "provider": data.get("provider", provider),
+                "type": data.get("type", "mp4"),
+            }
+    except httpx.ConnectError:
+        raise ValueError(f"{provider}: microservicio Playwright no disponible en {PLAYWRIGHT_SERVICE_URL}")
+    except Exception as e:
+        raise ValueError(f"{provider}: error llamando microservicio — {str(e)}")
+
+
+# ─────────────────────────── Mega.nz extractor ──────────────────────────────
+
+async def _extract_mega(client: httpx.AsyncClient, url: str) -> dict:
+    """Mega.nz usa encriptación → usar microservicio Playwright."""
+    raise _PlaywrightRequired("mega")
+
+
 # ─────────────────────────── router principal ────────────────────────────────
 
 def _detect_provider(url: str) -> Optional[str]:
@@ -501,6 +511,7 @@ def _detect_provider(url: str) -> Optional[str]:
         (["upstream.to"], "upstream"),
         (["voe.sx", "voe.to"], "voe"),
         (["lulustream.com", "luluvdo.com", "bestlulustream.com"], "lulustream"),
+        (["mega.nz", "mega.co.nz"], "mega"),
     ]
 
     for domains, provider in rules:
@@ -527,6 +538,7 @@ _EXTRACTORS = {
     "upstream":    _extract_upstream,
     "voe":         _extract_voe,
     "lulustream":  _extract_lulustream,
+    "mega":        _extract_mega,
 }
 
 
@@ -584,6 +596,14 @@ class VideoExtractorService:
                 result = await extractor(client, url)
                 logger.info(
                     f"[VideoExtractor] OK {provider} → {result['type']}: "
+                    f"{result['url'][:80]}..."
+                )
+                return result
+            except _PlaywrightRequired:
+                logger.info(f"[VideoExtractor] {provider} requiere Playwright, llamando microservicio...")
+                result = await _call_playwright_service(url, provider)
+                logger.info(
+                    f"[VideoExtractor] OK (Playwright) {provider} → {result['type']}: "
                     f"{result['url'][:80]}..."
                 )
                 return result
