@@ -20,7 +20,7 @@ FAKE_URL_PATTERNS = [
     "player/jw", "jwplayer.", "vast.js", "tracking.",
     "ssp.yahoo", "doubleclick", "googlesyndication",
     "playnixes.com/player", "player/jw", "rtmark.net",
-    "tiktokcdn.com/ad-site",
+    "tiktokcdn.com/ad-site", "medixiru.com",
 ]
 
 # Headers requeridos por provider
@@ -223,10 +223,14 @@ async def _extract_with_playwright(
                     for (const p of players) {
                         if (window[p] && window[p].config) {
                             const config = window[p].config;
-                            if (config.file) return config.file;
+                            if (config.file && (config.file.includes('.m3u8') || config.file.includes('.mp4'))) {
+                                return config.file;
+                            }
                             if (config.sources) {
                                 for (const s of config.sources) {
-                                    if (s.src) return s.src;
+                                    if (s.src && (s.src.includes('.m3u8') || s.src.includes('.mp4'))) {
+                                        return s.src;
+                                    }
                                 }
                             }
                         }
@@ -247,12 +251,17 @@ async def _extract_with_playwright(
             """)
 
             if video_url:
-                logger.info(f"[{provider}] URL encontrada via JS: {video_url[:80]}")
-                return {
-                    "url": video_url,
-                    "provider": provider,
-                    "type": "hls" if ".m3u8" in video_url else "mp4",
-                }
+                # Verificar que la URL tenga extensión de video
+                if not any(ext in video_url for ext in [".m3u8", ".mp4", ".webm"]):
+                    logger.warning(f"[{provider}] JS devolvió URL sin extensión de video: {video_url}")
+                    video_url = None
+                else:
+                    logger.info(f"[{provider}] URL encontrada via JS: {video_url[:80]}")
+                    return {
+                        "url": video_url,
+                        "provider": provider,
+                        "type": "hls" if ".m3u8" in video_url else "mp4",
+                    }
 
             raise ValueError(f"{provider}: no se encontró fuente de video en la página")
 
