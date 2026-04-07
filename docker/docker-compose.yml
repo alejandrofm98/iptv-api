@@ -115,8 +115,8 @@ services:
   # ============================================
   video-extractor:
     build:
-      context: ..
-      dockerfile: video-extractor-service/Dockerfile
+      context: ../video-extractor-service
+      dockerfile: Dockerfile
     container_name: video-extractor
     restart: unless-stopped
     ports:
