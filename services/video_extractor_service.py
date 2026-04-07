@@ -223,6 +223,10 @@ async def _extract_streamwish(client: httpx.AsyncClient, url: str) -> dict:
     raise _PlaywrightRequired("streamwish")
 
 
+async def _extract_filelions(client: httpx.AsyncClient, url: str) -> dict:
+    return await _extract_fembed_like(client, url, "filelions")
+
+
 async def _extract_filemoon(client: httpx.AsyncClient, url: str) -> dict:
     """
     Filemoon: packed JS → usar microservicio Playwright.
