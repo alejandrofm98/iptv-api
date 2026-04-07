@@ -27,7 +27,7 @@ def _first(pattern: str, text: str, group: int = 1, flags: int = 0) -> Optional[
 async def _extract_with_playwright(
     url: str,
     provider: str,
-    wait_ms: int = 5000,
+    wait_ms: int = 15000,
     extra_wait_for: Optional[str] = None,
 ) -> dict:
     """
@@ -43,6 +43,7 @@ async def _extract_with_playwright(
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
+                "--disable-blink-features=AutomationControlled",
             ],
         )
         context = await browser.new_context(
@@ -68,7 +69,7 @@ async def _extract_with_playwright(
 
             # Navegar a la página
             logger.info(f"[{provider}] Cargando {url}")
-            await page.goto(url, wait_until="domcontentloaded", timeout=DEFAULT_TIMEOUT)
+            await page.goto(url, wait_until="networkidle", timeout=DEFAULT_TIMEOUT)
 
             # Esperar a que el contenido se renderice
             if extra_wait_for:
@@ -78,6 +79,31 @@ async def _extract_with_playwright(
                     pass  # Timeout, continuar igual
 
             await page.wait_for_timeout(wait_ms)
+
+            # Estrategia 0: Buscar iframes con el player
+            frames = page.frames
+            for frame in frames:
+                try:
+                    frame_url = frame.url
+                    if "embed" in frame_url or "player" in frame_url:
+                        logger.info(f"[{provider}] Procesando frame: {frame_url[:60]}")
+                        # Intentar extraer del frame
+                        frame_content = await frame.content()
+                        for pattern in [
+                            r'''['"]([^'"]+\.m3u8[^'"]*)['"]''',
+                            r'''['"]([^'"]+\.mp4[^'"]*)['"]''',
+                        ]:
+                            matches = re.findall(pattern, frame_content)
+                            for m in matches:
+                                if any(ext in m for ext in [".m3u8", ".mp4"]) and not m.startswith("data:"):
+                                    logger.info(f"[{provider}] URL encontrada en iframe: {m[:80]}")
+                                    return {
+                                        "url": m,
+                                        "provider": provider,
+                                        "type": "hls" if ".m3u8" in m else "mp4",
+                                    }
+                except Exception:
+                    continue
 
             # Estrategia 1: Buscar URLs capturadas en respuestas de red
             if video_urls:
@@ -98,11 +124,12 @@ async def _extract_with_playwright(
                 r'''src\s*[:=]\s*['"]([^'"]+)['"]''',
                 r'''file\s*[:=]\s*['"]([^'"]+)['"]''',
                 r'''source\s+src\s*=\s*['"]([^'"]+)['"]''',
+                r'''iframe[^>]+src=["']([^"']+)["']''',
             ]:
                 matches = re.findall(pattern, page_content)
                 video_matches = [
                     m for m in matches
-                    if any(ext in m for ext in [".m3u8", ".mp4", ".webm"])
+                    if any(ext in m for ext in [".m3u8", ".mp4", ".webm", "embed", "player"])
                     and not m.startswith("data:")
                 ]
                 if video_matches:
@@ -120,15 +147,41 @@ async def _extract_with_playwright(
                     // Buscar en elementos <video> y <source>
                     const video = document.querySelector('video');
                     if (video && video.src) return video.src;
-                    const source = document.querySelector('source');
-                    if (source && source.src) return source.src;
+                    const sources = document.querySelectorAll('source');
+                    for (const s of sources) {
+                        if (s.src && (s.src.includes('.m3u8') || s.src.includes('.mp4'))) {
+                            return s.src;
+                        }
+                    }
+
+                    // Buscar en iframes
+                    const iframes = document.querySelectorAll('iframe');
+                    for (const iframe of iframes) {
+                        if (iframe.src && (iframe.src.includes('.m3u8') || iframe.src.includes('.mp4'))) {
+                            return iframe.src;
+                        }
+                    }
 
                     // Buscar en variables globales comunes
-                    const vars = ['file', 'source', 'videoUrl', 'src', 'url'];
+                    const vars = ['file', 'source', 'videoUrl', 'src', 'url', 'video_src', 'stream_url'];
                     for (const v of vars) {
                         if (window[v] && typeof window[v] === 'string' &&
                             (window[v].includes('.m3u8') || window[v].includes('.mp4'))) {
                             return window[v];
+                        }
+                    }
+
+                    // Buscar en configuraciones de players (jwplayer, plyr, etc)
+                    const players = ['jwplayer', 'plyr', 'videojs', 'flowplayer'];
+                    for (const p of players) {
+                        if (window[p] && window[p].config) {
+                            const config = window[p].config;
+                            if (config.file) return config.file;
+                            if (config.sources) {
+                                for (const s of config.sources) {
+                                    if (s.src) return s.src;
+                                }
+                            }
                         }
                     }
 
@@ -180,7 +233,7 @@ async def extract_streamwish(url: str) -> dict:
     return await _extract_with_playwright(
         url,
         provider="streamwish",
-        wait_ms=8000,
+        wait_ms=15000,
     )
 
 
