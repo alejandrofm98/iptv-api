@@ -1425,6 +1425,7 @@ async def extract_video_get(
             "type": result["type"],
             "url": result["url"],
             "sources": result.get("sources"),
+            "required_headers": result.get("required_headers"),
             # None si el proveedor no da múltiples calidades
         }
     except ValueError as e:

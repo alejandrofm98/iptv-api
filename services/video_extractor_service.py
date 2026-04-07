@@ -197,11 +197,24 @@ async def _extract_netu(client: httpx.AsyncClient, url: str) -> dict:
     # Buscar src con m3u8 en el HTML del player
     match = _first(r'''src\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]''', html)
     if match:
-        return {"url": match, "provider": "netu", "type": "hls"}
+        return {
+            "url": match,
+            "provider": "netu",
+            "type": "hls",
+            "required_headers": {
+                "Origin": "https://hqq.tv",
+                "Referer": "https://hqq.tv"
+            }
+        }
 
     # Fallback: intentar API Fembed-like
     try:
-        return await _extract_fembed_like(client, url, "netu")
+        result = await _extract_fembed_like(client, url, "netu")
+        result["required_headers"] = {
+            "Origin": "https://hqq.tv",
+            "Referer": "https://hqq.tv"
+        }
+        return result
     except Exception:
         pass
 
