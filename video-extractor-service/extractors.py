@@ -14,15 +14,51 @@ logger = logging.getLogger("playwright-extractor")
 
 DEFAULT_TIMEOUT = 15000  # 15 segundos
 
+# Patrones de URLs falsas (ads, tracking, etc)
+FAKE_URL_PATTERNS = [
+    "vast.", "vpaid", "/ad/", "-ad-", "ads.", "advertising",
+    "player/jw", "jwplayer.", "vast.js", "tracking.",
+    "ssp.yahoo", "doubleclick", "googlesyndication",
+    "playNixes", "playnixes.com/player", "player/jw",
+]
 
-# ─────────────────────────── helpers ────────────────────────────────────────
+# Headers requeridos por provider
+PROVIDER_HEADERS = {
+    "streamwish": {
+        "Origin": "https://streamwish.to",
+        "Referer": "https://streamwish.to/",
+    },
+    "filemoon": {
+        "Origin": "https://filemoon.sx",
+        "Referer": "https://filemoon.sx/",
+    },
+}
 
-def _first(pattern: str, text: str, group: int = 1, flags: int = 0) -> Optional[str]:
-    m = re.search(pattern, text, flags)
-    return m.group(group) if m else None
+
+def _is_fake_url(url: str) -> bool:
+    """Detecta si una URL es de advertising/fake y no es un stream real."""
+    url_lower = url.lower()
+    return any(pattern in url_lower for pattern in FAKE_URL_PATTERNS)
 
 
-# ─────────────────────────── Playwright extractors ──────────────────────────
+def _select_best_video_url(urls: list[str]) -> str:
+    """Selecciona la mejor URL de video de una lista, descartando falsas."""
+    # Filtrar URLs falsas
+    real_urls = [u for u in urls if not _is_fake_url(u)]
+
+    # Preferir m3u8 sobre mp4 sobre ts
+    m3u8_urls = [u for u in real_urls if ".m3u8" in u]
+    mp4_urls = [u for u in real_urls if ".mp4" in u]
+
+    if m3u8_urls:
+        return m3u8_urls[0]
+    if mp4_urls:
+        return mp4_urls[0]
+    # Si no hay URLs reales, devolver la primera (fallback)
+    if real_urls:
+        return real_urls[0]
+    return urls[0] if urls else ""
+
 
 async def _extract_with_playwright(
     url: str,
@@ -213,37 +249,28 @@ async def _extract_with_playwright(
             await browser.close()
 
 
-def _select_best_video_url(urls: list[str]) -> str:
-    """Selecciona la mejor URL de video de una lista."""
-    # Preferir m3u8 sobre mp4 sobre ts
-    m3u8_urls = [u for u in urls if ".m3u8" in u]
-    mp4_urls = [u for u in urls if ".mp4" in u]
-
-    if m3u8_urls:
-        return m3u8_urls[0]
-    if mp4_urls:
-        return mp4_urls[0]
-    return urls[0]
-
-
 # ─────────────────────────── extractores específicos ────────────────────────
 
 async def extract_streamwish(url: str) -> dict:
     """Extrae video de StreamWish (SPA, requiere JS)."""
-    return await _extract_with_playwright(
+    result = await _extract_with_playwright(
         url,
         provider="streamwish",
         wait_ms=15000,
     )
+    result["required_headers"] = PROVIDER_HEADERS.get("streamwish", {})
+    return result
 
 
 async def extract_filemoon(url: str) -> dict:
     """Extrae video de Filemoon (packed JS)."""
-    return await _extract_with_playwright(
+    result = await _extract_with_playwright(
         url,
         provider="filemoon",
         wait_ms=6000,
     )
+    result["required_headers"] = PROVIDER_HEADERS.get("filemoon", {})
+    return result
 
 
 async def extract_generic(url: str) -> dict:
