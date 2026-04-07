@@ -204,40 +204,11 @@ async def extract_generic(url: str) -> dict:
     )
 
 
-# ─────────────────────────── Mega.nz extractor ──────────────────────────────
-
-async def extract_mega(url: str) -> dict:
-    """
-    Extrae video de Mega.nz usando la librería mega.py.
-    Mega usa encriptación AES, se necesita la librería para decodificar.
-    """
-    from mega import Mega
-
-    mega = Mega()
-    m = mega.login()
-
-    try:
-        file = m.get_url(url)
-        if file:
-            logger.info(f"[mega] URL extraída: {file[:80]}")
-            return {
-                "url": file,
-                "provider": "mega",
-                "type": "mp4",
-            }
-    except Exception as e:
-        logger.error(f"[mega] Error: {e}")
-        raise ValueError(f"Mega: error al extraer — {str(e)}")
-
-    raise ValueError("Mega: no se pudo extraer la URL del video")
-
-
 # ─────────────────────────── router ─────────────────────────────────────────
 
 EXTRACTORS = {
     "streamwish": extract_streamwish,
     "filemoon": extract_filemoon,
-    "mega": extract_mega,
 }
 
 # Providers que requieren Playwright (no se pueden extraer con HTTP)
@@ -251,7 +222,6 @@ def detect_provider(url: str) -> Optional[str]:
     rules = [
         (["streamwish.com", "streamwish.to", "awish.one", "strwish.com", "sfastwish.com"], "streamwish"),
         (["filemoon.sx", "filemoon.to", "filemoon.in", "moonplayer.to"], "filemoon"),
-        (["mega.nz", "mega.co.nz"], "mega"),
     ]
 
     for domains, provider in rules:

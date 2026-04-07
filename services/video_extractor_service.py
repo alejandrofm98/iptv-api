@@ -485,13 +485,6 @@ async def _call_playwright_service(url: str, provider: str) -> dict:
         raise ValueError(f"{provider}: error llamando microservicio — {str(e)}")
 
 
-# ─────────────────────────── Mega.nz extractor ──────────────────────────────
-
-async def _extract_mega(client: httpx.AsyncClient, url: str) -> dict:
-    """Mega.nz usa encriptación → usar microservicio Playwright."""
-    raise _PlaywrightRequired("mega")
-
-
 # ─────────────────────────── router principal ────────────────────────────────
 
 def _detect_provider(url: str) -> Optional[str]:
@@ -515,7 +508,6 @@ def _detect_provider(url: str) -> Optional[str]:
         (["upstream.to"], "upstream"),
         (["voe.sx", "voe.to"], "voe"),
         (["lulustream.com", "luluvdo.com", "bestlulustream.com"], "lulustream"),
-        (["mega.nz", "mega.co.nz"], "mega"),
     ]
 
     for domains, provider in rules:
@@ -542,7 +534,6 @@ _EXTRACTORS = {
     "upstream":    _extract_upstream,
     "voe":         _extract_voe,
     "lulustream":  _extract_lulustream,
-    "mega":        _extract_mega,
 }
 
 
