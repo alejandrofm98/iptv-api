@@ -28,9 +28,8 @@ import logging
 import asyncio
 import os
 from typing import Optional
-from urllib.parse import urlparse, urljoin, unquote
+from urllib.parse import urlparse
 import json
-import base64
 
 import httpx
 
@@ -52,6 +51,22 @@ TIMEOUT = httpx.Timeout(20.0)
 
 # URL del microservicio Playwright (configurable por variable de entorno)
 PLAYWRIGHT_SERVICE_URL = os.environ.get("VIDEO_EXTRACTOR_URL", "http://video-extractor:8001")
+
+# Patrones de URLs falsas (ads, tracking, etc)
+# NOTA: hgplaycdn.com fue eliminado — es el CDN real del player de StreamWish
+FAKE_URL_PATTERNS = [
+    "vast.", "vpaid", "/ad/", "-ad-", "ads.", "advertising",
+    "player/jw", "jwplayer.", "vast.js", "tracking.",
+    "ssp.yahoo", "doubleclick", "googlesyndication",
+    "playnixes.com/player", "rtmark.net", "tiktokcdn.com/ad",
+    "medixiru.com", "ad-site", "huntrexus.com",
+]
+
+
+def _is_fake_url(url: str) -> bool:
+    """Detecta si una URL es de advertising/fake y no es un stream real."""
+    url_lower = url.lower()
+    return any(pattern in url_lower for pattern in FAKE_URL_PATTERNS)
 
 
 class _PlaywrightRequired(Exception):
@@ -79,29 +94,6 @@ async def _fetch(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Respons
 async def _post(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
     headers = {**DEFAULT_HEADERS, **kwargs.pop("headers", {})}
     return await client.post(url, headers=headers, timeout=TIMEOUT, follow_redirects=True, **kwargs)
-
-
-# ─────────────────────────── extractores individuales ───────────────────────
-
-async def _extract_streamtape(client: httpx.AsyncClient, url: str) -> dict:
-    """
-    Streamtape: la URL directa está en <div id="robotlink"> (display:none).
-    """
-    r = await _fetch(client, url, headers={"Referer": "https://streamtape.com"})
-    html = r.text
-
-    match = _first(r'<div id="robotlink"[^>]*>(/streamtape\.com/get_video\?[^<]+)', html)
-    if match:
-        direct = f"https:{match}" if match.startswith("//") else f"https://{match.lstrip('/')}"
-        return {"url": direct, "provider": "streamtape", "type": "mp4"}
-
-    # Fallback: buscar get_video en cualquier parte del HTML
-    match = _first(r"(https?://streamtape\.com/get_video\?[^\"' >]+)", html)
-    if match:
-        return {"url": match, "provider": "streamtape", "type": "mp4"}
-
-    raise ValueError("Streamtape: no se encontró la URL de descarga")
-
 
 async def _extract_stape(client: httpx.AsyncClient, url: str) -> dict:
     """Stape es una variante de Streamtape con dominio propio."""
@@ -229,11 +221,188 @@ async def _extract_vidhide(client: httpx.AsyncClient, url: str) -> dict:
     return await _extract_fembed_like(client, url, "vidhide")
 
 
+def _unpack_js(packed: str) -> str:
+    """
+    Desempaquetador para eval(function(p,a,c,k,e,d){...}) y variantes modernas.
+    Cubre: e,d / e,f / comillas simples y dobles / k como .split() o array literal.
+    """
+    try:
+        # Variante 1: k como string con .split('|') — la más común
+        m = re.search(
+            r"""eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e\s*,\s*[df]\s*\)"""
+            r"""\s*\{.+?\}\s*\(\s*['"](.+?)['"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*"""
+            r"""['"](.+?)['"]\s*\.split\s*\(\s*['"]\|['"]\s*\)""",
+            packed,
+            re.DOTALL
+        )
+
+        # Variante 2: k como array literal ['a','b',...]
+        if not m:
+            m2 = re.search(
+                r"""eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e\s*,\s*[df]\s*\)"""
+                r"""\s*\{.+?\}\s*\(\s*['"](.+?)['"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*"""
+                r"""\[(.+?)\]\s*[,\)]""",
+                packed,
+                re.DOTALL
+            )
+            if m2:
+                p_val = m2.group(1)
+                a_val = int(m2.group(2))
+                # Parsear array JS de strings
+                k_raw = m2.group(4)
+                k_val = re.findall(r"""['"]([^'"]*?)['"]""", k_raw)
+
+                def replace_match(mo, k=k_val, a=a_val):
+                    try:
+                        idx = int(mo.group(0), a) if a != 10 else int(mo.group(0))
+                        word = k[idx] if idx < len(k) else ""
+                        return word if word else mo.group(0)
+                    except Exception:
+                        return mo.group(0)
+
+                return re.sub(r"\b\w+\b", replace_match, p_val)
+
+        if not m:
+            return packed
+
+        p_val = m.group(1)
+        a_val = int(m.group(2))
+        k_val = m.group(4).split("|")
+
+        def replace_match(mo, k=k_val, a=a_val):
+            try:
+                idx = int(mo.group(0), a) if a != 10 else int(mo.group(0))
+                word = k[idx] if idx < len(k) else ""
+                return word if word else mo.group(0)
+            except Exception:
+                return mo.group(0)
+
+        return re.sub(r"\b\w+\b", replace_match, p_val)
+
+    except Exception:
+        return packed
+
+
 async def _extract_streamwish(client: httpx.AsyncClient, url: str) -> dict:
-    """
-    StreamWish: requiere JavaScript → usar microservicio Playwright.
-    """
+    r = await _fetch(client, url, headers={"Referer": "https://streamwish.to/"})
+    html = r.text
+
+    # StreamWish redirige a niramirus.com u otros dominios CDN
+
+    # Paso 1: desempaquetar si hay packed JS
+    working_html = html
+    if "eval(function(p,a,c,k" in html or "eval(function(p,a,c,k,e,d" in html:
+        unpacked = _unpack_js(html)
+        working_html = unpacked + "\n" + html
+
+    # Patrones en orden de prioridad
+    # Prioridad 1: URLs de stream de StreamWish/niramirus (/stream/.../master.m3u8)
+    stream_pattern = r'https?://[^"\'\\s<>]+/stream/[^"\'\\s<>]+/master\.m3u8[^"\'\\s<>]*'
+    match = _first(stream_pattern, working_html)
+    if match:
+        return {"url": match, "provider": "streamwish", "type": "hls"}
+
+    # Prioridad 2: jwplayer sources array
+    patterns = [
+        r'sources\s*:\s*\[\s*\{[^}]*?file\s*:\s*"(https?://[^"]+\.m3u8[^"]*)"',
+        r"sources\s*:\s*\[\s*\{[^}]*?file\s*:\s*'(https?://[^']+\.m3u8[^']*)'",
+        r'file\s*:\s*"(https?://[^"]+\.m3u8[^"]*)"',
+        r"file\s*:\s*'(https?://[^']+\.m3u8[^']*)'",
+        r'source\s+src="(https?://[^"]+\.m3u8[^"]*)"',
+        r'"(https?://[^"]+/master\.m3u8[^"]*)"',
+        r"'(https?://[^']+/master\.m3u8[^']*)'",
+        r'"(https?://[^"]+\.m3u8[^"]*)"',
+        r'file\s*:\s*"(https?://[^"]+\.mp4[^"]*)"',
+    ]
+
+    for pattern in patterns:
+        match = _first(pattern, working_html)
+        if match and not _is_fake_url(match):
+            stream_type = "hls" if ".m3u8" in match else "mp4"
+            return {"url": match, "provider": "streamwish", "type": stream_type}
+
+    # Intento API Fembed-like (FileLions / variantes compatibles)
+    try:
+        result = await _extract_fembed_like(client, url, "streamwish")
+        return result
+    except Exception:
+        pass
+
     raise _PlaywrightRequired("streamwish")
+
+
+# ─────────────────────────── Streamtape corregido ────────────────────────────
+
+async def _extract_streamtape(client: httpx.AsyncClient, url: str) -> dict:
+    r = await _fetch(client, url, headers={"Referer": "https://streamtape.com"})
+    html = r.text
+
+    # Streamtape construye la URL en 2 sentencias JS separadas:
+    #   document.getElementById('robotlink').innerHTML = '//tapecontent.net/...'
+    #   document.getElementById('robotlink').innerHTML + 'SuffixXXX'
+    #
+    # El SUFIJO está en una expresión de concatenación (sin asignación),
+    # normalmente en la línea siguiente o en una función de token.
+
+    # Captura part1: la asignación innerHTML = '...'
+    part1 = _first(
+        r"""getElementById\(['"]robotlink['"]\)\.innerHTML\s*=\s*['"]([^'"]+)['"]""",
+        html
+    )
+
+    # Captura part2: la concatenación  innerHTML + 'XXXX'
+    # Puede estar en la misma línea o en línea separada, con o sin espacios
+    part2 = _first(
+        r"""getElementById\(['"]robotlink['"]\)\.innerHTML\s*\+\s*['"]([^'"]+)['"]""",
+        html
+    )
+
+    def _build_url(raw: str) -> str:
+        raw = raw.strip()
+        if raw.startswith("//"):
+            return "https:" + raw
+        if raw.startswith("/"):
+            return "https://streamtape.com" + raw
+        if not raw.startswith("http"):
+            return "https://" + raw
+        return raw
+
+    if part1 and part2:
+        return {"url": _build_url(part1 + part2), "provider": "streamtape", "type": "mp4"}
+
+    if part1:
+        return {"url": _build_url(part1), "provider": "streamtape", "type": "mp4"}
+
+    # Fallback 1: get_video con 4 grupos
+    m = re.search(
+        r"get_video\?id=([^&\"'\s<>]+)&expires=([^&\"'\s<>]+)&ip=([^&\"'\s<>]+)&token=([^\"'\s&<>]+)",
+        html
+    )
+    if m:
+        direct = (
+            f"https://streamtape.com/get_video"
+            f"?id={m.group(1)}&expires={m.group(2)}"
+            f"&ip={m.group(3)}&token={m.group(4)}"
+        )
+        return {"url": direct, "provider": "streamtape", "type": "mp4"}
+
+    # Fallback 2: get_video URL completa
+    m2 = re.search(
+        r"(https?://(?:www\.)?(?:streamtape|tapecontent)\.[a-z]+/get_video\?[^\"' <>\n]+)",
+        html
+    )
+    if m2:
+        return {"url": m2.group(1), "provider": "streamtape", "type": "mp4"}
+
+    # Fallback 3: cualquier URL de tapecontent.net en el HTML
+    m3 = re.search(
+        r"(https?://[a-z0-9]+\.tapecontent\.net/[^\"' <>\n]+)",
+        html
+    )
+    if m3:
+        return {"url": m3.group(1), "provider": "streamtape", "type": "mp4"}
+
+    raise ValueError("Streamtape: no se encontró la URL de descarga")
 
 
 async def _extract_filelions(client: httpx.AsyncClient, url: str) -> dict:
@@ -242,7 +411,7 @@ async def _extract_filelions(client: httpx.AsyncClient, url: str) -> dict:
 
 async def _extract_filemoon(client: httpx.AsyncClient, url: str) -> dict:
     """
-    Filemoon: packed JS → usar microservicio Playwright.
+    Filemoon usa packed JS → usar microservicio Playwright.
     """
     raise _PlaywrightRequired("filemoon")
 
@@ -287,13 +456,6 @@ async def _extract_doodstream(client: httpx.AsyncClient, url: str) -> dict:
     direct = f"{token_base}{rand_str}?token={rand_str}&expiry={timestamp}"
 
     return {"url": direct, "provider": "doodstream", "type": "mp4"}
-
-
-async def _extract_filemoon(client: httpx.AsyncClient, url: str) -> dict:
-    """
-    Filemoon usa packed JS → usar microservicio Playwright.
-    """
-    raise _PlaywrightRequired("filemoon")
 
 
 async def _extract_mp4upload(client: httpx.AsyncClient, url: str) -> dict:
@@ -430,47 +592,6 @@ async def _extract_lulustream(client: httpx.AsyncClient, url: str) -> dict:
     raise ValueError("Lulustream: no se encontró fuente de video")
 
 
-# ─────────────────────────── desempaquetador JS básico ─────────────────────
-
-def _unpack_js(packed: str) -> str:
-    """
-    Desempaquetador mínimo para eval(function(p,a,c,k,e,d){...}).
-    No cubre todos los casos pero sí los más comunes en proveedores de video.
-    """
-    try:
-        # Extraer los parámetros: p, a, c, k
-        m = re.search(
-            r"eval\(function\(p,a,c,k,e,d\)\{.*?\}\('(.+?)',(\d+),(\d+),'(.+?)'\.split",
-            packed,
-            re.DOTALL
-        )
-        if not m:
-            return packed
-
-        p_val = m.group(1)
-        a_val = int(m.group(2))
-        # c_val = int(m.group(3))  # no necesario para el decode básico
-        k_val = m.group(4).split("|")
-
-        def base_decode(n: int, base: int) -> str:
-            chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-            result = ""
-            while n > 0:
-                result = chars[n % base] + result
-                n //= base
-            return result or "0"
-
-        def replace_match(mo):
-            idx = int(mo.group(0), a_val) if a_val != 10 else int(mo.group(0))
-            word = k_val[idx] if idx < len(k_val) else ""
-            return word if word else mo.group(0)
-
-        result = re.sub(r"\b\w+\b", replace_match, p_val)
-        return result
-    except Exception:
-        return packed
-
-
 # ─────────────────────────── Playwright service call ────────────────────────
 
 async def _call_playwright_service(url: str, provider: str) -> dict:
@@ -510,7 +631,7 @@ def _detect_provider(url: str) -> Optional[str]:
         (["netu.ac", "netu.io", "hqq.tv", "hqq.ac"], "netu"),
         (["streamhide.to", "streamhide.com", "guccihide.com", "ridehide.com"], "streamhide"),
         (["vidhide.com", "vidhide.to", "vid-guard.com"], "vidhide"),
-        (["streamwish.com", "streamwish.to", "awish.one", "strwish.com", "sfastwish.com"], "streamwish"),
+        (["streamwish.com", "streamwish.to", "awish.one", "strwish.com", "sfastwish.com", "niramirus.com"], "streamwish"),
         (["filelions.com", "filelions.to", "filelions.live", "alions.pro"], "filelions"),
         (["vidmoly.to", "vidmoly.com"], "vidmoly"),
         (["dood.to", "dood.la", "doodstream.com", "dooood.com", "ds2play.com", "doods.pro"], "doodstream"),

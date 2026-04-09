@@ -12,3 +12,4 @@ python-jose
 passlib
 requests==2.32.3
 yt-dlp
+curl_cffi
