@@ -360,7 +360,7 @@ class PostgresService:
             data_sql = f"""
                 SELECT DISTINCT ON (COALESCE(NULLIF(nombre_normalizado, ''), nombre)) * FROM {table}
                 {where_clause}
-                ORDER BY COALESCE(NULLIF(nombre_normalizado, ''), nombre) ASC, {order_by} DESC NULLS LAST
+                ORDER BY {order_by} DESC NULLS LAST
                 LIMIT %s OFFSET %s
             """
         else:
