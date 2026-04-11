@@ -1172,6 +1172,47 @@ async def delete_watch_progress(
     return {"deleted": True}
 
 
+@app.post("/api/watch-progress/{content_id}/mark-watched", tags=["Watch Progress"])
+async def mark_watched(
+    content_id: str,
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+):
+    """Marca un contenido como visto. Requiere Bearer Token."""
+    result = wp_svc.set_is_watched(auth.user_id, content_id, True)
+    return {"content_id": content_id, "is_watched": True, "result": result}
+
+
+@app.post("/api/watch-progress/{content_id}/mark-unwatched", tags=["Watch Progress"])
+async def mark_unwatched(
+    content_id: str,
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+):
+    """Marca un contenido como no visto. Requiere Bearer Token."""
+    result = wp_svc.set_is_watched(auth.user_id, content_id, False)
+    return {"content_id": content_id, "is_watched": False, "result": result}
+
+
+@app.get("/api/watch-progress/{content_id}/status", tags=["Watch Progress"])
+async def get_watch_status(
+    content_id: str,
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+):
+    """Obtiene el estado de visto de un contenido. Requiere Bearer Token."""
+    progress = wp_svc.get_progress(auth.user_id, content_id)
+    if not progress:
+        return {"content_id": content_id, "is_watched": False, "progress_percent": 0}
+    return {
+        "content_id": content_id,
+        "is_watched": progress.get("is_watched", False),
+        "progress_percent": progress.get("progress_percent", 0),
+    }
+
+
+# ============================================
+# API: Playlist M3U
 # ============================================
 # API: Playlist M3U
 # ============================================

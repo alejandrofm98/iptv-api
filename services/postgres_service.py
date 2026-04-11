@@ -521,9 +521,17 @@ class PostgresService:
 
     def upsert_watch_progress(self, user_id: str, content_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Inserta o actualiza watch_progress"""
+        position_ms = data.get("position_ms", 0)
+        duration_ms = data.get("duration_ms", 0)
+        
+        # Auto-mark como visto si >= 95%
+        is_watched = data.get("is_watched", False)
+        if not is_watched and duration_ms > 0 and position_ms >= duration_ms * 95 / 100:
+            is_watched = True
+        
         sql = """
-            INSERT INTO watch_progress (user_id, content_id, content_type, position_ms, duration_ms, series_name, season_number, episode_number, title, image_url, last_watched_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO watch_progress (user_id, content_id, content_type, position_ms, duration_ms, series_name, season_number, episode_number, title, image_url, last_watched_at, is_watched)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id, content_id)
             DO UPDATE SET
                 position_ms = EXCLUDED.position_ms,
@@ -533,22 +541,54 @@ class PostgresService:
                 episode_number = EXCLUDED.episode_number,
                 title = EXCLUDED.title,
                 image_url = EXCLUDED.image_url,
-                last_watched_at = EXCLUDED.last_watched_at
+                last_watched_at = EXCLUDED.last_watched_at,
+                is_watched = EXCLUDED.is_watched
             RETURNING *
         """
         return self.execute_insert(sql, (
             user_id,
             content_id,
             data.get("content_type"),
-            data.get("position_ms", 0),
-            data.get("duration_ms", 0),
+            position_ms,
+            duration_ms,
             data.get("series_name"),
             data.get("season_number"),
             data.get("episode_number"),
             data.get("title", ""),
             data.get("image_url", ""),
-            data.get("last_watched_at")
+            data.get("last_watched_at"),
+            is_watched
         ))
+
+    def update_is_watched(self, user_id: str, content_id: str, is_watched: bool) -> bool:
+        """Marca o desmarca como visto un contenido"""
+        sql = """
+            UPDATE watch_progress 
+            SET is_watched = %s, last_watched_at = NOW()
+            WHERE user_id = %s AND content_id = %s
+            RETURNING is_watched
+        """
+        rows = self.execute_query(sql, (is_watched, user_id, content_id))
+        return rows[0].get("is_watched") if rows else None
+
+    def get_series_last_episode(self, user_id: str, series_name: str) -> Optional[Dict[str, Any]]:
+        """Obtiene el último episodio visto de una serie"""
+        sql = """
+            SELECT * FROM watch_progress
+            WHERE user_id = %s AND series_name = %s AND content_type = 'series'
+            ORDER BY season_number DESC NULLS LAST, episode_number DESC NULLS LAST
+            LIMIT 1
+        """
+        rows = self.execute_query(sql, (user_id, series_name))
+        return rows[0] if rows else None
+
+    def is_series_complete(self, user_id: str, series_name: str) -> bool:
+        """Verifica si la serie está completa (último episodio visto)"""
+        last_ep = self.get_series_last_episode(user_id, series_name)
+        if not last_ep:
+            return False
+        # Si el último episodio tiene is_watched = True, la serie está completa
+        return last_ep.get("is_watched", False)
 
     def delete_watch_progress(self, user_id: str, content_id: str) -> bool:
         """Elimina watch_progress"""

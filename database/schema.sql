@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS watch_progress (
     title VARCHAR(255) NOT NULL DEFAULT '',
     image_url TEXT NOT NULL DEFAULT '',
     last_watched_at TIMESTAMPTZ DEFAULT NOW(),
+    is_watched BOOLEAN NOT NULL DEFAULT FALSE,
     UNIQUE(user_id, content_id)
 );
 

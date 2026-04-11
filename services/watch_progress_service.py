@@ -74,6 +74,23 @@ class WatchProgressService:
             deleted_any = deleted_any or success
         return deleted_any
 
+    def set_is_watched(self, user_id: str, content_id: str, is_watched: bool) -> bool:
+        """Marca o desmarca como visto un contenido."""
+        rows = self._lookup_progress_rows(user_id, content_id)
+        if not rows:
+            canonical = self._canonical_content_id(None, content_id)
+            return self.pg.update_is_watched(user_id, canonical, is_watched) is not None
+        
+        result = False
+        for row in rows:
+            success = self.pg.update_is_watched(user_id, row.get("content_id"), is_watched)
+            result = result or (success is not None)
+        return result
+
+    def is_series_complete(self, user_id: str, series_name: str) -> bool:
+        """Verifica si una serie está completa (último episodio visto)."""
+        return self.pg.is_series_complete(user_id, series_name)
+
     def _normalize_progress_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
         content_type = row.get("content_type")
         lookup_id = self._lookup_id(row.get("content_id"))
@@ -97,6 +114,12 @@ class WatchProgressService:
         else:
             normalized["normalized_title"] = row.get("normalized_title") or row.get("title") or ""
 
+        # Calcular progress_percent e is_watched
+        position = row.get("position_ms", 0) or 0
+        duration = row.get("duration_ms", 0) or 0
+        normalized["progress_percent"] = int((position / duration * 100)) if duration > 0 else 0
+        normalized["is_watched"] = row.get("is_watched", False)
+        
         return normalized
 
     def _normalized_title_for_content(self, content_type: Optional[str], content_row: Dict[str, Any]) -> str:
