@@ -347,6 +347,9 @@ class PostgresService:
         else:
             count_sql = f"SELECT COUNT(*) as total FROM {table} {where_clause}"
 
+        count_result = self.execute_query(count_sql, tuple(params))
+        total = count_result[0]['total'] if count_result else 0
+
         offset = (page - 1) * page_size
         if use_distinct:
             data_sql = f"""
