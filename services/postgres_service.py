@@ -75,6 +75,22 @@ class PostgresService:
             "Configura PG_HOST/PG_USER/PG_PASSWORD"
         )
 
+    def _get_valid_order_by_columns(self, table: str) -> List[str]:
+        """Retorna columnas válidas para ORDER BY por tabla"""
+        common_cols = ['numero', 'nombre', 'nombre_normalizado', 'created_at']
+        table_specific = {
+            'movies': ['year'],
+            'series': ['year'],
+        }
+        cols = common_cols + table_specific.get(table, [])
+        try:
+            sql = f"SELECT column_name FROM information_schema.columns WHERE table_name = %s"
+            results = self.execute_query(sql, (table,))
+            db_cols = [r['column_name'] for r in results]
+            return [c for c in cols if c in db_cols]
+        except Exception:
+            return cols[:1] if cols else ['numero']
+
     @contextmanager
     def get_connection(self):
         """Context manager para obtener conexión del pool"""
@@ -351,11 +367,12 @@ class PostgresService:
         total = count_result[0]['total'] if count_result else 0
 
         offset = (page - 1) * page_size
-        # Quitar DISTINCT ON para ordenación simple por year
+        valid_cols = self._get_valid_order_by_columns(table)
+        order_col = order_by if order_by in valid_cols else valid_cols[0] if valid_cols else 'numero'
         data_sql = f"""
             SELECT * FROM {table}
             {where_clause}
-            ORDER BY year DESC NULLS LAST
+            ORDER BY {order_col} DESC NULLS LAST
             LIMIT %s OFFSET %s
         """
         data_params = tuple([*params, page_size, offset])
