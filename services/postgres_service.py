@@ -312,6 +312,7 @@ class PostgresService:
         page: int,
         page_size: int,
         group: Optional[str] = None,
+        upper_group: Optional[str] = None,
         country: Optional[str] = None,
         search: Optional[str] = None,
         order_by: str = 'year',
@@ -324,6 +325,10 @@ class PostgresService:
         if group:
             filters.append("(grupo_normalizado ILIKE %s OR grupo ILIKE %s)")
             params.extend([f"%{group}%", f"%{group}%"])
+
+        if upper_group:
+            filters.append("UPPER(grupo_normalizado) LIKE %s")
+            params.append(f"%{upper_group}%")
 
         if country:
             filters.append("country = %s")
@@ -690,6 +695,7 @@ class PostgresService:
         page: int,
         page_size: int,
         group: Optional[str] = None,
+        upper_group: Optional[str] = None,
         country: Optional[str] = None,
         search: Optional[str] = None,
         year: Optional[int] = None,
@@ -703,6 +709,10 @@ class PostgresService:
         if group:
             filters.append("(grupo_normalizado ILIKE %s OR grupo ILIKE %s)")
             params.extend([f"%{group}%", f"%{group}%"])
+
+        if upper_group:
+            filters.append("UPPER(grupo_normalizado) LIKE %s")
+            params.append(f"%{upper_group}%")
 
         if country:
             filters.append("country = %s")

@@ -433,13 +433,13 @@ class ContentService:
             )
 
         if content_type == 'movies' and not search:
-            cache_key = self._catalog_cache_key(content_type, page, page_size, group, country)
+            cache_key = self._catalog_cache_key(content_type, page, page_size, group, country, year)
             cached = self._get_cached(cache_key)
             if cached is not None:
                 return self._inject_stream_urls(cached, content_type, username, password)
 
         items, total = self.pg.get_content_items_paginated(
-            table, page, page_size, group, country, search, 'numero', year
+            table, page, page_size, group, None, country, search, 'year', year
         )
 
         parsed_items = [
@@ -462,11 +462,12 @@ class ContentService:
         group: Optional[str] = None,
         country: Optional[str] = None,
         search: Optional[str] = None,
+        year: Optional[int] = None,
         username: str = '',
         password: str = '',
     ) -> Dict[str, Any]:
         use_cache = not search
-        cache_key = self._catalog_cache_key('series', page, page_size, group, country)
+        cache_key = self._catalog_cache_key('series', page, page_size, group, country, year)
 
         if use_cache:
             cached = self._get_cached(cache_key)
@@ -475,7 +476,7 @@ class ContentService:
 
         result = self.pg.get_distinct_series_page(
             page=page, page_size=page_size,
-            group=group, country=country, search=search,
+            group=group, country=country, search=search, year=year,
         )
 
         total = result.get('total', 0) or 0
@@ -579,6 +580,7 @@ class ContentService:
                 group_patterns=[
                     {'title': '2026 ESTRENOS', 'pattern': '', 'year': 2026},
                     {'title': '2025 ESTRENOS', 'pattern': '', 'year': 2025},
+                    {'title': 'PRIME', 'group': 'PRIME', 'country': 'ES'},
                     {'title': 'NETFLIX', 'pattern': 'NETFLIX'},
                     {'title': 'HBO MAX', 'pattern': 'HBO MAX'},
                     {'title': 'DISNEY+', 'pattern': 'DISNEY'},
@@ -588,6 +590,7 @@ class ContentService:
             'series_sections': self.get_grouped_home_sections(
                 content_type='series',
                 group_patterns=[
+                    {'title': 'PRIME', 'group': 'PRIME', 'country': 'ES'},
                     {'title': 'DISNEY+', 'pattern': 'DISNEY'},
                     {'title': 'NETFLIX', 'pattern': 'NETFLIX'},
                     {'title': 'HBO', 'pattern': 'HBO'},
@@ -619,19 +622,28 @@ class ContentService:
 
         for gp in group_patterns:
             group_year = gp.get('year')
+            use_upper_group = 'group' in gp
+            
             if content_type == 'series':
                 result = self.pg.get_distinct_series_page(
                     page=1,
                     page_size=page_size,
-                    group=gp['pattern'],
-                    country=country,
+                    group=gp['pattern'] if not use_upper_group else None,
+                    upper_group=gp.get('group') if use_upper_group else None,
+                    country=gp.get('country') or country,
                     search=None,
                     year=group_year,
                 )
                 items = result.get('items', [])
             else:
                 items, _ = self.pg.get_content_items_paginated(
-                    table, 1, page_size, gp['pattern'], country, None, 'year', group_year
+                    table, 1, page_size,
+                    group=gp['pattern'] if not use_upper_group else None,
+                    upper_group=gp.get('group') if use_upper_group else None,
+                    country=gp.get('country') or country,
+                    search=None,
+                    order_by='year',
+                    year=group_year,
                 )
 
             catalog_items = [self._to_android_catalog_item(row, content_type, username, password) for row in items]
@@ -677,7 +689,7 @@ class ContentService:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
         items, _ = self.pg.get_content_items_paginated(
-            table, 1, page_size, None, country, None, 'numero'
+            table, 1, page_size, None, None, country, None, 'year'
         )
         return [self._to_android_catalog_item(row, content_type, username, password) for row in items]
 
