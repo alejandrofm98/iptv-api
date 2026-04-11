@@ -314,7 +314,8 @@ class PostgresService:
         group: Optional[str] = None,
         country: Optional[str] = None,
         search: Optional[str] = None,
-        order_by: str = 'year'
+        order_by: str = 'year',
+        year: Optional[int] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Obtiene items de contenido con paginación y filtros"""
         filters = []
@@ -332,6 +333,10 @@ class PostgresService:
             filters.append("(nombre_normalizado ILIKE %s OR nombre ILIKE %s)")
             params.extend([f"%{search}%", f"%{search}%"])
 
+        if year:
+            filters.append("year = %s")
+            params.append(year)
+
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
         count_sql = f"SELECT COUNT(*) as total FROM {table} {where_clause}"
@@ -342,7 +347,7 @@ class PostgresService:
         data_sql = f"""
             SELECT * FROM {table}
             {where_clause}
-            ORDER BY {order_by} DESC
+            ORDER BY {order_by} DESC NULLS LAST
             LIMIT %s OFFSET %s
         """
         data_params = tuple([*params, page_size, offset])
@@ -672,6 +677,7 @@ class PostgresService:
         group: Optional[str] = None,
         country: Optional[str] = None,
         search: Optional[str] = None,
+        year: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Obtiene una página de series únicas.
@@ -692,6 +698,10 @@ class PostgresService:
                 "(serie_name ILIKE %s OR nombre_normalizado ILIKE %s OR nombre ILIKE %s)"
             )
             params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+
+        if year:
+            filters.append("year = %s")
+            params.append(year)
 
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
         offset = (page - 1) * page_size
@@ -718,7 +728,7 @@ class PostgresService:
             )
             SELECT *
             FROM counted
-            ORDER BY year DESC
+            ORDER BY year DESC NULLS LAST
             LIMIT %s OFFSET %s
         """
 

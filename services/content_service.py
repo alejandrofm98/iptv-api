@@ -575,7 +575,8 @@ class ContentService:
             'movie_sections': self.get_grouped_home_sections(
                 content_type='movies',
                 group_patterns=[
-                    {'title': '2026 ESTRENOS', 'pattern': '2026 ESTRENOS'},
+                    {'title': '2026 ESTRENOS', 'pattern': '', 'year': 2026},
+                    {'title': '2025 ESTRENOS', 'pattern': '', 'year': 2025},
                     {'title': 'NETFLIX', 'pattern': 'NETFLIX'},
                     {'title': 'HBO MAX', 'pattern': 'HBO MAX'},
                     {'title': 'DISNEY+', 'pattern': 'DISNEY'},
@@ -615,6 +616,7 @@ class ContentService:
         seen_titles: set = set()
 
         for gp in group_patterns:
+            group_year = gp.get('year')
             if content_type == 'series':
                 result = self.pg.get_distinct_series_page(
                     page=1,
@@ -622,11 +624,12 @@ class ContentService:
                     group=gp['pattern'],
                     country=country,
                     search=None,
+                    year=group_year,
                 )
                 items = result.get('items', [])
             else:
                 items, _ = self.pg.get_content_items_paginated(
-                    table, 1, page_size, gp['pattern'], country, None, 'year'
+                    table, 1, page_size, gp['pattern'], country, None, 'year', group_year
                 )
 
             catalog_items = [self._to_android_catalog_item(row, content_type, username, password) for row in items]
