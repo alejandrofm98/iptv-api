@@ -344,32 +344,20 @@ class PostgresService:
 
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
-        # Para movies/series usar DISTINCT ON para evitar duplicados por nombre
-        use_distinct = table in ('movies', 'series')
-        if use_distinct:
-            distinct_key = "COALESCE(NULLIF(nombre_normalizado, ''), nombre)"
-            count_sql = f"SELECT COUNT(DISTINCT {distinct_key}) as total FROM {table} {where_clause}"
-        else:
-            count_sql = f"SELECT COUNT(*) as total FROM {table} {where_clause}"
+        # Count simple sin DISTINCT
+        count_sql = f"SELECT COUNT(*) as total FROM {table} {where_clause}"
 
         count_result = self.execute_query(count_sql, tuple(params))
         total = count_result[0]['total'] if count_result else 0
 
         offset = (page - 1) * page_size
-        if use_distinct:
-            data_sql = f"""
-                SELECT DISTINCT ON (COALESCE(NULLIF(nombre_normalizado, ''), nombre)) * FROM {table}
-                {where_clause}
-                ORDER BY {order_by} DESC NULLS LAST
-                LIMIT %s OFFSET %s
-            """
-        else:
-            data_sql = f"""
-                SELECT * FROM {table}
-                {where_clause}
-                ORDER BY {order_by} DESC NULLS LAST
-                LIMIT %s OFFSET %s
-            """
+        # Quitar DISTINCT ON para ordenación simple por year
+        data_sql = f"""
+            SELECT * FROM {table}
+            {where_clause}
+            ORDER BY year DESC NULLS LAST
+            LIMIT %s OFFSET %s
+        """
         data_params = tuple([*params, page_size, offset])
         items = self.execute_query(data_sql, data_params)
 
