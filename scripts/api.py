@@ -570,6 +570,7 @@ async def get_content(
     group: Optional[str] = Query(None, description="Filtrar por grupo"),
     country: Optional[str] = Query(None, description="Filtrar por país"),
     search: Optional[str] = Query(None, description="Buscar por nombre"),
+    year: Optional[int] = Query(None, description="Filtrar por año"),
     password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
@@ -595,6 +596,7 @@ async def get_content(
         group=group,
         country=country,
         search=search,
+        year=year,
         username=auth.username,
         password=password or ''
     )

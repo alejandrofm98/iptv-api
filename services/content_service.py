@@ -338,8 +338,9 @@ class ContentService:
     def _catalog_cache_key(
         content_type: str, page: int, page_size: int,
         group: Optional[str], country: Optional[str],
+        year: Optional[int] = None,
     ) -> str:
-        return f"catalog:{content_type}:p{page}:ps{page_size}:g{group}:c{country}"
+        return f"catalog:{content_type}:p{page}:ps{page_size}:g{group}:c{country}:y{year}"
 
     def _strip_stream_urls(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Devuelve una copia del resultado sin stream_url para almacenar en caché."""
@@ -416,6 +417,7 @@ class ContentService:
         group: Optional[str] = None,
         country: Optional[str] = None,
         search: Optional[str] = None,
+        year: Optional[int] = None,
         username: str = '',
         password: str = '',
     ) -> Dict[str, Any]:
@@ -426,7 +428,7 @@ class ContentService:
         if content_type == 'series':
             return self._get_series_catalog_page(
                 page=page, page_size=page_size,
-                group=group, country=country, search=search,
+                group=group, country=country, search=search, year=year,
                 username=username, password=password,
             )
 
@@ -437,7 +439,7 @@ class ContentService:
                 return self._inject_stream_urls(cached, content_type, username, password)
 
         items, total = self.pg.get_content_items_paginated(
-            table, page, page_size, group, country, search, 'numero'
+            table, page, page_size, group, country, search, 'numero', year
         )
 
         parsed_items = [
@@ -448,7 +450,7 @@ class ContentService:
         data = self._build_paginated_payload(parsed_items, total, page, page_size)
 
         if content_type == 'movies' and not search:
-            cache_key = self._catalog_cache_key(content_type, page, page_size, group, country)
+            cache_key = self._catalog_cache_key(content_type, page, page_size, group, country, year)
             self._set_cached(cache_key, self._strip_stream_urls(data))
 
         return data
@@ -687,13 +689,14 @@ class ContentService:
         group: Optional[str] = None,
         country: Optional[str] = None,
         search: Optional[str] = None,
+        year: Optional[int] = None,
         username: str = '',
         password: str = '',
     ) -> Dict[str, Any]:
         if content_type == 'series':
             return self._get_series_catalog_page(
                 page=page, page_size=page_size,
-                group=group, country=country, search=search,
+                group=group, country=country, search=search, year=year,
                 username=username, password=password,
             )
 
@@ -701,6 +704,7 @@ class ContentService:
             content_type=content_type,
             page=page, page_size=page_size,
             group=group, country=country, search=search,
+            year=year,
             username=username, password=password,
         )
         return {
