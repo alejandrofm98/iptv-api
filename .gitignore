@@ -4,3 +4,4 @@ data/m3u/*
 postman/environment.json
 .idea/*
 *.iml
+/.playwright-cli/

@@ -314,7 +314,7 @@ class PostgresService:
         group: Optional[str] = None,
         country: Optional[str] = None,
         search: Optional[str] = None,
-        order_by: str = 'numero'
+        order_by: str = 'year'
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Obtiene items de contenido con paginación y filtros"""
         filters = []
@@ -342,7 +342,7 @@ class PostgresService:
         data_sql = f"""
             SELECT * FROM {table}
             {where_clause}
-            ORDER BY {order_by} ASC
+            ORDER BY {order_by} DESC
             LIMIT %s OFFSET %s
         """
         data_params = tuple([*params, page_size, offset])
@@ -710,7 +710,7 @@ class PostgresService:
             deduped AS (
                 SELECT DISTINCT ON (series_key) *
                 FROM base
-                ORDER BY series_key ASC, numero ASC
+                ORDER BY series_key ASC, year DESC, numero ASC
             ),
             counted AS (
                 SELECT *, COUNT(*) OVER() AS _total
@@ -718,7 +718,7 @@ class PostgresService:
             )
             SELECT *
             FROM counted
-            ORDER BY numero ASC
+            ORDER BY year DESC
             LIMIT %s OFFSET %s
         """
 

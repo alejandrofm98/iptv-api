@@ -626,7 +626,7 @@ class ContentService:
                 items = result.get('items', [])
             else:
                 items, _ = self.pg.get_content_items_paginated(
-                    table, 1, page_size, gp['pattern'], country, None, 'numero'
+                    table, 1, page_size, gp['pattern'], country, None, 'year'
                 )
 
             catalog_items = [self._to_android_catalog_item(row, content_type, username, password) for row in items]
