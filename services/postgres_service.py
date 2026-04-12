@@ -380,6 +380,17 @@ class PostgresService:
 
         return items, total
 
+    def get_watched_items(self, user_id: str, limit: int = 100):
+      sql = """
+            SELECT * \
+            FROM watch_progress
+            WHERE user_id = %s \
+              AND is_watched = TRUE
+            ORDER BY last_watched_at DESC
+                LIMIT %s \
+            """
+      return self.execute_query(sql, (user_id, limit))
+
     def search_content(self, table: str, query: str) -> List[Dict[str, Any]]:
         """Busca contenido por nombre"""
         sql = f"""

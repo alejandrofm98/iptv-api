@@ -36,6 +36,14 @@ class WatchProgressService:
                     break
         return incomplete
 
+    def get_watched_items(self, user_id: str, limit: int = 100) -> List[
+        Dict[str, Any]]:
+        """Obtiene items marcados como vistos (is_watched=True)."""
+        rows = self.pg.get_watched_items(user_id, limit)
+        if not rows:
+            return []
+        return [self._normalize_progress_row(row) for row in rows]
+
     def get_progress(self, user_id: str, content_id: str) -> Optional[Dict[str, Any]]:
         """Obtiene el progreso de un item especifico."""
         rows = self._lookup_progress_rows(user_id, content_id)
