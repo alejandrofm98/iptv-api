@@ -983,6 +983,7 @@ async def proxy_replay_source_stream(
 async def get_calendar_by_date(
     fecha: str,
     password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    client: Optional[str] = Query(None, description="'android' para URLs con /live/"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     calendar_svc=Depends(get_calendar_service)
 ):
@@ -1021,7 +1022,12 @@ async def get_calendar_by_date(
                     stream_id = ch.get('provider_id') or provider_map.get(ch.get('channel_id'))
                     if stream_id:
                         ch['provider_id'] = stream_id
-                        ch['stream_url'] = f"{base_url}/{username}/{pwd}/{stream_id}"
+                        if client == 'android':
+                            ch[
+                                'stream_url'] = f"{base_url}/live/{username}/{pwd}/{stream_id}"
+                        else:
+                            ch[
+                                'stream_url'] = f"{base_url}/{username}/{pwd}/{stream_id}"
         eventos.append(CalendarEvent(
             id=str(evento['id']),
             fecha=evento.get('fecha'),
