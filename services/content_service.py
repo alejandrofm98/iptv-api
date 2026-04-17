@@ -578,8 +578,8 @@ class ContentService:
             'movie_sections': self.get_grouped_home_sections(
                 content_type='movies',
                 group_patterns=[
-                    {'title': '2026 ESTRENOS', 'pattern': '', 'year': 2026},
-                    {'title': '2025 ESTRENOS', 'pattern': '', 'year': 2025},
+                    {'title': '2026 ESTRENOS', 'pattern': '', 'year': 2026, 'page_size': 30},
+                    {'title': '2025 ESTRENOS', 'pattern': '', 'year': 2025, 'page_size': 30},
                     {'title': 'PRIME', 'group': 'PRIME', 'country': 'ES'},
                     {'title': 'NETFLIX', 'pattern': 'NETFLIX'},
                     {'title': 'HBO MAX', 'pattern': 'HBO MAX'},
