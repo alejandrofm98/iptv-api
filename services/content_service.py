@@ -578,8 +578,8 @@ class ContentService:
             'movie_sections': self.get_grouped_home_sections(
                 content_type='movies',
                 group_patterns=[
-                    {'title': '2026 ESTRENOS', 'pattern': '', 'year': 2026, 'page_size': 30},
-                    {'title': '2025 ESTRENOS', 'pattern': '', 'year': 2025, 'page_size': 30},
+                    {'title': '2026 ESTRENOS', 'pattern': '', 'year': 2026},
+                    {'title': '2025 ESTRENOS', 'pattern': '', 'year': 2025},
                     {'title': 'PRIME', 'group': 'PRIME', 'country': 'ES'},
                     {'title': 'NETFLIX', 'pattern': 'NETFLIX'},
                     {'title': 'HBO MAX', 'pattern': 'HBO MAX'},
@@ -651,6 +651,9 @@ class ContentService:
 
             if content_type == 'movies':
                 catalog_items = self._deduplicate_movies(catalog_items, seen_titles)
+
+            # Limitar siempre a 12 después de deduplicar para mantener comportamiento consistente
+            catalog_items = catalog_items[:12]
 
             if catalog_items:
                 sections.append({'title': gp['title'], 'items': catalog_items})
