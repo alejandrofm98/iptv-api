@@ -578,8 +578,8 @@ class ContentService:
             'movie_sections': self.get_grouped_home_sections(
                 content_type='movies',
                 group_patterns=[
-                    {'title': '2026 ESTRENOS', 'pattern': '', 'year': 2026},
-                    {'title': '2025 ESTRENOS', 'pattern': '', 'year': 2025},
+                    {'title': '2026 ESTRENOS', 'pattern': '', 'year': 2026, 'page_size': 30},
+                    {'title': '2025 ESTRENOS', 'pattern': '', 'year': 2025, 'page_size': 30},
                     {'title': 'PRIME', 'group': 'PRIME', 'country': 'ES'},
                     {'title': 'NETFLIX', 'pattern': 'NETFLIX'},
                     {'title': 'HBO MAX', 'pattern': 'HBO MAX'},
@@ -623,11 +623,12 @@ class ContentService:
         for gp in group_patterns:
             group_year = gp.get('year')
             use_upper_group = 'group' in gp
+            section_page_size = gp.get('page_size', page_size)  # usar page_size de la sección si está definido
             
             if content_type == 'series':
                 result = self.pg.get_distinct_series_page(
                     page=1,
-                    page_size=page_size,
+                    page_size=section_page_size,
                     group=gp['pattern'] if not use_upper_group else None,
                     upper_group=gp.get('group') if use_upper_group else None,
                     country=gp.get('country') or country,
@@ -637,7 +638,7 @@ class ContentService:
                 items = result.get('items', [])
             else:
                 items, _ = self.pg.get_content_items_paginated(
-                    table, 1, page_size,
+                    table, 1, section_page_size,
                     group=gp['pattern'] if not use_upper_group else None,
                     upper_group=gp.get('group') if use_upper_group else None,
                     country=gp.get('country') or country,
