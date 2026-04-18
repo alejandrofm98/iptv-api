@@ -775,7 +775,8 @@ class ContentService:
         """
         grouped: Dict[str, Dict[str, Any]] = {}
         for item in items:
-            key = (item.get('normalized_title') or item.get('title') or '').lower().strip()
+            # Usar las keys que retorna _parse_content_item: nombre, nombre_normalizado
+            key = (item.get('nombre_normalizado') or item.get('nombre') or '').lower().strip()
             if not key or key in seen_titles:
                 continue
             if key not in grouped:
