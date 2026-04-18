@@ -455,6 +455,10 @@ class ContentService:
             for row in items
         ]
 
+        # Deduplicar películas dentro de la página antes de guardar en caché
+        if content_type == 'movies' and not search:
+            parsed_items = self._deduplicate_movies(parsed_items, set())
+
         data = self._build_paginated_payload(parsed_items, total, page, page_size)
 
         if content_type == 'movies' and not search:
