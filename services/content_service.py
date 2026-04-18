@@ -451,14 +451,9 @@ class ContentService:
         )
 
         parsed_items = [
-            self._to_android_catalog_item(row, content_type, username, password)
+            self._parse_content_item(row, content_type, username, password)
             for row in items
         ]
-
-        # Deduplicar películas dentro de la página antes de guardar en caché
-        # Usar _to_android_catalog_item para tener keys correctas (title, normalized_title)
-        if content_type == 'movies' and not search:
-            parsed_items = self._deduplicate_movies(parsed_items, set())
 
         data = self._build_paginated_payload(parsed_items, total, page, page_size)
 
@@ -845,6 +840,11 @@ class ContentService:
                 username=username, password=password,
             )
 
+        target_page_size = page_size
+        if content_type == 'movies' and not search:
+            buffer_size = int(target_page_size * self.DEDUP_BUFFER_MULTIPLIER)
+            page_size = max(buffer_size, target_page_size)
+
         result = self.get_content_list(
             content_type=content_type,
             page=page, page_size=page_size,
@@ -852,12 +852,22 @@ class ContentService:
             year=year,
             username=username, password=password,
         )
+
+        android_items = [
+            self._to_android_catalog_item(row, content_type, username, password)
+            for row in result['items']
+        ]
+
+        if content_type == 'movies' and not search:
+            seen_titles: set = set()
+            android_items = self._deduplicate_movies(android_items, seen_titles)
+            android_items = android_items[:target_page_size]
+
+        total = result.get('total', len(android_items))
         return {
             **result,
-            'items': [
-                self._to_android_catalog_item(row, content_type, username, password)
-                for row in result['items']
-            ],
+            'items': android_items,
+            'total': total,
         }
 
     def get_catalog_filters(self, content_type: str, country: Optional[str] = None) -> Dict[str, Any]:
