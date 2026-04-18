@@ -32,6 +32,14 @@ class ContentService:
     _cache: Dict[str, Tuple[Any, float]] = {}
     _CACHE_TTL_SECONDS = 300
 
+    # Cuántos items pedir a la DB por cada item que necesitamos,
+    # para compensar los que se eliminan por deduplicación dentro de la sección.
+    DEDUP_BUFFER_MULTIPLIER = 2.5
+
+    # Máximo de rondas de fetch por sección para no hacer loops infinitos
+    # si casi todo el contenido está duplicado.
+    MAX_FETCH_ROUNDS = 2
+
     REPLAY_EMBED_BASE_URL = 'https://dailywrestling.cc/embed'
     REPLAY_METADATA_EMBEDDER = 'https://dailywrestling.cc/'
 
@@ -117,7 +125,7 @@ class ContentService:
         'VC': 'San Vicente y las Granadinas', 'VE': 'Venezuela',
         'VG': 'Islas Vírgenes Británicas', 'VI': 'Islas Vírgenes de los Estados Unidos',
         'VN': 'Vietnam', 'VU': 'Vanuatu', 'WF': 'Wallis y Futuna', 'WS': 'Samoa',
-        'YE': 'Yemen', 'YT': 'Mayotte', 'ZA': 'Sudáfica', 'ZM': 'Zambia',
+        'YE': 'Yemen', 'YT': 'Mayotte', 'ZA': 'Sudáfrica', 'ZM': 'Zambia',
         'ZW': 'Zimbabue',
     }
 
@@ -618,49 +626,149 @@ class ContentService:
             return []
 
         sections = []
-        seen_titles: set = set()
 
         for gp in group_patterns:
             group_year = gp.get('year')
             use_upper_group = 'group' in gp
-            section_page_size = gp.get('page_size', page_size)  # usar page_size de la sección si está definido
-            
-            if content_type == 'series':
-                result = self.pg.get_distinct_series_page(
-                    page=1,
-                    page_size=section_page_size,
-                    group=gp['pattern'] if not use_upper_group else None,
-                    upper_group=gp.get('group') if use_upper_group else None,
-                    country=gp.get('country') or country,
-                    search=None,
-                    year=group_year,
-                )
-                items = result.get('items', [])
-            else:
-                items, _ = self.pg.get_content_items_paginated(
-                    table, 1, section_page_size,
-                    group=gp['pattern'] if not use_upper_group else None,
-                    upper_group=gp.get('group') if use_upper_group else None,
-                    country=gp.get('country') or country,
-                    search=None,
-                    order_by='year',
-                    year=group_year,
-                )
+            target = page_size  # queremos exactamente 12 items por sección
 
-            catalog_items = [self._to_android_catalog_item(row, content_type, username, password) for row in items]
+            # IMPORTANTE: seen_titles es LOCAL a cada sección.
+            # La deduplicación aplica solo dentro de la misma sección,
+            # no entre secciones distintas. Cada sección puede mostrar
+            # los mismos títulos que otra sección sin problema.
+            section_seen_titles: set = set()
 
-            if content_type == 'movies':
-                catalog_items = self._deduplicate_movies(catalog_items, seen_titles)
-
-            # Limitar siempre a 12 después de deduplicar para mantener comportamiento consistente
-            catalog_items = catalog_items[:12]
+            catalog_items = self._fetch_section_with_dedup(
+                content_type=content_type,
+                table=table,
+                gp=gp,
+                group_year=group_year,
+                use_upper_group=use_upper_group,
+                target=target,
+                seen_titles=section_seen_titles,
+                username=username,
+                password=password,
+                country=country,
+            )
 
             if catalog_items:
                 sections.append({'title': gp['title'], 'items': catalog_items})
 
         return sections
 
+    def _fetch_section_with_dedup(
+        self,
+        content_type: str,
+        table: str,
+        gp: dict,
+        group_year: Optional[int],
+        use_upper_group: bool,
+        target: int,
+        seen_titles: set,
+        username: str,
+        password: str,
+        country: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Pide items con buffer para compensar duplicados dentro de la sección.
+        Si después de deduplicar quedan menos de target, hace hasta
+        MAX_FETCH_ROUNDS rondas adicionales con offset creciente.
+
+        seen_titles es local a cada sección: se pasa desde get_grouped_home_sections
+        como un set vacío nuevo por cada sección, por lo que no hay contaminación
+        entre secciones distintas.
+        """
+        result_items: List[Dict[str, Any]] = []
+        buffer_size = int(target * self.DEDUP_BUFFER_MULTIPLIER)
+        offset = 0
+
+        for _round in range(self.MAX_FETCH_ROUNDS):
+            raw_items = self._fetch_raw_items(
+                content_type=content_type,
+                table=table,
+                gp=gp,
+                group_year=group_year,
+                use_upper_group=use_upper_group,
+                page_size=buffer_size,
+                offset=offset,
+                country=country,
+            )
+
+            if not raw_items:
+                # No hay más contenido disponible en la DB para esta sección
+                break
+
+            catalog = [
+                self._to_android_catalog_item(row, content_type, username, password)
+                for row in raw_items
+            ]
+
+            if content_type == 'movies':
+                catalog = self._deduplicate_movies(catalog, seen_titles)
+            elif content_type == 'series':
+                catalog = self._deduplicate_series(catalog, seen_titles)
+
+            result_items.extend(catalog)
+            offset += buffer_size
+
+            if len(result_items) >= target:
+                break
+
+        return result_items[:target]
+
+    def _fetch_raw_items(
+        self,
+        content_type: str,
+        table: str,
+        gp: dict,
+        group_year: Optional[int],
+        use_upper_group: bool,
+        page_size: int,
+        offset: int,
+        country: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Abstrae el fetch a DB con soporte de offset para reintentos.
+        Convierte offset a página para los métodos que usan paginación.
+        """
+        group_filter = gp.get('pattern') if not use_upper_group else None
+        upper_group = gp.get('group') if use_upper_group else None
+        effective_country = gp.get('country') or country
+
+        # Convertir offset a página (base 1)
+        page = (offset // page_size) + 1
+
+        if content_type == 'series':
+            result = self.pg.get_distinct_series_page(
+                page=page,
+                page_size=page_size,
+                group=group_filter,
+                upper_group=upper_group,
+                country=effective_country,
+                search=None,
+                year=group_year,
+            )
+            return result.get('items') or []
+        else:
+            items, _ = self.pg.get_content_items_paginated(
+                table,
+                page,
+                page_size,
+                group=group_filter,
+                upper_group=upper_group,
+                country=effective_country,
+                search=None,
+                order_by='year',
+                year=group_year,
+            )
+            return items
+
     def _deduplicate_movies(self, items: List[Dict[str, Any]], seen_titles: set) -> List[Dict[str, Any]]:
+        """
+        Deduplica películas por título normalizado dentro de la sección.
+        seen_titles se actualiza in-place: es el set local de la sección actual,
+        nunca compartido con otras secciones.
+        """
         grouped: Dict[str, Dict[str, Any]] = {}
         for item in items:
             key = (item.get('normalized_title') or item.get('title') or '').lower().strip()
@@ -676,6 +784,21 @@ class ContentService:
 
         result = []
         for key, item in grouped.items():
+            seen_titles.add(key)
+            result.append(item)
+        return result
+
+    def _deduplicate_series(self, items: List[Dict[str, Any]], seen_titles: set) -> List[Dict[str, Any]]:
+        """
+        Deduplica series por series_name normalizado dentro de la sección.
+        seen_titles se actualiza in-place: es el set local de la sección actual,
+        nunca compartido con otras secciones.
+        """
+        result = []
+        for item in items:
+            key = (item.get('series_name') or item.get('title') or '').lower().strip()
+            if not key or key in seen_titles:
+                continue
             seen_titles.add(key)
             result.append(item)
         return result
@@ -1061,12 +1184,10 @@ class ContentService:
 
     def get_content_stats(self, content_type: str) -> Dict[str, Any]:
         """Obtiene estadísticas de contenido (total count y generatedAt)."""
-        # Intentar leer del archivo JSON estático si existe
         json_data = self._load_static_json(content_type)
         if json_data:
             return {content_type: {'total': json_data.get('total', 0), 'generatedAt': json_data.get('generated_at', '')}}
-        
-        # Fallback: usar PostgreSQL con sync_metadata
+
         metadata = self.pg.get_sync_metadata()
         if metadata:
             type_map = {
@@ -1079,8 +1200,7 @@ class ContentService:
                 total = metadata.get(total_key, 0)
                 generated_at = metadata.get(generated_key, '')
                 return {content_type: {'total': total, 'generatedAt': generated_at}}
-        
-        # Último fallback: COUNT directo en la tabla
+
         table = self.TABLE_MAP.get(content_type)
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
@@ -1093,15 +1213,14 @@ class ContentService:
         json_data = self._load_static_json(content_type)
         if json_data:
             return json_data
-        
-        # Fallback: generar desde PostgreSQL (método antiguo)
+
         if content_type == 'channels':
             return self._get_all_channels_from_db()
         elif content_type == 'movies':
             return self._get_all_movies_from_db()
         elif content_type == 'series':
             return self._get_all_series_from_db()
-        
+
         raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
     def get_all_channels_bulk(self) -> Dict[str, Any]:
@@ -1110,23 +1229,20 @@ class ContentService:
         if json_data:
             return {'items': json_data.get('items', []), 'total': json_data.get('total', 0)}
         return self._get_all_channels_from_db()
-    
+
     def _load_static_json(self, content_type: str) -> Optional[Dict[str, Any]]:
         """Carga JSON estático desde disco con cache en memoria."""
         cache_key = f"static_json_{content_type}"
-        
-        # Verificar cache en memoria
+
         cached = self._get_cached(cache_key)
         if cached is not None:
             return cached
-        
-        # Buscar archivo JSON
+
         json_path = self._get_static_json_path(content_type)
         if not json_path or not os.path.exists(json_path):
             return None
-        
+
         try:
-            # Intentar leer versión gzip primero
             gz_path = f"{json_path}.gz"
             if os.path.exists(gz_path):
                 with gzip.open(gz_path, 'rt', encoding='utf-8') as f:
@@ -1134,40 +1250,38 @@ class ContentService:
             else:
                 with open(json_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-            
-            # Guardar en cache
+
             self._set_cached(cache_key, data)
             return data
         except Exception as e:
             logger.error(f"Error cargando JSON estático {content_type}: {e}")
             return None
-    
+
     def _get_static_json_path(self, content_type: str) -> Optional[str]:
         """Obtiene la ruta al archivo JSON estático."""
-        # Posibles ubicaciones del archivo JSON
         base_dirs = [
-            '/app/data/json',  # Docker
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json'),  # Desarrollo local
-            'data/json',  # Relative
+            '/app/data/json',
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json'),
+            'data/json',
         ]
-        
+
         filename_map = {
             'channels': 'channels.json',
             'movies': 'movies.json',
             'series': 'series.json',
         }
-        
+
         filename = filename_map.get(content_type)
         if not filename:
             return None
-        
+
         for base_dir in base_dirs:
             path = os.path.join(base_dir, filename)
             if os.path.exists(path):
                 return path
-        
+
         return None
-    
+
     def _get_all_channels_from_db(self) -> Dict[str, Any]:
         """Genera JSON de canales desde PostgreSQL (fallback)."""
         rows, _ = self.pg.get_content_items_paginated('channels', 1, 999999, None, None, None, 'numero')
@@ -1191,7 +1305,7 @@ class ContentService:
             'total': len(parsed_items),
             'generated_at': generated_at,
         }
-    
+
     def _get_all_movies_from_db(self) -> Dict[str, Any]:
         """Genera JSON de películas desde PostgreSQL (fallback)."""
         rows, _ = self.pg.get_content_items_paginated('movies', 1, 999999, None, None, None, 'nombre_normalizado')
@@ -1215,7 +1329,7 @@ class ContentService:
             'total': len(parsed_items),
             'generated_at': generated_at,
         }
-    
+
     def _get_all_series_from_db(self) -> Dict[str, Any]:
         """Genera JSON de series desde PostgreSQL (fallback)."""
         rows, _ = self.pg.get_content_items_paginated('series', 1, 999999, None, None, None, 'nombre_normalizado')
