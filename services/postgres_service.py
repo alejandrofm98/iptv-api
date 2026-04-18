@@ -380,6 +380,81 @@ class PostgresService:
 
         return items, total
 
+    def get_distinct_movies_page(
+        self,
+        page: int,
+        page_size: int,
+        group: Optional[str] = None,
+        upper_group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+        year: Optional[int] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Obtiene películas deduplicadas por nombre_dedup_key con paginación"""
+        filters = []
+        params = []
+
+        if group:
+            filters.append("(grupo_normalizado ILIKE %s OR grupo ILIKE %s)")
+            params.extend([f"%{group}%", f"%{group}%"])
+
+        if upper_group:
+            filters.append("UPPER(grupo_normalizado) LIKE %s")
+            params.append(f"%{upper_group}%")
+
+        if country:
+            filters.append("country = %s")
+            params.append(country)
+
+        if search:
+            filters.append("(nombre_normalizado ILIKE %s OR nombre ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        if year:
+            filters.append("year = %s")
+            params.append(year)
+
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+        dedup_key_expr = """
+            COALESCE(
+                NULLIF(nombre_dedup_key, ''),
+                LOWER(NULLIF(nombre_normalizado, '')),
+                LOWER(nombre)
+            )
+        """
+
+        count_sql = f"""
+            SELECT COUNT(DISTINCT {dedup_key_expr}) as total
+            FROM movies
+            {where_clause}
+        """
+        count_result = self.execute_query(count_sql, tuple(params))
+        total = count_result[0]['total'] if count_result else 0
+
+        offset = (page - 1) * page_size
+
+        data_sql = f"""
+            WITH base AS (
+                SELECT *,
+                    {dedup_key_expr} AS dedup_key
+                FROM movies
+                {where_clause}
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (dedup_key) *
+                FROM base
+                ORDER BY dedup_key ASC, year DESC NULLS LAST, numero ASC
+            )
+            SELECT * FROM deduped
+            ORDER BY year DESC NULLS LAST, nombre_normalizado ASC
+            LIMIT %s OFFSET %s
+        """
+        data_params = tuple([*params, page_size, offset])
+        items = self.execute_query(data_sql, data_params)
+
+        return items, total
+
     def get_watched_items(self, user_id: str, limit: int = 100):
       sql = """
             SELECT * \
@@ -787,14 +862,19 @@ class PostgresService:
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
         offset = (page - 1) * page_size
 
+        series_key_expr = """
+            COALESCE(
+                NULLIF(nombre_dedup_key, ''),
+                NULLIF(serie_name, ''),
+                LOWER(NULLIF(nombre_normalizado, '')),
+                LOWER(nombre)
+            )
+        """
+
         sql = f"""
             WITH base AS (
                 SELECT *,
-                    COALESCE(
-                        NULLIF(serie_name, ''),
-                        NULLIF(nombre_normalizado, ''),
-                        nombre
-                    ) AS series_key
+                    {series_key_expr} AS series_key
                 FROM series
                 {where_clause}
             ),

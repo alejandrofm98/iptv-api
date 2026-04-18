@@ -446,9 +446,13 @@ class ContentService:
             if cached is not None:
                 return self._inject_stream_urls(cached, content_type, username, password)
 
-        items, total = self.pg.get_content_items_paginated(
-            table, page, page_size, group, None, country, search, 'year', year
-        )
+            items, total = self.pg.get_distinct_movies_page(
+                page, page_size, group, None, country, None, year
+            )
+        else:
+            items, total = self.pg.get_content_items_paginated(
+                table, page, page_size, group, None, country, search, 'year', year
+            )
 
         parsed_items = [
             self._parse_content_item(row, content_type, username, password)
@@ -670,51 +674,33 @@ class ContentService:
         country: Optional[str],
     ) -> List[Dict[str, Any]]:
         """
-        Pide items con buffer para compensar duplicados dentro de la sección.
-        Si después de deduplicar quedan menos de target, hace hasta
-        MAX_FETCH_ROUNDS rondas adicionales con offset creciente.
-
-        seen_titles es local a cada sección: se pasa desde get_grouped_home_sections
-        como un set vacío nuevo por cada sección, por lo que no hay contaminación
-        entre secciones distintas.
+        Obtiene items para una sección. La deduplicación ya ocurre en la DB.
+        Se pide target + buffer para asegurar suficientes items únicos.
         """
-        result_items: List[Dict[str, Any]] = []
         buffer_size = int(target * self.DEDUP_BUFFER_MULTIPLIER)
-        offset = 0
 
-        for _round in range(self.MAX_FETCH_ROUNDS):
-            raw_items = self._fetch_raw_items(
-                content_type=content_type,
-                table=table,
-                gp=gp,
-                group_year=group_year,
-                use_upper_group=use_upper_group,
-                page_size=buffer_size,
-                offset=offset,
-                country=country,
-            )
+        raw_items = self._fetch_raw_items(
+            content_type=content_type,
+            table=table,
+            gp=gp,
+            group_year=group_year,
+            use_upper_group=use_upper_group,
+            page_size=buffer_size,
+            offset=0,
+            country=country,
+        )
 
-            if not raw_items:
-                # No hay más contenido disponible en la DB para esta sección
-                break
+        catalog = [
+            self._to_android_catalog_item(row, content_type, username, password)
+            for row in raw_items
+        ]
 
-            catalog = [
-                self._to_android_catalog_item(row, content_type, username, password)
-                for row in raw_items
-            ]
+        if content_type == 'movies':
+            seen_titles.update(item.get('normalized_title', '').lower() or item.get('title', '').lower() for item in catalog)
+        elif content_type == 'series':
+            seen_titles.update(item.get('series_name', '').lower() or item.get('title', '').lower() for item in catalog)
 
-            if content_type == 'movies':
-                catalog = self._deduplicate_movies(catalog, seen_titles)
-            elif content_type == 'series':
-                catalog = self._deduplicate_series(catalog, seen_titles)
-
-            result_items.extend(catalog)
-            offset += buffer_size
-
-            if len(result_items) >= target:
-                break
-
-        return result_items[:target]
+        return catalog[:target]
 
     def _fetch_raw_items(
         self,
@@ -735,7 +721,6 @@ class ContentService:
         upper_group = gp.get('group') if use_upper_group else None
         effective_country = gp.get('country') or country
 
-        # Convertir offset a página (base 1)
         page = (offset // page_size) + 1
 
         if content_type == 'series':
@@ -749,6 +734,17 @@ class ContentService:
                 year=group_year,
             )
             return result.get('items') or []
+        elif content_type == 'movies':
+            items, _ = self.pg.get_distinct_movies_page(
+                page,
+                page_size,
+                group=group_filter,
+                upper_group=upper_group,
+                country=effective_country,
+                search=None,
+                year=group_year,
+            )
+            return items
         else:
             items, _ = self.pg.get_content_items_paginated(
                 table,
@@ -840,11 +836,6 @@ class ContentService:
                 username=username, password=password,
             )
 
-        target_page_size = page_size
-        if content_type == 'movies' and not search:
-            buffer_size = int(target_page_size * self.DEDUP_BUFFER_MULTIPLIER)
-            page_size = max(buffer_size, target_page_size)
-
         result = self.get_content_list(
             content_type=content_type,
             page=page, page_size=page_size,
@@ -857,11 +848,6 @@ class ContentService:
             self._to_android_catalog_item(row, content_type, username, password)
             for row in result['items']
         ]
-
-        if content_type == 'movies' and not search:
-            seen_titles: set = set()
-            android_items = self._deduplicate_movies(android_items, seen_titles)
-            android_items = android_items[:target_page_size]
 
         total = result.get('total', len(android_items))
         return {
