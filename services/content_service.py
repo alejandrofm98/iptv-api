@@ -451,11 +451,12 @@ class ContentService:
         )
 
         parsed_items = [
-            self._parse_content_item(row, content_type, username, password)
+            self._to_android_catalog_item(row, content_type, username, password)
             for row in items
         ]
 
         # Deduplicar películas dentro de la página antes de guardar en caché
+        # Usar _to_android_catalog_item para tener keys correctas (title, normalized_title)
         if content_type == 'movies' and not search:
             parsed_items = self._deduplicate_movies(parsed_items, set())
 
@@ -775,8 +776,8 @@ class ContentService:
         """
         grouped: Dict[str, Dict[str, Any]] = {}
         for item in items:
-            # Usar las keys que retorna _parse_content_item: nombre, nombre_normalizado
-            key = (item.get('nombre_normalizado') or item.get('nombre') or '').lower().strip()
+            # Usar normalized_title (formato Android) o title
+            key = (item.get('normalized_title') or item.get('title') or '').lower().strip()
             if not key or key in seen_titles:
                 continue
             if key not in grouped:
