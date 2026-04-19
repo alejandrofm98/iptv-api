@@ -910,6 +910,96 @@ class PostgresService:
             'total': total,
         }
 
+    def get_series_groups_page(
+        self,
+        page: int,
+        page_size: int,
+        group: Optional[str] = None,
+        upper_group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+        year: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Obtiene series agrupadas con total de episodios por serie.
+        """
+        filters: List[str] = []
+        params: List[Any] = []
+
+        if group:
+            filters.append("(grupo_normalizado ILIKE %s OR grupo ILIKE %s)")
+            params.extend([f"%{group}%", f"%{group}%"])
+
+        if upper_group:
+            filters.append("UPPER(grupo_normalizado) LIKE %s")
+            params.append(f"%{upper_group}%")
+
+        if country:
+            filters.append("country = %s")
+            params.append(country)
+
+        if search:
+            filters.append("(serie_name ILIKE %s OR nombre_normalizado ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        if year:
+            filters.append("year = %s")
+            params.append(year)
+
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+        offset = (page - 1) * page_size
+
+        sql = f"""
+            WITH grouped AS (
+                SELECT
+                    serie_name,
+                    COUNT(*) AS total_episodes,
+                    MAX(year) AS year,
+                    MAX(logo) AS logo,
+                    MAX(grupo) AS grupo,
+                    MAX(grupo_normalizado) AS grupo_normalizado,
+                    MAX(country) AS country,
+                    MIN(numero) AS first_numero,
+                    MIN(provider_id) AS first_provider_id,
+                    MIN(id) AS first_id,
+                    MIN(nombre) AS first_nombre,
+                    MIN(nombre_normalizado) AS first_nombre_normalizado
+                FROM series
+                {where_clause}
+                GROUP BY serie_name
+                HAVING serie_name IS NOT NULL AND serie_name != ''
+            ),
+            counted AS (
+                SELECT *, COUNT(*) OVER() AS _total
+                FROM grouped
+            )
+            SELECT *
+            FROM counted
+            ORDER BY total_episodes DESC NULLS LAST, year DESC NULLS LAST, serie_name ASC
+            LIMIT %s OFFSET %s
+        """
+
+        all_params = tuple([*params, page_size, offset])
+        rows = self.execute_query(sql, all_params)
+
+        total = int(rows[0]['_total']) if rows else 0
+
+        clean_rows = []
+        for row in rows:
+            r = dict(row)
+            r.pop('_total', None)
+            provider_id = r.pop('first_provider_id', None)
+            r['provider_id'] = provider_id
+            r['id'] = r.pop('first_id', None)
+            r['nombre'] = r.pop('first_nombre', None)
+            r['nombre_normalizado'] = r.pop('first_nombre_normalizado', None)
+            clean_rows.append(r)
+
+        return {
+            'items': clean_rows,
+            'total': total,
+        }
+
 
 # Singleton instance
 _postgres_service: Optional[PostgresService] = None

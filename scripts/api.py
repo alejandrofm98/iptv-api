@@ -775,7 +775,7 @@ async def get_content_item(
 
 @app.get("/api/home", tags=["Content"])
 async def get_home(
-    page_size: int = Query(12, ge=1, le=50, description="Items por bloque"),
+    page_size: int = Query(24, ge=1, le=50, description="Items por bloque"),
     country: Optional[str] = Query(None, description="Filtrar home por country, por ejemplo ES o EN"),
     password: Optional[str] = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),

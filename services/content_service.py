@@ -342,6 +342,42 @@ class ContentService:
     ) -> Dict[str, Any]:
         return self._to_android_catalog_item(row, content_type, username, password)
 
+    def _to_android_series_group_item(
+        self,
+        row: Dict[str, Any],
+        username: str = '',
+        password: str = '',
+    ) -> Dict[str, Any]:
+        """Transforma una serie agrupada al formato Android."""
+        serie_name = row.get('serie_name', '')
+        normalized_title = serie_name.lower().strip() if serie_name else ''
+        original_group = row.get('grupo') or ''
+        group = row.get('grupo_normalizado') or original_group
+        provider_id = row.get('provider_id') or ''
+
+        return {
+            'id': provider_id or row.get('id') or '',
+            'provider_id': provider_id,
+            'type': 'series_group',
+            'title': serie_name,
+            'normalized_title': normalized_title,
+            'original_title': serie_name,
+            'subtitle': group,
+            'description': group,
+            'image_url': row.get('logo') or '',
+            'group': group,
+            'normalized_group': group,
+            'original_group': original_group,
+            'badge_text': 'SERIE',
+            'series_name': serie_name,
+            'season_number': None,
+            'episode_number': None,
+            'total_episodes': row.get('total_episodes', 0),
+            'year': row.get('year'),
+            'language_label': row.get('country'),
+            'stream_url': '',
+        }
+
     @staticmethod
     def _catalog_cache_key(
         content_type: str, page: int, page_size: int,
@@ -690,15 +726,19 @@ class ContentService:
             country=country,
         )
 
-        catalog = [
-            self._to_android_catalog_item(row, content_type, username, password)
-            for row in raw_items
-        ]
-
-        if content_type == 'movies':
-            seen_titles.update(item.get('normalized_title', '').lower() or item.get('title', '').lower() for item in catalog)
-        elif content_type == 'series':
+        if content_type == 'series':
+            catalog = [
+                self._to_android_series_group_item(row, username, password)
+                for row in raw_items
+            ]
             seen_titles.update(item.get('series_name', '').lower() or item.get('title', '').lower() for item in catalog)
+        else:
+            catalog = [
+                self._to_android_catalog_item(row, content_type, username, password)
+                for row in raw_items
+            ]
+            if content_type == 'movies':
+                seen_titles.update(item.get('normalized_title', '').lower() or item.get('title', '').lower() for item in catalog)
 
         return catalog[:target]
 
@@ -724,7 +764,7 @@ class ContentService:
         page = (offset // page_size) + 1
 
         if content_type == 'series':
-            result = self.pg.get_distinct_series_page(
+            result = self.pg.get_series_groups_page(
                 page=page,
                 page_size=page_size,
                 group=group_filter,
