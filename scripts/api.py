@@ -572,6 +572,7 @@ async def get_content(
     search: Optional[str] = Query(None, description="Buscar por nombre"),
     year: Optional[int] = Query(None, description="Filtrar por año"),
     password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    section_title: Optional[str] = Query(None, description="Título de sección del home para paginación consistente (ej: 2026 ESTRENOS, NETFLIX)"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentService = Depends(get_content_service),
     favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
@@ -588,6 +589,20 @@ async def get_content(
             username=auth.username,
             password=password or '',
         )
+
+    if section_title and content_type in ('movies', 'series'):
+        result = content_svc.get_section_page(
+            content_type=content_type,
+            section_title=section_title,
+            page=page,
+            page_size=page_size,
+            username=auth.username,
+            password=password or '',
+            country=country,
+        )
+        if result is None:
+            raise NotFoundException("Sección", section_title)
+        return result
 
     return content_svc.get_android_content_list(
         content_type=content_type,
