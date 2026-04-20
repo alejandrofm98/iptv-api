@@ -759,7 +759,7 @@ class ContentService:
         if not gp:
             return None
 
-        items = self._fetch_section_page(
+        items, total = self._fetch_section_page(
             content_type=content_type,
             gp=gp,
             page=page,
@@ -768,12 +768,17 @@ class ContentService:
             password=password,
             country=country,
         )
+        has_more = len(items) == page_size
         return {
             'title':      gp['title'],
             'items':      items,
             'page':       page,
             'page_size':  page_size,
-            'has_more':   len(items) == page_size,
+            'has_more':   has_more,
+            'has_next':   has_more,
+            'has_prev':   page > 1,
+            'total':      total,
+            'pages':      (total + page_size - 1) // page_size if total > 0 else 0,
         }
 
     def _build_home_sections(
@@ -787,7 +792,7 @@ class ContentService:
     ) -> List[Dict[str, Any]]:
         sections = []
         for gp in self.SECTION_PATTERNS.get(content_type, []):
-            items = self._fetch_section_page(
+            items, _ = self._fetch_section_page(
                 content_type=content_type,
                 gp=gp,
                 page=page,
@@ -838,13 +843,15 @@ class ContentService:
                 year=year,
             )
             raw_items = result.get('items') or []
-            return [
+            total = result.get('total', 0)
+            items = [
                 self._to_android_series_group_item(row, username, password)
                 for row in raw_items
             ]
+            return items, total
 
         elif content_type == 'movies':
-            items, _ = self.pg.get_distinct_movies_page(
+            items, total = self.pg.get_distinct_movies_page(
                 page=page,
                 page_size=page_size,
                 group=group_filter,
@@ -856,9 +863,9 @@ class ContentService:
             return [
                 self._to_android_catalog_item(row, 'movies', username, password)
                 for row in items
-            ]
+            ], total
 
-        return []
+        return [], 0
 
     def _fetch_section_with_dedup(
         self,
