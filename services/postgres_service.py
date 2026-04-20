@@ -390,7 +390,7 @@ class PostgresService:
         search: Optional[str] = None,
         year: Optional[int] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
-        """Obtiene películas deduplicadas por nombre_dedup_key con paginación"""
+        """Obtiene películas deduplicadas por nombre_dedup_key con paginación usando ROW_NUMBER()"""
         filters = []
         params = []
 
@@ -432,7 +432,10 @@ class PostgresService:
         count_result = self.execute_query(count_sql, tuple(params))
         total = count_result[0]['total'] if count_result else 0
 
-        offset = (page - 1) * page_size
+        # Usar ROW_NUMBER() para paginar correctamente después de la deduplicación
+        # El orden final debe ser consistente: dedup primero, luego номер
+        start_row = (page - 1) * page_size + 1
+        end_row = page * page_size
 
         data_sql = f"""
             WITH base AS (
@@ -445,13 +448,22 @@ class PostgresService:
                 SELECT DISTINCT ON (dedup_key) *
                 FROM base
                 ORDER BY dedup_key ASC, year DESC NULLS LAST, numero ASC
+            ),
+            numbered AS (
+                SELECT *, 
+                       ROW_NUMBER() OVER (ORDER BY year DESC NULLS LAST, nombre_normalizado ASC, id ASC) as rn
+                FROM deduped
             )
-            SELECT * FROM deduped
-            ORDER BY year DESC NULLS LAST, nombre_normalizado ASC
-            LIMIT %s OFFSET %s
+            SELECT * FROM numbered
+            WHERE rn BETWEEN %s AND %s
+            ORDER BY rn
         """
-        data_params = tuple([*params, page_size, offset])
+        data_params = tuple([*params, start_row, end_row])
         items = self.execute_query(data_sql, data_params)
+
+        # Limpiar el campo 'rn' de los resultados
+        for item in items:
+            item.pop('rn', None)
 
         return items, total
 
