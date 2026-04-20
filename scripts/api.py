@@ -798,6 +798,45 @@ async def get_home(
     return payload
 
 
+@app.get("/api/home2", tags=["Content"])
+async def get_home_v2(
+    page_size: int = Query(24, ge=1, le=50, description="Items por bloque"),
+    country: Optional[str] = Query(None, description="Filtrar home por country"),
+    password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service),
+):
+    """Obtiene bloques ligeros para la home (nueva versión con paginación infinita)."""
+    return content_svc.get_home_catalog_new(
+        username=auth.username, country=country, password=password or '',
+    )
+
+
+@app.get("/api/content/section", tags=["Content"])
+async def get_section(
+    content_type: str = Query(..., enum=['movies', 'series'], description="Tipo de contenido"),
+    section_title: str = Query(..., description="Título de sección: NETFLIX, 2026 ESTRENOS, ..."),
+    page: int = Query(2, ge=1, description="Página a cargar (1 = lo que ya tiene /home → empezar en 2)"),
+    page_size: int = Query(24, ge=1, le=50, description="Items por página"),
+    password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentService = Depends(get_content_service),
+):
+    """Carga más items de una sección específica. Para paginación infinita."""
+    result = content_svc.get_section_page(
+        content_type=content_type,
+        section_title=section_title,
+        page=page,
+        page_size=page_size,
+        username=auth.username,
+        password=password or '',
+        country=None,
+    )
+    if result is None:
+        raise NotFoundException("Sección", section_title)
+    return result
+
+
 @app.get("/api/channel-favorites", tags=["Channel Favorites"])
 async def list_channel_favorites(
     auth: AuthDep = Depends(require_auth_with_jwt),

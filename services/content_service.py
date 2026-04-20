@@ -43,6 +43,25 @@ class ContentService:
     REPLAY_EMBED_BASE_URL = 'https://dailywrestling.cc/embed'
     REPLAY_METADATA_EMBEDDER = 'https://dailywrestling.cc/'
 
+    HOME_PAGE_SIZE = 24
+
+    SECTION_PATTERNS: Dict[str, List[Dict[str, Any]]] = {
+        'movies': [
+            {'title': '2026 ESTRENOS', 'year': 2026},
+            {'title': '2025 ESTRENOS', 'year': 2025},
+            {'title': 'PRIME',   'group': 'PRIME',   'country': 'ES'},
+            {'title': 'NETFLIX', 'pattern': 'NETFLIX'},
+            {'title': 'HBO MAX', 'pattern': 'HBO MAX'},
+            {'title': 'DISNEY+', 'pattern': 'DISNEY'},
+        ],
+        'series': [
+            {'title': 'PRIME',   'group': 'PRIME', 'country': 'ES'},
+            {'title': 'DISNEY+', 'pattern': 'DISNEY'},
+            {'title': 'NETFLIX', 'pattern': 'NETFLIX'},
+            {'title': 'HBO',     'pattern': 'HBO'},
+        ],
+    }
+
     @classmethod
     def _get_cached(cls, key: str) -> Optional[Any]:
         if key in cls._cache:
@@ -670,7 +689,7 @@ class ContentService:
         for gp in group_patterns:
             group_year = gp.get('year')
             use_upper_group = 'group' in gp
-            target = page_size  # queremos exactamente 12 items por sección
+            target = page_size # Items por sección (default 24 desde /api/home)
 
             # IMPORTANTE: seen_titles es LOCAL a cada sección.
             # La deduplicación aplica solo dentro de la misma sección,
@@ -695,6 +714,151 @@ class ContentService:
                 sections.append({'title': gp['title'], 'items': catalog_items})
 
         return sections
+
+    def get_home_catalog_new(
+        self,
+        username: str,
+        password: str = '',
+        country: Optional[str] = None,
+        page_size: int = HOME_PAGE_SIZE,
+    ) -> Dict[str, Any]:
+        counts = self.get_content_count()
+        return {
+            'movie_sections': self._build_home_sections(
+                'movies', page=1, page_size=page_size,
+                username=username, password=password, country=country,
+            ),
+            'series_sections': self._build_home_sections(
+                'series', page=1, page_size=page_size,
+                username=username, password=password, country=country,
+            ),
+            'stats': {
+                'channels': counts['channels'],
+                'movies':   counts['movies'],
+                'series':   counts['series'],
+            },
+        }
+
+    def get_section_page(
+        self,
+        content_type: str,
+        section_title: str,
+        page: int,
+        page_size: int = HOME_PAGE_SIZE,
+        username: str = '',
+        password: str = '',
+        country: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Llamado por /api/content/section para cargar más items de una sección.
+        page=1 es lo que ya tiene el cliente desde /home → empezar en page=2.
+        La DB deduplica, el offset es exacto y nunca hay solapamiento.
+        """
+        patterns = self.SECTION_PATTERNS.get(content_type, [])
+        gp = next((p for p in patterns if p['title'].upper() == section_title.upper()), None)
+        if not gp:
+            return None
+
+        items = self._fetch_section_page(
+            content_type=content_type,
+            gp=gp,
+            page=page,
+            page_size=page_size,
+            username=username,
+            password=password,
+            country=country,
+        )
+        return {
+            'title':      gp['title'],
+            'items':      items,
+            'page':       page,
+            'page_size':  page_size,
+            'has_more':   len(items) == page_size,
+        }
+
+    def _build_home_sections(
+        self,
+        content_type: str,
+        page: int,
+        page_size: int,
+        username: str,
+        password: str,
+        country: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        sections = []
+        for gp in self.SECTION_PATTERNS.get(content_type, []):
+            items = self._fetch_section_page(
+                content_type=content_type,
+                gp=gp,
+                page=page,
+                page_size=page_size,
+                username=username,
+                password=password,
+                country=country,
+            )
+            if items:
+                sections.append({
+                    'title':     gp['title'],
+                    'items':     items,
+                    'page':      page,
+                    'page_size': page_size,
+                    'has_more':  len(items) == page_size,
+                })
+        return sections
+
+    def _fetch_section_page(
+        self,
+        content_type: str,
+        gp: dict,
+        page: int,
+        page_size: int,
+        username: str,
+        password: str,
+        country: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Una página exacta de una sección. Sin buffer, sin dedup en Python.
+        La DB (DISTINCT ON / GROUP BY) garantiza unicidad por título.
+        page=1 → OFFSET 0, page=2 → OFFSET page_size, etc. — nunca se solapan.
+        """
+        use_upper_group = 'group' in gp
+        group_filter    = gp.get('pattern') if not use_upper_group else None
+        upper_group     = gp.get('group')   if use_upper_group     else None
+        effective_country = gp.get('country') or country
+        year = gp.get('year')
+
+        if content_type == 'series':
+            result = self.pg.get_series_groups_page(
+                page=page,
+                page_size=page_size,
+                group=group_filter,
+                upper_group=upper_group,
+                country=effective_country,
+                search=None,
+                year=year,
+            )
+            raw_items = result.get('items') or []
+            return [
+                self._to_android_series_group_item(row, username, password)
+                for row in raw_items
+            ]
+
+        elif content_type == 'movies':
+            items, _ = self.pg.get_distinct_movies_page(
+                page=page,
+                page_size=page_size,
+                group=group_filter,
+                upper_group=upper_group,
+                country=effective_country,
+                search=None,
+                year=year,
+            )
+            return [
+                self._to_android_catalog_item(row, 'movies', username, password)
+                for row in items
+            ]
+
+        return []
 
     def _fetch_section_with_dedup(
         self,

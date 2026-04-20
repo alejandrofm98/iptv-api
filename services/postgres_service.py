@@ -950,33 +950,33 @@ class PostgresService:
         offset = (page - 1) * page_size
 
         sql = f"""
-            WITH grouped AS (
-                SELECT
-                    serie_name,
-                    COUNT(*) AS total_episodes,
-                    MAX(year) AS year,
-                    MAX(logo) AS logo,
-                    MAX(grupo) AS grupo,
-                    MAX(grupo_normalizado) AS grupo_normalizado,
-                    MAX(country) AS country,
-                    MIN(numero) AS first_numero,
-                    MIN(provider_id) AS first_provider_id,
-                    MIN(id) AS first_id,
-                    MIN(nombre) AS first_nombre,
-                    MIN(nombre_normalizado) AS first_nombre_normalizado
-                FROM series
-                {where_clause}
-                GROUP BY serie_name
-                HAVING serie_name IS NOT NULL AND serie_name != ''
-            ),
-            counted AS (
-                SELECT *, COUNT(*) OVER() AS _total
-                FROM grouped
-            )
-            SELECT *
-            FROM counted
-            ORDER BY total_episodes DESC NULLS LAST, year DESC NULLS LAST, serie_name ASC
-            LIMIT %s OFFSET %s
+        WITH grouped AS (
+            SELECT
+                serie_name,
+                COUNT(*) AS total_episodes,
+                MAX(year) AS year,
+                MAX(logo) AS logo,
+                MAX(grupo) AS grupo,
+                MAX(grupo_normalizado) AS grupo_normalizado,
+                MAX(country) AS country,
+                MIN(numero) AS first_numero,
+                MIN(provider_id) AS first_provider_id,
+                MIN(id) AS first_id,
+                MIN(nombre) AS first_nombre,
+                MIN(nombre_normalizado) AS first_nombre_normalizado
+            FROM series
+            {where_clause}
+            GROUP BY serie_name
+            HAVING serie_name IS NOT NULL AND serie_name != ''
+        ),
+        counted AS (
+            SELECT *, COUNT(*) OVER() AS _total
+            FROM grouped
+        )
+        SELECT *
+        FROM counted
+        ORDER BY total_episodes DESC NULLS LAST, year DESC NULLS LAST, serie_name ASC
+        LIMIT %s OFFSET %s
         """
 
         all_params = tuple([*params, page_size, offset])
