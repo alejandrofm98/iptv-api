@@ -792,7 +792,7 @@ class ContentService:
     ) -> List[Dict[str, Any]]:
         sections = []
         for gp in self.SECTION_PATTERNS.get(content_type, []):
-            items, _ = self._fetch_section_page(
+            items, total = self._fetch_section_page(
                 content_type=content_type,
                 gp=gp,
                 page=page,
@@ -802,12 +802,16 @@ class ContentService:
                 country=country,
             )
             if items:
+                pages = (total + page_size - 1) // page_size if total > 0 else 0
                 sections.append({
-                    'title':     gp['title'],
-                    'items':     items,
-                    'page':      page,
+                    'title':      gp['title'],
+                    'items':      items,
+                    'page':       page,
                     'page_size': page_size,
-                    'has_more':  len(items) == page_size,
+                    'has_more':  page < pages,
+                    'has_next': page < pages,
+                    'total':    total,
+                    'pages':    pages,
                 })
         return sections
 
@@ -820,11 +824,12 @@ class ContentService:
         username: str,
         password: str,
         country: Optional[str],
-    ) -> List[Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], int]:
         """
         Una página exacta de una sección. Sin buffer, sin dedup en Python.
         La DB (DISTINCT ON / GROUP BY) garantiza unicidad por título.
         page=1 → OFFSET 0, page=2 → OFFSET page_size, etc. — nunca se solapan.
+        Retorna (items, total).
         """
         use_upper_group = 'group' in gp
         group_filter    = gp.get('pattern') if not use_upper_group else None
