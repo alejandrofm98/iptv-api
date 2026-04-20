@@ -768,17 +768,17 @@ class ContentService:
             password=password,
             country=country,
         )
-        has_more = len(items) == page_size
+        pages = (total + page_size - 1) // page_size if total > 0 else 0
         return {
             'title':      gp['title'],
             'items':      items,
             'page':       page,
             'page_size':  page_size,
-            'has_more':   has_more,
-            'has_next':   has_more,
+            'has_more':   page < pages,
+            'has_next':   page < pages,
             'has_prev':   page > 1,
             'total':      total,
-            'pages':      (total + page_size - 1) // page_size if total > 0 else 0,
+            'pages':      pages,
         }
 
     def _build_home_sections(
