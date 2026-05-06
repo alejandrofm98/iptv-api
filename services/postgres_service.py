@@ -955,14 +955,14 @@ class PostgresService:
         sql = f"""
         WITH base AS (
             SELECT *,
-            {series_key_expr} AS series_key
+            {series_key_expr} AS catalog_series_key
             FROM series
             {where_clause}
         ),
         deduped AS (
-            SELECT DISTINCT ON (series_key) *
+            SELECT DISTINCT ON (catalog_series_key) *
             FROM base
-            ORDER BY series_key ASC, year DESC, numero ASC
+            ORDER BY catalog_series_key ASC, year DESC, numero ASC
         ),
         with_metadata AS (
             SELECT
@@ -981,7 +981,7 @@ class PostgresService:
                 sm.status
             FROM deduped d
             LEFT JOIN series_metadata sm
-                ON d.series_key = sm.series_key
+                ON d.catalog_series_key = sm.series_key
         ),
         counted AS (
             SELECT *, COUNT(*) OVER() AS _total
@@ -1002,7 +1002,7 @@ class PostgresService:
         for row in rows:
             r = dict(row)
             r.pop('_total', None)
-            r.pop('series_key', None)
+            r.pop('catalog_series_key', None)
             clean_rows.append(r)
 
         return {
