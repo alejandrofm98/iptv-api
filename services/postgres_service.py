@@ -84,7 +84,7 @@ class PostgresService:
         }
         cols = common_cols + table_specific.get(table, [])
         try:
-            sql = f"SELECT column_name FROM information_schema.columns WHERE table_name = %s"
+            sql = "SELECT column_name FROM information_schema.columns WHERE table_name = %s"
             results = self.execute_query(sql, (table,))
             db_cols = [r['column_name'] for r in results]
             return [c for c in cols if c in db_cols]
@@ -322,6 +322,55 @@ class PostgresService:
         results = self.execute_query(sql, (provider_id,))
         return results[0] if results else None
 
+    def get_movie_with_metadata(self, movie_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene película con metadata TMDB por id interno o provider_id"""
+        sql = """
+            SELECT m.*,
+                mm.overview_es,
+                mm.overview_en,
+                mm.vote_average,
+                mm.vote_count,
+                mm.genres,
+                mm.backdrop_path,
+                mm.poster_path as tmdb_poster_path,
+                mm.runtime_minutes,
+                mm.tagline,
+                mm.tmdb_id,
+                mm.release_date,
+                mm.popularity,
+                mm.status
+            FROM movies m
+            LEFT JOIN movies_metadata mm ON m.provider_id = mm.provider_id
+            WHERE m.id = %s OR m.provider_id = %s
+            LIMIT 1
+        """
+        results = self.execute_query(sql, (movie_id, movie_id))
+        return results[0] if results else None
+
+    def get_series_with_metadata(self, series_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene serie con metadata TMDB por id interno o series_key"""
+        sql = """
+            SELECT s.*,
+                sm.overview_es,
+                sm.overview_en,
+                sm.vote_average,
+                sm.vote_count,
+                sm.genres,
+                sm.backdrop_path,
+                sm.poster_path as tmdb_poster_path,
+                sm.tagline,
+                sm.tmdb_id,
+                sm.release_date,
+                sm.popularity,
+                sm.status
+            FROM series s
+            LEFT JOIN series_metadata sm ON s.series_key = sm.series_key
+            WHERE s.id = %s OR s.series_key = %s OR s.provider_id = %s
+            LIMIT 1
+        """
+        results = self.execute_query(sql, (series_id, series_id, series_id))
+        return results[0] if results else None
+
     def get_content_items_paginated(
         self,
         table: str,
@@ -439,24 +488,44 @@ class PostgresService:
 
         data_sql = f"""
             WITH base AS (
-                SELECT *,
-                    {dedup_key_expr} AS dedup_key
-                FROM movies
-                {where_clause}
-            ),
-            deduped AS (
-                SELECT DISTINCT ON (dedup_key) *
-                FROM base
-                ORDER BY dedup_key ASC, year DESC NULLS LAST, numero ASC
-            ),
-            numbered AS (
-                SELECT *, 
-                       ROW_NUMBER() OVER (ORDER BY year DESC NULLS LAST, nombre_normalizado ASC, id ASC) as rn
-                FROM deduped
-            )
-            SELECT * FROM numbered
-            WHERE rn BETWEEN %s AND %s
-            ORDER BY rn
+            SELECT *,
+            {dedup_key_expr} AS dedup_key
+            FROM movies
+            {where_clause}
+        ),
+        deduped AS (
+            SELECT DISTINCT ON (dedup_key) *
+            FROM base
+            ORDER BY dedup_key ASC, year DESC NULLS LAST, numero ASC
+        ),
+        with_metadata AS (
+            SELECT
+                d.*,
+                mm.overview_es,
+                mm.overview_en,
+                mm.vote_average,
+                mm.vote_count,
+                mm.genres,
+                mm.backdrop_path,
+                mm.poster_path as tmdb_poster_path,
+                mm.runtime_minutes,
+                mm.tagline,
+                mm.tmdb_id,
+                mm.release_date,
+                mm.popularity,
+                mm.status
+            FROM deduped d
+            LEFT JOIN movies_metadata mm
+                ON d.provider_id = mm.provider_id
+        ),
+        numbered AS (
+            SELECT *,
+            ROW_NUMBER() OVER (ORDER BY year DESC NULLS LAST, nombre_normalizado ASC, id ASC) as rn
+            FROM with_metadata
+        )
+        SELECT * FROM numbered
+        WHERE rn BETWEEN %s AND %s
+        ORDER BY rn
         """
         data_params = tuple([*params, start_row, end_row])
         items = self.execute_query(data_sql, data_params)
@@ -884,25 +953,44 @@ class PostgresService:
         """
 
         sql = f"""
-            WITH base AS (
-                SELECT *,
-                    {series_key_expr} AS series_key
-                FROM series
-                {where_clause}
-            ),
-            deduped AS (
-                SELECT DISTINCT ON (series_key) *
-                FROM base
-                ORDER BY series_key ASC, year DESC, numero ASC
-            ),
-            counted AS (
-                SELECT *, COUNT(*) OVER() AS _total
-                FROM deduped
-            )
-            SELECT *
-            FROM counted
-            ORDER BY year DESC NULLS LAST
-            LIMIT %s OFFSET %s
+        WITH base AS (
+            SELECT *,
+            {series_key_expr} AS series_key
+            FROM series
+            {where_clause}
+        ),
+        deduped AS (
+            SELECT DISTINCT ON (series_key) *
+            FROM base
+            ORDER BY series_key ASC, year DESC, numero ASC
+        ),
+        with_metadata AS (
+            SELECT
+                d.*,
+                sm.overview_es,
+                sm.overview_en,
+                sm.vote_average,
+                sm.vote_count,
+                sm.genres,
+                sm.backdrop_path,
+                sm.poster_path as tmdb_poster_path,
+                sm.tagline,
+                sm.tmdb_id,
+                sm.release_date,
+                sm.popularity,
+                sm.status
+            FROM deduped d
+            LEFT JOIN series_metadata sm
+                ON d.series_key = sm.series_key
+        ),
+        counted AS (
+            SELECT *, COUNT(*) OVER() AS _total
+            FROM with_metadata
+        )
+        SELECT *
+        FROM counted
+        ORDER BY year DESC NULLS LAST
+        LIMIT %s OFFSET %s
         """
 
         all_params = tuple([*params, page_size, offset])

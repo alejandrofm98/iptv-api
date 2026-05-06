@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 import re
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 import requests
 
 from utils.config import get_settings
@@ -309,6 +309,26 @@ class ContentService:
             base_item['temporada'] = row.get('temporada')
             base_item['episodio'] = row.get('episodio')
 
+        if content_type in ('movies', 'series'):
+            if row.get('overview_es'):
+                base_item['overview'] = row['overview_es']
+            elif row.get('overview_en'):
+                base_item['overview'] = row['overview_en']
+            base_item['overview_es'] = row.get('overview_es')
+            base_item['overview_en'] = row.get('overview_en')
+            base_item['rating'] = row.get('vote_average')
+            base_item['vote_count'] = row.get('vote_count')
+            base_item['genres'] = row.get('genres')
+            base_item['poster_path'] = row.get('tmdb_poster_path') or row.get('poster_path')
+            base_item['backdrop_path'] = row.get('backdrop_path')
+            base_item['runtime_minutes'] = row.get('runtime_minutes')
+            base_item['tagline'] = row.get('tagline')
+            base_item['release_date'] = row.get('release_date')
+            base_item['year'] = row.get('year')
+            base_item['tmdb_id'] = row.get('tmdb_id')
+            base_item['popularity'] = row.get('popularity')
+            base_item['status'] = row.get('status')
+
         return base_item
 
     def _to_android_catalog_item(
@@ -350,6 +370,26 @@ class ContentService:
             'season_number': parsed.get('temporada') if content_type == 'series' else None,
             'episode_number': parsed.get('episodio') if content_type == 'series' else None,
             'stream_url': parsed.get('stream_url') or '',
+            **(
+                {
+                    'overview': parsed.get('overview'),
+                    'overview_es': parsed.get('overview_es'),
+                    'overview_en': parsed.get('overview_en'),
+                    'rating': parsed.get('rating'),
+                    'vote_count': parsed.get('vote_count'),
+                    'genres': parsed.get('genres'),
+                    'poster_path': parsed.get('poster_path'),
+                    'backdrop_path': parsed.get('backdrop_path'),
+                    'runtime_minutes': parsed.get('runtime_minutes'),
+                    'tagline': parsed.get('tagline'),
+                    'release_date': parsed.get('release_date'),
+                    'year': parsed.get('year'),
+                    'tmdb_id': parsed.get('tmdb_id'),
+                    'popularity': parsed.get('popularity'),
+                    'status': parsed.get('status'),
+                }
+                if content_type in ('movies', 'series') else {}
+            ),
         }
 
     def to_android_catalog_item(
@@ -572,14 +612,21 @@ class ContentService:
         """
         Obtiene un item específico de contenido.
         Busca primero por id interno, luego por provider_id.
+        Para movies y series, obtiene metadata TMDB joinneada.
         """
-        table = self.TABLE_MAP.get(content_type)
-        if not table:
+        if content_type == 'movies':
+            row = self.pg.get_movie_with_metadata(item_id)
+        elif content_type == 'series':
+            row = self.pg.get_series_with_metadata(item_id)
+        elif content_type == 'channels':
+            table = self.TABLE_MAP.get(content_type)
+            if not table:
+                raise ValueError(f"Tipo de contenido inválido: {content_type}")
+            row = self.pg.get_content_item_by_id(table, item_id)
+            if not row:
+                row = self.pg.get_content_item_by_provider_id(table, item_id)
+        else:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
-
-        row = self.pg.get_content_item_by_id(table, item_id)
-        if not row:
-            row = self.pg.get_content_item_by_provider_id(table, item_id)
 
         if row:
             return self._parse_content_item(row, content_type, username, password)
