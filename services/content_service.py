@@ -435,6 +435,19 @@ class ContentService:
             'year': row.get('year'),
             'language_label': row.get('country'),
             'stream_url': '',
+            'overview': row.get('overview_es') or row.get('overview_en'),
+            'overview_es': row.get('overview_es'),
+            'overview_en': row.get('overview_en'),
+            'rating': row.get('vote_average'),
+            'vote_count': row.get('vote_count'),
+            'genres': row.get('genres'),
+            'poster_path': row.get('tmdb_poster_path') or row.get('poster_path'),
+            'backdrop_path': row.get('backdrop_path'),
+            'tagline': row.get('tagline'),
+            'release_date': row.get('release_date'),
+            'tmdb_id': row.get('tmdb_id'),
+            'popularity': row.get('popularity'),
+            'status': row.get('status'),
         }
 
     @staticmethod

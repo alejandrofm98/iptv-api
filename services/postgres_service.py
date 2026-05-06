@@ -1049,10 +1049,27 @@ class PostgresService:
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
         offset = (page - 1) * page_size
 
+        series_key_expr = """
+            COALESCE(
+                NULLIF(series_key, ''),
+                NULLIF(nombre_dedup_key, ''),
+                NULLIF(serie_name, ''),
+                LOWER(NULLIF(nombre_normalizado, '')),
+                LOWER(nombre)
+            )
+        """
+
         sql = f"""
-        WITH grouped AS (
+        WITH base AS (
+            SELECT *,
+                {series_key_expr} AS catalog_series_key
+            FROM series
+            {where_clause}
+        ),
+        grouped AS (
             SELECT
                 serie_name,
+                MIN(catalog_series_key) AS catalog_series_key,
                 COUNT(*) AS total_episodes,
                 MAX(year) AS year,
                 MAX(logo) AS logo,
@@ -1064,14 +1081,32 @@ class PostgresService:
                 MIN(id) AS first_id,
                 MIN(nombre) AS first_nombre,
                 MIN(nombre_normalizado) AS first_nombre_normalizado
-            FROM series
-            {where_clause}
+            FROM base
             GROUP BY serie_name
             HAVING serie_name IS NOT NULL AND serie_name != ''
         ),
+        with_metadata AS (
+            SELECT
+                g.*,
+                sm.overview_es,
+                sm.overview_en,
+                sm.vote_average,
+                sm.vote_count,
+                sm.genres,
+                sm.backdrop_path,
+                sm.poster_path as tmdb_poster_path,
+                sm.tagline,
+                sm.tmdb_id,
+                sm.release_date,
+                sm.popularity,
+                sm.status
+            FROM grouped g
+            LEFT JOIN series_metadata sm
+                ON g.catalog_series_key = sm.series_key
+        ),
         counted AS (
             SELECT *, COUNT(*) OVER() AS _total
-            FROM grouped
+            FROM with_metadata
         )
         SELECT *
         FROM counted
@@ -1088,6 +1123,7 @@ class PostgresService:
         for row in rows:
             r = dict(row)
             r.pop('_total', None)
+            r.pop('catalog_series_key', None)
             provider_id = r.pop('first_provider_id', None)
             r['provider_id'] = provider_id
             r['id'] = r.pop('first_id', None)

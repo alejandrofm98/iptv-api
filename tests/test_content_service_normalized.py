@@ -10,6 +10,7 @@ psycopg2_pool_module = types.ModuleType("psycopg2.pool")
 psycopg2_pool_module.SimpleConnectionPool = object
 psycopg2_extras_module = types.ModuleType("psycopg2.extras")
 psycopg2_extras_module.RealDictCursor = object
+psycopg2_extras_module.execute_batch = lambda *args, **kwargs: None
 psycopg2_module.pool = psycopg2_pool_module
 
 sys.modules.setdefault("psycopg2", psycopg2_module)
@@ -187,6 +188,43 @@ def test_android_catalog_item_keeps_series_name_for_grouping():
     item = service._to_android_catalog_item(row, "series")
 
     assert item["series_name"] == "Serie Uno"
+
+
+def test_android_series_group_item_includes_tmdb_metadata():
+    service = ContentService(FakeSupabase())
+
+    row = {
+        "id": "serie-1",
+        "provider_id": "100",
+        "serie_name": "Serie Uno",
+        "logo": "https://img.test/serie.png",
+        "grupo": "Drama",
+        "grupo_normalizado": "Drama",
+        "total_episodes": 8,
+        "year": 2025,
+        "country": "ES",
+        "overview_es": "Descripcion ES",
+        "overview_en": "Description EN",
+        "vote_average": 8.2,
+        "vote_count": 120,
+        "genres": ["Drama"],
+        "tmdb_poster_path": "/poster.jpg",
+        "backdrop_path": "/backdrop.jpg",
+        "tagline": "Tagline",
+        "release_date": "2025-01-01",
+        "tmdb_id": 123,
+        "popularity": 10.5,
+        "status": "Returning Series",
+    }
+
+    item = service._to_android_series_group_item(row)
+
+    assert item["type"] == "series_group"
+    assert item["overview"] == "Descripcion ES"
+    assert item["rating"] == 8.2
+    assert item["poster_path"] == "/poster.jpg"
+    assert item["backdrop_path"] == "/backdrop.jpg"
+    assert item["tmdb_id"] == 123
 
 
 def test_home_catalog_uses_lightweight_queries_without_exact_count():
