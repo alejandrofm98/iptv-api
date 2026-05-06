@@ -326,8 +326,11 @@ class ContentService:
             base_item['release_date'] = row.get('release_date')
             base_item['year'] = row.get('year')
             base_item['tmdb_id'] = row.get('tmdb_id')
+            base_item['tmdb_title'] = row.get('tmdb_title')
             base_item['popularity'] = row.get('popularity')
             base_item['status'] = row.get('status')
+            if content_type == 'series':
+                base_item['total_seasons'] = row.get('total_seasons')
 
         return base_item
 
@@ -385,8 +388,10 @@ class ContentService:
                     'release_date': parsed.get('release_date'),
                     'year': parsed.get('year'),
                     'tmdb_id': parsed.get('tmdb_id'),
+                    'tmdb_title': parsed.get('tmdb_title'),
                     'popularity': parsed.get('popularity'),
                     'status': parsed.get('status'),
+                    'total_seasons': parsed.get('total_seasons') if content_type == 'series' else None,
                 }
                 if content_type in ('movies', 'series') else {}
             ),
@@ -446,8 +451,10 @@ class ContentService:
             'tagline': row.get('tagline'),
             'release_date': row.get('release_date'),
             'tmdb_id': row.get('tmdb_id'),
+            'tmdb_title': row.get('tmdb_title'),
             'popularity': row.get('popularity'),
             'status': row.get('status'),
+            'total_seasons': row.get('total_seasons'),
         }
 
     @staticmethod

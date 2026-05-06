@@ -213,8 +213,10 @@ def test_android_series_group_item_includes_tmdb_metadata():
         "tagline": "Tagline",
         "release_date": "2025-01-01",
         "tmdb_id": 123,
+        "tmdb_title": "TMDB Serie Uno",
         "popularity": 10.5,
         "status": "Returning Series",
+        "total_seasons": 2,
     }
 
     item = service._to_android_series_group_item(row)
@@ -225,6 +227,30 @@ def test_android_series_group_item_includes_tmdb_metadata():
     assert item["poster_path"] == "/poster.jpg"
     assert item["backdrop_path"] == "/backdrop.jpg"
     assert item["tmdb_id"] == 123
+    assert item["tmdb_title"] == "TMDB Serie Uno"
+    assert item["total_seasons"] == 2
+
+
+def test_android_movie_item_includes_tmdb_title():
+    service = ContentService(FakeSupabase())
+
+    row = {
+        "provider_id": "movie-1",
+        "numero": 10,
+        "nombre": "ES - Movie Uno",
+        "nombre_normalizado": "Movie Uno",
+        "grupo": "Cine",
+        "grupo_normalizado": "Cine",
+        "logo": "",
+        "url": "https://provider.test/movie/user/pass/10.mp4",
+        "tmdb_id": 321,
+        "tmdb_title": "TMDB Movie Uno",
+    }
+
+    item = service._to_android_catalog_item(row, "movies")
+
+    assert item["title"] == "Movie Uno"
+    assert item["tmdb_title"] == "TMDB Movie Uno"
 
 
 def test_home_catalog_uses_lightweight_queries_without_exact_count():

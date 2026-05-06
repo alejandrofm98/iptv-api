@@ -336,6 +336,7 @@ class PostgresService:
                 mm.runtime_minutes,
                 mm.tagline,
                 mm.tmdb_id,
+                mm.title as tmdb_title,
                 mm.release_date,
                 mm.popularity,
                 mm.status
@@ -360,11 +361,19 @@ class PostgresService:
                 sm.poster_path as tmdb_poster_path,
                 sm.tagline,
                 sm.tmdb_id,
+                sm.title as tmdb_title,
                 sm.release_date,
                 sm.popularity,
-                sm.status
+                sm.status,
+                seasons.total_seasons
             FROM series s
             LEFT JOIN series_metadata sm ON s.series_key = sm.series_key
+            LEFT JOIN (
+                SELECT series_key, COUNT(DISTINCT temporada) AS total_seasons
+                FROM series
+                WHERE temporada IS NOT NULL
+                GROUP BY series_key
+            ) seasons ON s.series_key = seasons.series_key
             WHERE s.id = %s OR s.series_key = %s OR s.provider_id = %s
             LIMIT 1
         """
@@ -511,6 +520,7 @@ class PostgresService:
                 mm.runtime_minutes,
                 mm.tagline,
                 mm.tmdb_id,
+                mm.title as tmdb_title,
                 mm.release_date,
                 mm.popularity,
                 mm.status
@@ -964,6 +974,12 @@ class PostgresService:
             FROM base
             ORDER BY catalog_series_key ASC, year DESC, numero ASC
         ),
+        season_counts AS (
+            SELECT catalog_series_key, COUNT(DISTINCT temporada) AS total_seasons
+            FROM base
+            WHERE temporada IS NOT NULL
+            GROUP BY catalog_series_key
+        ),
         with_metadata AS (
             SELECT
                 d.*,
@@ -976,12 +992,16 @@ class PostgresService:
                 sm.poster_path as tmdb_poster_path,
                 sm.tagline,
                 sm.tmdb_id,
+                sm.title as tmdb_title,
                 sm.release_date,
                 sm.popularity,
-                sm.status
+                sm.status,
+                sc.total_seasons
             FROM deduped d
             LEFT JOIN series_metadata sm
                 ON d.catalog_series_key = sm.series_key
+            LEFT JOIN season_counts sc
+                ON d.catalog_series_key = sc.catalog_series_key
         ),
         counted AS (
             SELECT *, COUNT(*) OVER() AS _total
@@ -1076,6 +1096,7 @@ class PostgresService:
                 MAX(grupo) AS grupo,
                 MAX(grupo_normalizado) AS grupo_normalizado,
                 MAX(country) AS country,
+                COUNT(DISTINCT temporada) AS total_seasons,
                 MIN(numero) AS first_numero,
                 MIN(provider_id) AS first_provider_id,
                 MIN(id) AS first_id,
@@ -1097,6 +1118,7 @@ class PostgresService:
                 sm.poster_path as tmdb_poster_path,
                 sm.tagline,
                 sm.tmdb_id,
+                sm.title as tmdb_title,
                 sm.release_date,
                 sm.popularity,
                 sm.status
