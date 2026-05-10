@@ -84,7 +84,7 @@ services:
       - "traefik.http.middlewares.iptv-no-redirect.headers.customrequestheaders.X-Placeholder=1"
 
       # ── Router HTTPS (general) ─────────────────────────────────────
-      - "traefik.http.routers.iptv-https.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
+      - "traefik.http.routers.iptv-https.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`)"
       - "traefik.http.routers.iptv-https.entrypoints=websecure"
       - "traefik.http.routers.iptv-https.tls=true"
       - "traefik.http.routers.iptv-https.tls.certresolver=letsencrypt"
@@ -106,9 +106,22 @@ services:
       - "traefik.http.routers.iptv-streams-http.service=iptv-service"
       - "traefik.http.routers.iptv-streams-http.middlewares=iptv-no-redirect@docker"
 
+      # ── Imágenes generadas: HTTP sin redirect y HTTPS explícito ─────────
+      - "traefik.http.routers.iptv-images-http.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`) && PathPrefix(`/images/`)"
+      - "traefik.http.routers.iptv-images-http.entrypoints=web"
+      - "traefik.http.routers.iptv-images-http.priority=250"
+      - "traefik.http.routers.iptv-images-http.service=iptv-service"
+      - "traefik.http.routers.iptv-images-http.middlewares=iptv-no-redirect@docker"
+      - "traefik.http.routers.iptv-images-https.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`) && PathPrefix(`/images/`)"
+      - "traefik.http.routers.iptv-images-https.entrypoints=websecure"
+      - "traefik.http.routers.iptv-images-https.tls=true"
+      - "traefik.http.routers.iptv-images-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.iptv-images-https.priority=250"
+      - "traefik.http.routers.iptv-images-https.service=iptv-service"
+
       # ── Servicio compartido ────────────────────────────────────────
       - "traefik.http.services.iptv-service.loadbalancer.server.port=80"
-      - "traefik.http.routers.iptv-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (Path(`/get.php`) || Path(`/player_api.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
+      - "traefik.http.routers.iptv-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`) && (Path(`/get.php`) || Path(`/player_api.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
 
   # ============================================
   # Video Extractor Service (Playwright)
