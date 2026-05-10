@@ -1084,8 +1084,10 @@ async def get_calendar_by_date(
             fecha=evento.get('fecha'),
             hora=evento.get('hora'),
             competicion=evento.get('competicion'),
+            subtitulo_competicion=evento.get('subtitulo_competicion'),
             categoria=evento.get('categoria'),
             equipos=evento.get('equipos'),
+            imagen_evento=evento.get('imagen_evento'),
             canales_original=evento.get('canales_original', []) or [],
             canales_resueltos=canales_resueltos
         ))
@@ -1130,8 +1132,10 @@ async def get_calendar_event(
         fecha=evento.get('fecha'),
         hora=evento.get('hora'),
         competicion=evento.get('competicion'),
+        subtitulo_competicion=evento.get('subtitulo_competicion'),
         categoria=evento.get('categoria'),
         equipos=evento.get('equipos'),
+        imagen_evento=evento.get('imagen_evento'),
         canales_original=evento.get('canales_original', []) or [],
         canales_resueltos=canales_resueltos
     )

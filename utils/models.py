@@ -205,8 +205,10 @@ class CalendarEvent(BaseModel):
     fecha: Optional[str]
     hora: Optional[str]
     competicion: Optional[str]
+    subtitulo_competicion: Optional[str] = None
     categoria: Optional[str]
     equipos: Optional[str]
+    imagen_evento: Optional[str] = None
     canales_original: List[str]
     canales_resueltos: List[ChannelResolved]
 
