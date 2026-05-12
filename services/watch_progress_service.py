@@ -9,6 +9,8 @@ from .postgres_service import PostgresService
 class WatchProgressService:
     """Servicio para CRUD de progreso de visualizacion."""
 
+    TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p"
+
     TABLE_BY_TYPE = {
         "movie": "movies",
         "series": "series",
@@ -114,7 +116,8 @@ class WatchProgressService:
         if content_row:
             normalized["title"] = content_row.get("nombre") or row.get("title") or ""
             normalized["normalized_title"] = self._normalized_title_for_content(content_type, content_row) or row.get("normalized_title") or normalized["title"]
-            normalized["image_url"] = content_row.get("logo") or row.get("image_url") or ""
+            normalized["image_url"] = self._image_url_for_content(content_row, row)
+            self._apply_metadata_fields(normalized, content_type, content_row)
             if content_type == "series":
                 normalized["series_name"] = content_row.get("serie_name") or row.get("series_name")
                 normalized["season_number"] = self._safe_int(content_row.get("temporada")) or row.get("season_number")
@@ -141,6 +144,61 @@ class WatchProgressService:
                 or ""
             )
         return str(content_row.get("nombre_normalizado") or content_row.get("nombre") or "")
+
+    def _apply_metadata_fields(
+        self,
+        normalized: Dict[str, Any],
+        content_type: Optional[str],
+        content_row: Dict[str, Any],
+    ) -> None:
+        if content_type not in ("movie", "series"):
+            return
+
+        overview = content_row.get("overview_es") or content_row.get("overview_en")
+        normalized["overview"] = overview
+        normalized["overview_es"] = content_row.get("overview_es")
+        normalized["overview_en"] = content_row.get("overview_en")
+        normalized["rating"] = content_row.get("vote_average")
+        normalized["vote_average"] = content_row.get("vote_average")
+        normalized["vote_count"] = content_row.get("vote_count")
+        normalized["genres"] = content_row.get("genres")
+        normalized["poster_path"] = content_row.get("tmdb_poster_path") or content_row.get("poster_path")
+        normalized["backdrop_path"] = content_row.get("backdrop_path")
+        normalized["runtime_minutes"] = content_row.get("runtime_minutes")
+        normalized["tagline"] = content_row.get("tagline")
+        normalized["release_date"] = content_row.get("release_date")
+        normalized["year"] = content_row.get("year")
+        normalized["tmdb_id"] = content_row.get("tmdb_id")
+        normalized["tmdb_title"] = content_row.get("tmdb_title")
+        normalized["popularity"] = content_row.get("popularity")
+        normalized["status"] = content_row.get("status")
+        if content_type == "series":
+            normalized["total_seasons"] = content_row.get("total_seasons")
+
+    def _image_url_for_content(self, content_row: Dict[str, Any], progress_row: Dict[str, Any]) -> str:
+        logo = str(content_row.get("logo") or "")
+        poster_path = content_row.get("tmdb_poster_path") or content_row.get("poster_path")
+        if self._is_placeholder_logo(logo):
+            return self._build_tmdb_image_url(poster_path) or logo or progress_row.get("image_url") or ""
+        return logo or self._build_tmdb_image_url(poster_path) or progress_row.get("image_url") or ""
+
+    @classmethod
+    def _build_tmdb_image_url(cls, path: Optional[str], size: str = "w500") -> str:
+        if not path:
+            return ""
+        path_str = str(path)
+        if path_str.startswith("http://") or path_str.startswith("https://"):
+            return path_str
+        if not path_str.startswith("/"):
+            path_str = f"/{path_str}"
+        return f"{cls.TMDB_IMAGE_BASE_URL}/{size}{path_str}"
+
+    @staticmethod
+    def _is_placeholder_logo(url: str) -> bool:
+        if not url:
+            return True
+        lower_url = url.lower()
+        return "placeholder" in lower_url or "via.placeholder.com" in lower_url
 
     def _canonical_content_id(self, content_type: Optional[str], content_id: str) -> str:
         content_row = self._find_content_row(content_type, content_id)
@@ -173,6 +231,14 @@ class WatchProgressService:
             return None
 
         lookup_id = self._lookup_id(content_id)
+        metadata_result = None
+        if content_type == "movie":
+            metadata_result = self.pg.get_movie_with_metadata(lookup_id)
+        elif content_type == "series":
+            metadata_result = self.pg.get_series_with_metadata(lookup_id)
+        if metadata_result:
+            return metadata_result
+
         for field, value in (("provider_id", lookup_id), ("id", lookup_id), ("id", content_id)):
             if not value:
                 continue
