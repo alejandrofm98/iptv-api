@@ -42,6 +42,7 @@ class ContentService:
 
     REPLAY_EMBED_BASE_URL = 'https://dailywrestling.cc/embed'
     REPLAY_METADATA_EMBEDDER = 'https://dailywrestling.cc/'
+    TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p'
 
     HOME_PAGE_SIZE = 24
 
@@ -334,6 +335,29 @@ class ContentService:
 
         return base_item
 
+    @staticmethod
+    def _is_placeholder_logo(url: Optional[str]) -> bool:
+        if not url:
+            return True
+        lower_url = url.lower()
+        return 'placeholder' in lower_url or 'via.placeholder.com' in lower_url
+
+    @classmethod
+    def _build_tmdb_image_url(cls, path: Optional[str], size: str = 'w500') -> str:
+        if not path:
+            return ''
+        if path.startswith('http://') or path.startswith('https://'):
+            return path
+        if not path.startswith('/'):
+            path = f'/{path}'
+        return f'{cls.TMDB_IMAGE_BASE_URL}/{size}{path}'
+
+    def _select_catalog_image_url(self, item: Dict[str, Any], content_type: str) -> str:
+        logo = item.get('logo') or ''
+        if content_type not in ('movies', 'series') or not self._is_placeholder_logo(logo):
+            return logo
+        return self._build_tmdb_image_url(item.get('poster_path')) or logo
+
     def _to_android_catalog_item(
         self,
         row: Dict[str, Any],
@@ -356,7 +380,7 @@ class ContentService:
             'original_title': original_title,
             'subtitle': group,
             'description': group,
-            'image_url': parsed.get('logo') or '',
+            'image_url': self._select_catalog_image_url(parsed, content_type),
             'group': group,
             'normalized_group': group,
             'original_group': original_group,
@@ -428,7 +452,13 @@ class ContentService:
             'original_title': serie_name,
             'subtitle': group,
             'description': group,
-            'image_url': row.get('logo') or '',
+            'image_url': self._select_catalog_image_url(
+                {
+                    'logo': row.get('logo') or '',
+                    'poster_path': row.get('tmdb_poster_path') or row.get('poster_path'),
+                },
+                'series',
+            ),
             'group': group,
             'normalized_group': group,
             'original_group': original_group,

@@ -9,6 +9,7 @@ psycopg2_pool_module = types.ModuleType("psycopg2.pool")
 psycopg2_pool_module.SimpleConnectionPool = object
 psycopg2_extras_module = types.ModuleType("psycopg2.extras")
 psycopg2_extras_module.RealDictCursor = object
+psycopg2_extras_module.execute_batch = lambda *args, **kwargs: None
 psycopg2_module.pool = psycopg2_pool_module
 
 sys.modules.setdefault("psycopg2", psycopg2_module)
@@ -32,6 +33,9 @@ class StubContentService:
             "featured_series": [{"id": "3", "title": "Serie Uno", "type": "series"}],
             "stats": {"channels": 10, "movies": 20, "series": 30},
         }
+
+    def get_home_catalog_new(self, username: str, country: str | None = None, password: str = '') -> dict:
+        return self.get_home_catalog(username=username, country=country, password=password)
 
     def search_catalog(
         self,
@@ -65,6 +69,7 @@ class StubContentService:
         country: str | None,
         search: str | None,
         username: str,
+        year: int | None = None,
         password: str = '',
     ) -> dict:
         return {
@@ -128,29 +133,37 @@ class StubContentService:
 
 
 class StubCalendarService:
+    def _event(self, event_id: str, fecha: str = "2026-03-19") -> dict:
+        return {
+            "id": event_id,
+            "fecha": fecha,
+            "hora": "20:00",
+            "competicion": "Liga",
+            "subtitulo_competicion": "Jornada 12",
+            "categoria": "Futbol",
+            "equipos": "Equipo A vs Equipo B",
+            "imagen_evento": "https://img/evento.png",
+            "canales_original": ["Canal A"],
+            "canales_resueltos": [
+                {
+                    "channel_id": "101",
+                    "display_name": "Canal A",
+                    "quality": "HD",
+                    "priority": 1,
+                    "source_name": "provider",
+                    "logo": "https://img/logo.png",
+                    "stream_url": "https://stream/101.m3u8",
+                }
+            ],
+        }
+
     def get_events_by_date(self, fecha: str) -> list[dict]:
-        return [
-            {
-                "id": "event-1",
-                "fecha": fecha,
-                "hora": "20:00",
-                "competicion": "Liga",
-                "categoria": "Futbol",
-                "equipos": "Equipo A vs Equipo B",
-                "canales_original": ["Canal A"],
-                "canales_resueltos": [
-                    {
-                        "channel_id": "101",
-                        "display_name": "Canal A",
-                        "quality": "HD",
-                        "priority": 1,
-                        "source_name": "provider",
-                        "logo": "https://img/logo.png",
-                        "stream_url": "https://stream/101.m3u8",
-                    }
-                ],
-            }
-        ]
+        return [self._event("event-1", fecha)]
+
+    def get_event_by_id(self, event_id: str) -> dict | None:
+        if event_id != "event-1":
+            return None
+        return self._event(event_id)
 
     def get_provider_ids(self, channel_ids: list[str]) -> dict[str, str | None]:
         return {cid: None for cid in channel_ids}
@@ -279,7 +292,7 @@ def test_get_home_returns_lightweight_sections() -> None:
     assert client.stub_favorites_service.last_home_params == {
         "user_id": "user-1",
         "page": 1,
-        "page_size": 12,
+        "page_size": 24,
         "country": None,
         "search": None,
         "username": "demo",
@@ -401,7 +414,21 @@ def test_calendar_events_include_direct_stream_data() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    channel = payload["eventos"][0]["canales_resueltos"][0]
+    event = payload["eventos"][0]
+    channel = event["canales_resueltos"][0]
+    assert event["subtitulo_competicion"] == "Jornada 12"
+    assert event["imagen_evento"] == "https://img/evento.png"
     assert channel["display_name"] == "Canal A"
     assert channel["logo"] == "https://img/logo.png"
     assert channel["stream_url"] == "https://stream/101.m3u8"
+
+
+def test_calendar_event_includes_competition_subtitle_and_image() -> None:
+    client = create_client()
+
+    response = client.get("/api/calendar/event/event-1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["subtitulo_competicion"] == "Jornada 12"
+    assert payload["imagen_evento"] == "https://img/evento.png"

@@ -253,6 +253,44 @@ def test_android_movie_item_includes_tmdb_title():
     assert item["tmdb_title"] == "TMDB Movie Uno"
 
 
+def test_android_movie_item_uses_tmdb_poster_when_logo_is_placeholder():
+    service = ContentService(FakeSupabase())
+
+    row = {
+        "provider_id": "2053693",
+        "nombre": "ES - Los colores del tiempo (LQ) (2025)",
+        "nombre_normalizado": "Los colores del tiempo (2025)",
+        "grupo": "Peliculas 2025",
+        "grupo_normalizado": "Peliculas 2025",
+        "logo": "http://iptv.test/logo?url=http%3A%2F%2Fiptv.test%2Fplaceholder%2Fchannel.png&type=movie",
+        "url": "https://provider.test/movie/user/pass/2053693.mkv",
+        "tmdb_poster_path": "/22YFO9PqCw22IE1uDah6RRvCd1c.jpg",
+    }
+
+    item = service._to_android_catalog_item(row, "movies")
+
+    assert item["image_url"] == "https://image.tmdb.org/t/p/w500/22YFO9PqCw22IE1uDah6RRvCd1c.jpg"
+
+
+def test_android_movie_item_keeps_real_logo_over_tmdb_poster():
+    service = ContentService(FakeSupabase())
+
+    row = {
+        "provider_id": "movie-1",
+        "nombre": "Movie Uno",
+        "nombre_normalizado": "Movie Uno",
+        "grupo": "Cine",
+        "grupo_normalizado": "Cine",
+        "logo": "https://cdn.test/movie-logo.jpg",
+        "url": "https://provider.test/movie/user/pass/10.mp4",
+        "tmdb_poster_path": "/poster.jpg",
+    }
+
+    item = service._to_android_catalog_item(row, "movies")
+
+    assert item["image_url"] == "https://cdn.test/movie-logo.jpg"
+
+
 def test_home_catalog_uses_lightweight_queries_without_exact_count():
     service = ContentService(HomeSupabase())
     service.get_content_count = lambda: {'channels': 1, 'movies': 1, 'series': 1, 'replays': 0}
