@@ -955,6 +955,7 @@ class PostgresService:
 
         series_key_expr = """
             COALESCE(
+                NULLIF(series_key, ''),
                 NULLIF(nombre_dedup_key, ''),
                 NULLIF(serie_name, ''),
                 LOWER(NULLIF(nombre_normalizado, '')),
