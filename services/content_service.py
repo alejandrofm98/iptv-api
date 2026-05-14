@@ -541,12 +541,12 @@ class ContentService:
         return f"{cls.TMDB_IMAGE_BASE_URL}/{size}{path}"
 
     def _select_catalog_image_url(self, item: Dict[str, Any], content_type: str) -> str:
+        if content_type in ("movies", "series"):
+            tmdb_url = self._build_tmdb_image_url(item.get("poster_path"))
+            if tmdb_url:
+                return tmdb_url
         logo = item.get("logo") or ""
-        if content_type not in ("movies", "series") or not self._is_placeholder_logo(
-            logo
-        ):
-            return logo
-        return self._build_tmdb_image_url(item.get("poster_path")) or logo
+        return logo
 
     def _to_android_catalog_item(
         self,
