@@ -1146,25 +1146,25 @@ class PostgresService:
         params: List[Any] = []
 
         if group:
-            filters.append("(grupo_normalizado ILIKE %s OR grupo ILIKE %s)")
+            filters.append("(s.grupo_normalizado ILIKE %s OR s.grupo ILIKE %s)")
             params.extend([f"%{group}%", f"%{group}%"])
 
         if upper_group:
-            filters.append("UPPER(grupo_normalizado) LIKE %s")
+            filters.append("UPPER(s.grupo_normalizado) LIKE %s")
             params.append(f"%{upper_group}%")
 
         if country:
-            filters.append("country = %s")
+            filters.append("s.country = %s")
             params.append(country)
 
         if search:
             filters.append(
-                "(serie_name ILIKE %s OR nombre_normalizado ILIKE %s OR nombre ILIKE %s)"
+                "(s.serie_name ILIKE %s OR s.nombre_normalizado ILIKE %s OR s.nombre ILIKE %s)"
             )
             params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
 
         if year:
-            filters.append("year = %s")
+            filters.append("s.year = %s")
             params.append(year)
 
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
@@ -1287,23 +1287,23 @@ class PostgresService:
         params: List[Any] = []
 
         if group:
-            filters.append("(grupo_normalizado ILIKE %s OR grupo ILIKE %s)")
+            filters.append("(s.grupo_normalizado ILIKE %s OR s.grupo ILIKE %s)")
             params.extend([f"%{group}%", f"%{group}%"])
 
         if upper_group:
-            filters.append("UPPER(grupo_normalizado) LIKE %s")
+            filters.append("UPPER(s.grupo_normalizado) LIKE %s")
             params.append(f"%{upper_group}%")
 
         if country:
-            filters.append("country = %s")
+            filters.append("s.country = %s")
             params.append(country)
 
         if search:
-            filters.append("(serie_name ILIKE %s OR nombre_normalizado ILIKE %s)")
+            filters.append("(s.serie_name ILIKE %s OR s.nombre_normalizado ILIKE %s)")
             params.extend([f"%{search}%", f"%{search}%"])
 
         if year:
-            filters.append("year = %s")
+            filters.append("s.year = %s")
             params.append(year)
 
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
