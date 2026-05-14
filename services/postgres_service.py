@@ -903,6 +903,17 @@ class PostgresService:
             'TH': 'Tailandia', 'TR': 'Turquía', 'TW': 'Taiwán', 'UA': 'Ucrania',
             'UK': 'Reino Unido', 'US': 'Estados Unidos', 'UZ': 'Uzbekistán',
             'VT': 'Vaticano', 'WC': 'Islas Cook', 'ZA': 'Sudáfica',
+            'AS': 'Asia',
+            'CR': 'Costa Rica',
+            'EU': 'Unión Europea',
+            'EX': 'Ex-Yugoslavia',
+            'HI': 'India',
+            'IC': 'Islandia',
+            'SW': 'Suecia',
+            'TA': 'Taiwán',
+            'UR': 'Pakistán',
+            'VE': 'Venezuela',
+            'WO': 'Mundial',
         }
 
         language_names = {
@@ -930,7 +941,7 @@ class PostgresService:
             code = row['country']
             countries.append({'code': code, 'name': names_map.get(code, code)})
 
-        countries.sort(key=lambda c: c['name'])
+        countries.sort(key=lambda c: (0 if c['code'] in ('ES', 'US') else 1, c['name']))
         return countries
 
     def get_distinct_series_page(
