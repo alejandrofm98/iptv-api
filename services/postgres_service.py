@@ -479,23 +479,23 @@ class PostgresService:
         params = []
 
         if group:
-            filters.append("(grupo_normalizado ILIKE %s OR grupo ILIKE %s)")
+            filters.append("(m.grupo_normalizado ILIKE %s OR m.grupo ILIKE %s)")
             params.extend([f"%{group}%", f"%{group}%"])
 
         if upper_group:
-            filters.append("UPPER(grupo_normalizado) LIKE %s")
+            filters.append("UPPER(m.grupo_normalizado) LIKE %s")
             params.append(f"%{upper_group}%")
 
         if country:
-            filters.append("country = %s")
+            filters.append("m.country = %s")
             params.append(country)
 
         if search:
-            filters.append("(nombre_normalizado ILIKE %s OR nombre ILIKE %s)")
+            filters.append("(m.nombre_normalizado ILIKE %s OR m.nombre ILIKE %s)")
             params.extend([f"%{search}%", f"%{search}%"])
 
         if year:
-            filters.append("year = %s")
+            filters.append("m.year = %s")
             params.append(year)
 
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
