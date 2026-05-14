@@ -1162,35 +1162,30 @@ class PostgresService:
 
         series_key_expr = """
             COALESCE(
-                NULLIF(series_key, ''),
-                NULLIF(nombre_dedup_key, ''),
-                NULLIF(serie_name, ''),
-                LOWER(NULLIF(nombre_normalizado, '')),
-                LOWER(nombre)
+                NULLIF(sm.tmdb_id::text, ''),
+                NULLIF(s.series_key, ''),
+                NULLIF(s.nombre_dedup_key, ''),
+                NULLIF(s.serie_name, ''),
+                LOWER(NULLIF(s.nombre_normalizado, '')),
+                LOWER(s.nombre)
             )
         """
 
+        count_sql = f"""
+            SELECT COUNT(DISTINCT {series_key_expr}) as total
+            FROM series s
+            LEFT JOIN series_metadata sm ON s.series_key = sm.series_key
+            {where_clause}
+        """
+        count_result = self.execute_query(count_sql, tuple(params))
+        total = int(count_result[0]["total"]) if count_result else 0
+
+        offset = (page - 1) * page_size
+
         sql = f"""
         WITH base AS (
-            SELECT *,
-            {series_key_expr} AS catalog_series_key
-            FROM series
-            {where_clause}
-        ),
-        deduped AS (
-            SELECT DISTINCT ON (catalog_series_key) *
-            FROM base
-            ORDER BY catalog_series_key ASC, year DESC, numero ASC
-        ),
-        season_counts AS (
-            SELECT catalog_series_key, COUNT(DISTINCT temporada) AS total_seasons
-            FROM base
-            WHERE temporada IS NOT NULL
-            GROUP BY catalog_series_key
-        ),
-        with_metadata AS (
             SELECT
-                d.*,
+                s.*,
                 sm.overview_es,
                 sm.overview_en,
                 sm.vote_average,
@@ -1204,16 +1199,33 @@ class PostgresService:
                 sm.release_date,
                 sm.popularity,
                 sm.status,
+                {series_key_expr} AS catalog_series_key
+            FROM series s
+            LEFT JOIN series_metadata sm ON s.series_key = sm.series_key
+            {where_clause}
+        ),
+        deduped AS (
+            SELECT DISTINCT ON (catalog_series_key) *
+            FROM base
+            ORDER BY catalog_series_key ASC, year DESC NULLS LAST, numero ASC
+        ),
+        season_counts AS (
+            SELECT catalog_series_key, COUNT(DISTINCT temporada) AS total_seasons
+            FROM base
+            WHERE temporada IS NOT NULL
+            GROUP BY catalog_series_key
+        ),
+        with_seasons AS (
+            SELECT
+                d.*,
                 sc.total_seasons
             FROM deduped d
-            LEFT JOIN series_metadata sm
-                ON d.catalog_series_key = sm.series_key
             LEFT JOIN season_counts sc
                 ON d.catalog_series_key = sc.catalog_series_key
         ),
         counted AS (
             SELECT *, COUNT(*) OVER() AS _total
-            FROM with_metadata
+            FROM with_seasons
         )
         SELECT *
         FROM counted
