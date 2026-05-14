@@ -502,7 +502,7 @@ class PostgresService:
 
         dedup_key_expr = """
             COALESCE(
-                NULLIF(mm.tmdb_id::text, ''),
+                NULLIF(tm.tmdb_id::text, ''),
                 NULLIF(m.nombre_dedup_key, ''),
                 LOWER(NULLIF(m.nombre_normalizado, '')),
                 LOWER(m.nombre)
@@ -512,7 +512,7 @@ class PostgresService:
         count_sql = f"""
             SELECT COUNT(DISTINCT {dedup_key_expr}) as total
             FROM movies m
-            LEFT JOIN movies_metadata mm ON m.provider_id = mm.provider_id
+            LEFT JOIN movies_metadata tm ON m.provider_id = tm.provider_id
             {where_clause}
         """
         count_result = self.execute_query(count_sql, tuple(params))
@@ -524,9 +524,26 @@ class PostgresService:
         end_row = page * page_size
 
         data_sql = f"""
-            WITH base AS (
+            WITH tmdb_lookup AS (
+                SELECT provider_id, tmdb_id
+                FROM movies_metadata
+            ),
+            base AS (
                 SELECT
                     m.*,
+                    {dedup_key_expr} AS dedup_key
+                FROM movies m
+                LEFT JOIN tmdb_lookup tm ON m.provider_id = tm.provider_id
+                {where_clause}
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (dedup_key) *
+                FROM base
+                ORDER BY dedup_key ASC, year DESC NULLS LAST, numero ASC
+            ),
+            with_metadata AS (
+                SELECT
+                    d.*,
                     mm.overview_es,
                     mm.overview_en,
                     mm.vote_average,
@@ -540,21 +557,14 @@ class PostgresService:
                     mm.title as tmdb_title,
                     mm.release_date,
                     mm.popularity,
-                    mm.status,
-                    {dedup_key_expr} AS dedup_key
-                FROM movies m
-                LEFT JOIN movies_metadata mm ON m.provider_id = mm.provider_id
-                {where_clause}
-            ),
-            deduped AS (
-                SELECT DISTINCT ON (dedup_key) *
-                FROM base
-                ORDER BY dedup_key ASC, year DESC NULLS LAST, numero ASC
+                    mm.status
+                FROM deduped d
+                LEFT JOIN movies_metadata mm ON d.provider_id = mm.provider_id
             ),
             numbered AS (
                 SELECT *,
                 ROW_NUMBER() OVER (ORDER BY year DESC NULLS LAST, nombre_normalizado ASC, id ASC) as rn
-                FROM deduped
+                FROM with_metadata
             )
             SELECT * FROM numbered
             WHERE rn BETWEEN %s AND %s
@@ -1162,7 +1172,7 @@ class PostgresService:
 
         series_key_expr = """
             COALESCE(
-                NULLIF(sm.tmdb_id::text, ''),
+                NULLIF(tm.tmdb_id::text, ''),
                 NULLIF(s.series_key, ''),
                 NULLIF(s.nombre_dedup_key, ''),
                 NULLIF(s.serie_name, ''),
@@ -1174,7 +1184,7 @@ class PostgresService:
         count_sql = f"""
             SELECT COUNT(DISTINCT {series_key_expr}) as total
             FROM series s
-            LEFT JOIN series_metadata sm ON s.series_key = sm.series_key
+            LEFT JOIN series_metadata tm ON s.series_key = tm.series_key
             {where_clause}
         """
         count_result = self.execute_query(count_sql, tuple(params))
@@ -1183,25 +1193,16 @@ class PostgresService:
         offset = (page - 1) * page_size
 
         sql = f"""
-        WITH base AS (
+        WITH tmdb_lookup AS (
+            SELECT series_key, tmdb_id
+            FROM series_metadata
+        ),
+        base AS (
             SELECT
                 s.*,
-                sm.overview_es,
-                sm.overview_en,
-                sm.vote_average,
-                sm.vote_count,
-                sm.genres,
-                sm.backdrop_path,
-                sm.poster_path as tmdb_poster_path,
-                sm.tagline,
-                sm.tmdb_id,
-                sm.title as tmdb_title,
-                sm.release_date,
-                sm.popularity,
-                sm.status,
                 {series_key_expr} AS catalog_series_key
             FROM series s
-            LEFT JOIN series_metadata sm ON s.series_key = sm.series_key
+            LEFT JOIN tmdb_lookup tm ON s.series_key = tm.series_key
             {where_clause}
         ),
         deduped AS (
@@ -1223,9 +1224,28 @@ class PostgresService:
             LEFT JOIN season_counts sc
                 ON d.catalog_series_key = sc.catalog_series_key
         ),
+        with_metadata AS (
+            SELECT
+                ws.*,
+                sm.overview_es,
+                sm.overview_en,
+                sm.vote_average,
+                sm.vote_count,
+                sm.genres,
+                sm.backdrop_path,
+                sm.poster_path as tmdb_poster_path,
+                sm.tagline,
+                sm.tmdb_id,
+                sm.title as tmdb_title,
+                sm.release_date,
+                sm.popularity,
+                sm.status
+            FROM with_seasons ws
+            LEFT JOIN series_metadata sm ON ws.catalog_series_key = sm.series_key
+        ),
         counted AS (
             SELECT *, COUNT(*) OVER() AS _total
-            FROM with_seasons
+            FROM with_metadata
         )
         SELECT *
         FROM counted
@@ -1291,25 +1311,31 @@ class PostgresService:
 
         series_key_expr = """
             COALESCE(
-                NULLIF(series_key, ''),
-                NULLIF(nombre_dedup_key, ''),
-                NULLIF(serie_name, ''),
-                LOWER(NULLIF(nombre_normalizado, '')),
-                LOWER(nombre)
+                NULLIF(tm.tmdb_id::text, ''),
+                NULLIF(s.series_key, ''),
+                NULLIF(s.nombre_dedup_key, ''),
+                NULLIF(s.serie_name, ''),
+                LOWER(NULLIF(s.nombre_normalizado, '')),
+                LOWER(s.nombre)
             )
         """
 
         sql = f"""
-        WITH base AS (
-            SELECT *,
+        WITH tmdb_lookup AS (
+            SELECT series_key, tmdb_id
+            FROM series_metadata
+        ),
+        base AS (
+            SELECT
+                s.*,
                 {series_key_expr} AS catalog_series_key
-            FROM series
+            FROM series s
+            LEFT JOIN tmdb_lookup tm ON s.series_key = tm.series_key
             {where_clause}
         ),
         grouped AS (
             SELECT
-                serie_name,
-                MIN(catalog_series_key) AS catalog_series_key,
+                catalog_series_key,
                 COUNT(*) AS total_episodes,
                 MAX(year) AS year,
                 MAX(logo) AS logo,
@@ -1321,10 +1347,11 @@ class PostgresService:
                 MIN(provider_id) AS first_provider_id,
                 MIN(id) AS first_id,
                 MIN(nombre) AS first_nombre,
-                MIN(nombre_normalizado) AS first_nombre_normalizado
+                MIN(nombre_normalizado) AS first_nombre_normalizado,
+                MIN(serie_name) AS serie_name
             FROM base
-            GROUP BY serie_name
-            HAVING serie_name IS NOT NULL AND serie_name != ''
+            WHERE catalog_series_key IS NOT NULL AND catalog_series_key != ''
+            GROUP BY catalog_series_key
         ),
         with_metadata AS (
             SELECT
@@ -1343,8 +1370,7 @@ class PostgresService:
                 sm.popularity,
                 sm.status
             FROM grouped g
-            LEFT JOIN series_metadata sm
-                ON g.catalog_series_key = sm.series_key
+            LEFT JOIN series_metadata sm ON g.catalog_series_key = sm.series_key
         ),
         counted AS (
             SELECT *, COUNT(*) OVER() AS _total
