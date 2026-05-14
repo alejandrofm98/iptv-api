@@ -1241,7 +1241,7 @@ class PostgresService:
                 sm.popularity,
                 sm.status
             FROM with_seasons ws
-            LEFT JOIN series_metadata sm ON ws.catalog_series_key = sm.series_key
+            LEFT JOIN series_metadata sm ON ws.series_key = sm.series_key
         ),
         counted AS (
             SELECT *, COUNT(*) OVER() AS _total
@@ -1336,6 +1336,7 @@ class PostgresService:
         grouped AS (
             SELECT
                 catalog_series_key,
+                MIN(series_key) AS series_key,
                 COUNT(*) AS total_episodes,
                 MAX(year) AS year,
                 MAX(logo) AS logo,
@@ -1370,7 +1371,7 @@ class PostgresService:
                 sm.popularity,
                 sm.status
             FROM grouped g
-            LEFT JOIN series_metadata sm ON g.catalog_series_key = sm.series_key
+            LEFT JOIN series_metadata sm ON g.series_key = sm.series_key
         ),
         counted AS (
             SELECT *, COUNT(*) OVER() AS _total
