@@ -502,16 +502,17 @@ class PostgresService:
 
         dedup_key_expr = """
             COALESCE(
-                NULLIF(tmdb_id::text, ''),
-                NULLIF(nombre_dedup_key, ''),
-                LOWER(NULLIF(nombre_normalizado, '')),
-                LOWER(nombre)
+                NULLIF(mm.tmdb_id::text, ''),
+                NULLIF(m.nombre_dedup_key, ''),
+                LOWER(NULLIF(m.nombre_normalizado, '')),
+                LOWER(m.nombre)
             )
         """
 
         count_sql = f"""
             SELECT COUNT(DISTINCT {dedup_key_expr}) as total
-            FROM movies
+            FROM movies m
+            LEFT JOIN movies_metadata mm ON m.provider_id = mm.provider_id
             {where_clause}
         """
         count_result = self.execute_query(count_sql, tuple(params))
@@ -524,45 +525,40 @@ class PostgresService:
 
         data_sql = f"""
             WITH base AS (
-            SELECT *,
-            {dedup_key_expr} AS dedup_key
-            FROM movies
-            {where_clause}
-        ),
-        deduped AS (
-            SELECT DISTINCT ON (dedup_key) *
-            FROM base
-            ORDER BY dedup_key ASC, year DESC NULLS LAST, numero ASC
-        ),
-        with_metadata AS (
-            SELECT
-                d.*,
-                mm.overview_es,
-                mm.overview_en,
-                mm.vote_average,
-                mm.vote_count,
-                mm.genres,
-                mm.backdrop_path,
-                mm.poster_path as tmdb_poster_path,
-                mm.runtime_minutes,
-                mm.tagline,
-                mm.tmdb_id,
-                mm.title as tmdb_title,
-                mm.release_date,
-                mm.popularity,
-                mm.status
-            FROM deduped d
-            LEFT JOIN movies_metadata mm
-                ON d.provider_id = mm.provider_id
-        ),
-        numbered AS (
-            SELECT *,
-            ROW_NUMBER() OVER (ORDER BY year DESC NULLS LAST, nombre_normalizado ASC, id ASC) as rn
-            FROM with_metadata
-        )
-        SELECT * FROM numbered
-        WHERE rn BETWEEN %s AND %s
-        ORDER BY rn
+                SELECT
+                    m.*,
+                    mm.overview_es,
+                    mm.overview_en,
+                    mm.vote_average,
+                    mm.vote_count,
+                    mm.genres,
+                    mm.backdrop_path,
+                    mm.poster_path as tmdb_poster_path,
+                    mm.runtime_minutes,
+                    mm.tagline,
+                    mm.tmdb_id,
+                    mm.title as tmdb_title,
+                    mm.release_date,
+                    mm.popularity,
+                    mm.status,
+                    {dedup_key_expr} AS dedup_key
+                FROM movies m
+                LEFT JOIN movies_metadata mm ON m.provider_id = mm.provider_id
+                {where_clause}
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (dedup_key) *
+                FROM base
+                ORDER BY dedup_key ASC, year DESC NULLS LAST, numero ASC
+            ),
+            numbered AS (
+                SELECT *,
+                ROW_NUMBER() OVER (ORDER BY year DESC NULLS LAST, nombre_normalizado ASC, id ASC) as rn
+                FROM deduped
+            )
+            SELECT * FROM numbered
+            WHERE rn BETWEEN %s AND %s
+            ORDER BY rn
         """
         data_params = tuple([*params, start_row, end_row])
         items = self.execute_query(data_sql, data_params)
