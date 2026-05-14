@@ -867,9 +867,10 @@ class PostgresService:
 
         return [row['grupo'] for row in results if row.get('grupo')]
 
-    def get_distinct_countries(self, table: str) -> List[Dict[str, str]]:
+    def get_distinct_countries(self, table: str, use_language_names: bool = False) -> List[Dict[str, str]]:
         """
-        Obtiene países distintos de una tabla usando GROUP BY.
+        Obtiene países/idiomas distintos de una tabla usando GROUP BY.
+        Si use_language_names=True, mapea códigos a nombres de idioma.
         """
         sql = f"""
             SELECT country
@@ -904,10 +905,30 @@ class PostgresService:
             'VT': 'Vaticano', 'WC': 'Islas Cook', 'ZA': 'Sudáfica',
         }
 
+        language_names = {
+            'ES': 'Español',
+            'EN': 'Inglés',
+            'LATAM': 'Español Latinoamericano',
+            'LAT': 'Español Latinoamericano',
+            'LA': 'Español Latinoamericano',
+            'LATINO': 'Español Latinoamericano',
+            'ESP': 'Español',
+            'ENG': 'Inglés',
+            'SPANISH': 'Español',
+            'ENGLISH': 'Inglés',
+            'VOSE': 'VOSE',
+            'CAST': 'Castellano',
+            'CASTELLANO': 'Castellano',
+            'SUB': 'Subtitulado',
+            'SUBTITULADO': 'Subtitulado',
+        }
+
+        names_map = language_names if use_language_names else country_names
+
         countries = []
         for row in results:
             code = row['country']
-            countries.append({'code': code, 'name': country_names.get(code, code)})
+            countries.append({'code': code, 'name': names_map.get(code, code)})
 
         countries.sort(key=lambda c: c['name'])
         return countries

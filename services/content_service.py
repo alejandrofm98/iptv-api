@@ -723,7 +723,8 @@ class ContentService:
         if cached is not None:
             return cached
 
-        result = self.pg.get_distinct_countries(table)
+        use_language = content_type in ('movies', 'series')
+        result = self.pg.get_distinct_countries(table, use_language_names=use_language)
         self._set_cached(cache_key, result)
         return result
 
