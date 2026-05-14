@@ -8,6 +8,7 @@ Optimizaciones v2:
 - get_distinct_groups usa grupo_normalizado (índice más selectivo)
 - Pool ampliado a 10 conexiones para carga concurrente
 """
+
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from psycopg2.extras import RealDictCursor, execute_batch
@@ -58,8 +59,7 @@ class PostgresService:
         """Inicializa el pool de conexiones"""
         if PostgresService._pool is None:
             PostgresService._pool = pool.SimpleConnectionPool(
-                2, 10,
-                self._connection_string
+                2, 10, self._connection_string
             )
 
     def _build_connection_string(self) -> str:
@@ -77,19 +77,19 @@ class PostgresService:
 
     def _get_valid_order_by_columns(self, table: str) -> List[str]:
         """Retorna columnas válidas para ORDER BY por tabla"""
-        common_cols = ['numero', 'nombre', 'nombre_normalizado', 'created_at']
+        common_cols = ["numero", "nombre", "nombre_normalizado", "created_at"]
         table_specific = {
-            'movies': ['year'],
-            'series': ['year'],
+            "movies": ["year"],
+            "series": ["year"],
         }
         cols = common_cols + table_specific.get(table, [])
         try:
             sql = "SELECT column_name FROM information_schema.columns WHERE table_name = %s"
             results = self.execute_query(sql, (table,))
-            db_cols = [r['column_name'] for r in results]
+            db_cols = [r["column_name"] for r in results]
             return [c for c in cols if c in db_cols]
         except Exception:
-            return cols[:1] if cols else ['numero']
+            return cols[:1] if cols else ["numero"]
 
     @contextmanager
     def get_connection(self):
@@ -102,7 +102,9 @@ class PostgresService:
             if conn:
                 PostgresService._pool.putconn(conn)
 
-    def execute_query(self, sql: str, params: Optional[tuple] = None) -> List[Dict[str, Any]]:
+    def execute_query(
+        self, sql: str, params: Optional[tuple] = None
+    ) -> List[Dict[str, Any]]:
         """
         Ejecuta una consulta SELECT y retorna los resultados.
         """
@@ -122,7 +124,9 @@ class PostgresService:
                 conn.commit()
                 return cursor.rowcount
 
-    def execute_insert(self, sql: str, params: Optional[tuple] = None) -> Dict[str, Any]:
+    def execute_insert(
+        self, sql: str, params: Optional[tuple] = None
+    ) -> Dict[str, Any]:
         """Ejecuta INSERT y retorna el row insertado usando RETURNING"""
         with self.get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -135,8 +139,8 @@ class PostgresService:
         """Inserta múltiples filas en una tabla usando execute_batch"""
         if not rows:
             return 0
-        placeholders = ','.join(['%s'] * len(columns))
-        columns_str = ','.join(columns)
+        placeholders = ",".join(["%s"] * len(columns))
+        columns_str = ",".join(columns)
         sql = f"INSERT INTO {table} ({columns_str}) VALUES ({placeholders})"
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
@@ -170,21 +174,26 @@ class PostgresService:
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id, username, max_connections, is_active, expires_at, created_at, role
         """
-        return self.execute_insert(sql, (
-            user_data['username'],
-            user_data['password_hash'],
-            user_data.get('max_connections', 5),
-            user_data.get('is_active', True),
-            user_data.get('expires_at'),
-            user_data.get('role', 'user')
-        ))
+        return self.execute_insert(
+            sql,
+            (
+                user_data["username"],
+                user_data["password_hash"],
+                user_data.get("max_connections", 5),
+                user_data.get("is_active", True),
+                user_data.get("expires_at"),
+                user_data.get("role", "user"),
+            ),
+        )
 
-    def update_user(self, user_id: str, user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def update_user(
+        self, user_id: str, user_data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """Actualiza un usuario y retorna el usuario actualizado"""
         set_clauses = []
         params = []
         for key, value in user_data.items():
-            if value is not None and key not in ('id', 'username', 'created_at'):
+            if value is not None and key not in ("id", "username", "created_at"):
                 set_clauses.append(f"{key} = %s")
                 params.append(value)
         if not set_clauses:
@@ -212,11 +221,12 @@ class PostgresService:
         """Cuenta registros en una tabla"""
         sql = f"SELECT COUNT(*) as count FROM {table}"
         result = self.execute_query(sql)
-        return result[0]['count'] if result else 0
+        return result[0]["count"] if result else 0
 
     def get_sync_metadata(self) -> Optional[Dict[str, Any]]:
         """Obtiene metadata de sincronización (totales y generated_at por tipo)."""
         from utils.constants import SYNC_METADATA_TABLE, SYNC_METADATA_ID
+
         sql = f"SELECT * FROM {SYNC_METADATA_TABLE} WHERE id = %s"
         result = self.execute_query(sql, (SYNC_METADATA_ID,))
         return result[0] if result else None
@@ -224,11 +234,12 @@ class PostgresService:
     def get_sync_metadata_field(self, field: str) -> Optional[str]:
         """Obtiene un campo específico de la tabla sync_metadata."""
         from utils.constants import SYNC_METADATA_TABLE, SYNC_METADATA_ID
+
         sql = f"SELECT {field} FROM {SYNC_METADATA_TABLE} WHERE id = %s"
         result = self.execute_query(sql, (SYNC_METADATA_ID,))
         if result and result[0].get(field):
             val = result[0][field]
-            return val.isoformat() if hasattr(val, 'isoformat') else str(val)
+            return val.isoformat() if hasattr(val, "isoformat") else str(val)
         return None
 
     # ============================================================
@@ -239,7 +250,7 @@ class PostgresService:
         """Cuenta sesiones activas de un usuario"""
         sql = "SELECT COUNT(*) as count FROM active_sessions WHERE user_id = %s"
         result = self.execute_query(sql, (user_id,))
-        return result[0]['count'] if result else 0
+        return result[0]["count"] if result else 0
 
     def get_active_sessions_by_user(self, user_id: str) -> List[Dict[str, Any]]:
         """Obtiene todas las sesiones activas de un usuario"""
@@ -249,7 +260,9 @@ class PostgresService:
         """
         return self.execute_query(sql, (user_id,))
 
-    def get_session_by_user_and_device(self, user_id: str, device_id: str) -> Optional[Dict[str, Any]]:
+    def get_session_by_user_and_device(
+        self, user_id: str, device_id: str
+    ) -> Optional[Dict[str, Any]]:
         """Obtiene sesión específica por user_id y device_id"""
         sql = "SELECT * FROM active_sessions WHERE user_id = %s AND device_id = %s"
         results = self.execute_query(sql, (user_id, device_id))
@@ -264,15 +277,18 @@ class PostgresService:
             DO UPDATE SET last_activity = EXCLUDED.last_activity, ip_address = EXCLUDED.ip_address, user_agent = EXCLUDED.user_agent
             RETURNING *
         """
-        return self.execute_insert(sql, (
-            session_data['user_id'],
-            session_data['device_id'],
-            session_data['device_name'],
-            session_data['device_type'],
-            session_data['ip_address'],
-            session_data['user_agent'],
-            session_data['last_activity']
-        ))
+        return self.execute_insert(
+            sql,
+            (
+                session_data["user_id"],
+                session_data["device_id"],
+                session_data["device_name"],
+                session_data["device_type"],
+                session_data["ip_address"],
+                session_data["user_agent"],
+                session_data["last_activity"],
+            ),
+        )
 
     def delete_session(self, user_id: str, device_id: str) -> bool:
         """Elimina una sesión específica"""
@@ -310,13 +326,17 @@ class PostgresService:
     # HELPERS: Content
     # ============================================================
 
-    def get_content_item_by_id(self, table: str, item_id: str) -> Optional[Dict[str, Any]]:
+    def get_content_item_by_id(
+        self, table: str, item_id: str
+    ) -> Optional[Dict[str, Any]]:
         """Obtiene item de contenido por ID interno"""
         sql = f"SELECT * FROM {table} WHERE id = %s"
         results = self.execute_query(sql, (item_id,))
         return results[0] if results else None
 
-    def get_content_item_by_provider_id(self, table: str, provider_id: str) -> Optional[Dict[str, Any]]:
+    def get_content_item_by_provider_id(
+        self, table: str, provider_id: str
+    ) -> Optional[Dict[str, Any]]:
         """Obtiene item de contenido por provider_id"""
         sql = f"SELECT * FROM {table} WHERE provider_id = %s"
         results = self.execute_query(sql, (provider_id,))
@@ -389,7 +409,7 @@ class PostgresService:
         upper_group: Optional[str] = None,
         country: Optional[str] = None,
         search: Optional[str] = None,
-        order_by: str = 'year',
+        order_by: str = "year",
         year: Optional[int] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Obtiene items de contenido con paginación y filtros"""
@@ -422,11 +442,17 @@ class PostgresService:
         count_sql = f"SELECT COUNT(*) as total FROM {table} {where_clause}"
 
         count_result = self.execute_query(count_sql, tuple(params))
-        total = count_result[0]['total'] if count_result else 0
+        total = count_result[0]["total"] if count_result else 0
 
         offset = (page - 1) * page_size
         valid_cols = self._get_valid_order_by_columns(table)
-        order_col = order_by if order_by in valid_cols else valid_cols[0] if valid_cols else 'numero'
+        order_col = (
+            order_by
+            if order_by in valid_cols
+            else valid_cols[0]
+            if valid_cols
+            else "numero"
+        )
         data_sql = f"""
             SELECT * FROM {table}
             {where_clause}
@@ -476,6 +502,7 @@ class PostgresService:
 
         dedup_key_expr = """
             COALESCE(
+                NULLIF(tmdb_id::text, ''),
                 NULLIF(nombre_dedup_key, ''),
                 LOWER(NULLIF(nombre_normalizado, '')),
                 LOWER(nombre)
@@ -488,7 +515,7 @@ class PostgresService:
             {where_clause}
         """
         count_result = self.execute_query(count_sql, tuple(params))
-        total = count_result[0]['total'] if count_result else 0
+        total = count_result[0]["total"] if count_result else 0
 
         # Usar ROW_NUMBER() para paginar correctamente después de la deduplicación
         # El orden final debe ser consistente: dedup primero, luego номер
@@ -542,12 +569,91 @@ class PostgresService:
 
         # Limpiar el campo 'rn' de los resultados
         for item in items:
-            item.pop('rn', None)
+            item.pop("rn", None)
+
+        return items, total
+
+    def get_distinct_channels_page(
+        self,
+        page: int,
+        page_size: int,
+        group: Optional[str] = None,
+        upper_group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Obtiene canales deduplicados por nombre_normalizado con paginación usando ROW_NUMBER()"""
+        filters = []
+        params = []
+
+        if group:
+            filters.append("(grupo_normalizado ILIKE %s OR grupo ILIKE %s)")
+            params.extend([f"%{group}%", f"%{group}%"])
+
+        if upper_group:
+            filters.append("UPPER(grupo_normalizado) LIKE %s")
+            params.append(f"%{upper_group}%")
+
+        if country:
+            filters.append("country = %s")
+            params.append(country)
+
+        if search:
+            filters.append("(nombre_normalizado ILIKE %s OR nombre ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+        dedup_key_expr = """
+            COALESCE(
+                NULLIF(nombre_dedup_key, ''),
+                LOWER(NULLIF(nombre_normalizado, '')),
+                LOWER(nombre)
+            )
+        """
+
+        count_sql = f"""
+            SELECT COUNT(DISTINCT {dedup_key_expr}) as total
+            FROM channels
+            {where_clause}
+        """
+        count_result = self.execute_query(count_sql, tuple(params))
+        total = count_result[0]["total"] if count_result else 0
+
+        start_row = (page - 1) * page_size + 1
+        end_row = page * page_size
+
+        data_sql = f"""
+            WITH base AS (
+                SELECT *,
+                {dedup_key_expr} AS dedup_key
+                FROM channels
+                {where_clause}
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (dedup_key) *
+                FROM base
+                ORDER BY dedup_key ASC, numero ASC NULLS LAST
+            ),
+            numbered AS (
+                SELECT *,
+                ROW_NUMBER() OVER (ORDER BY numero ASC NULLS LAST, nombre_normalizado ASC, id ASC) as rn
+                FROM deduped
+            )
+            SELECT * FROM numbered
+            WHERE rn BETWEEN %s AND %s
+            ORDER BY rn
+        """
+        data_params = tuple([*params, start_row, end_row])
+        items = self.execute_query(data_sql, data_params)
+
+        for item in items:
+            item.pop("rn", None)
 
         return items, total
 
     def get_watched_items(self, user_id: str, limit: int = 100):
-      sql = """
+        sql = """
             SELECT * \
             FROM watch_progress
             WHERE user_id = %s \
@@ -555,7 +661,7 @@ class PostgresService:
             ORDER BY last_watched_at DESC
                 LIMIT %s \
             """
-      return self.execute_query(sql, (user_id, limit))
+        return self.execute_query(sql, (user_id, limit))
 
     def search_content(self, table: str, query: str) -> List[Dict[str, Any]]:
         """Busca contenido por nombre"""
@@ -569,17 +675,17 @@ class PostgresService:
     def get_content_counts(self) -> Dict[str, int]:
         """Obtiene conteo de todas las tablas de contenido"""
         return {
-            'channels': self.count_table('channels'),
-            'movies': self.count_table('movies'),
-            'series': self.count_table('series'),
-            'replays': self.count_table('replays'),
+            "channels": self.count_table("channels"),
+            "movies": self.count_table("movies"),
+            "series": self.count_table("series"),
+            "replays": self.count_table("replays"),
         }
 
     def get_channels_by_provider_ids(self, provider_ids: List) -> List[Dict[str, Any]]:
         """Obtiene canales por lista de provider_ids"""
         if not provider_ids:
             return []
-        placeholders = ','.join(['%s'] * len(provider_ids))
+        placeholders = ",".join(["%s"] * len(provider_ids))
         sql = f"SELECT * FROM channels WHERE provider_id::text IN ({placeholders})"
         return self.execute_query(sql, tuple(provider_ids))
 
@@ -602,15 +708,12 @@ class PostgresService:
         return self.execute_query(sql, (serie_name,))
 
     def get_episodes_paginated(
-        self,
-        serie_name: str,
-        page: int,
-        page_size: int
+        self, serie_name: str, page: int, page_size: int
     ) -> Tuple[List[Dict[str, Any]], int, List]:
         """Obtiene episodios paginados de una serie"""
         count_sql = "SELECT COUNT(*) as total FROM series WHERE serie_name = %s"
         count_result = self.execute_query(count_sql, (serie_name,))
-        total = count_result[0]['total'] if count_result else 0
+        total = count_result[0]["total"] if count_result else 0
 
         offset = (page - 1) * page_size
         data_sql = """
@@ -623,7 +726,7 @@ class PostgresService:
 
         seasons_sql = "SELECT DISTINCT temporada FROM series WHERE serie_name = %s AND temporada IS NOT NULL ORDER BY temporada"
         seasons_result = self.execute_query(seasons_sql, (serie_name,))
-        seasons = [r['temporada'] for r in seasons_result]
+        seasons = [r["temporada"] for r in seasons_result]
 
         return items, total, seasons
 
@@ -631,7 +734,7 @@ class PostgresService:
         """Obtiene lista de temporadas distintas de una serie"""
         sql = "SELECT DISTINCT temporada FROM series WHERE serie_name = %s AND temporada IS NOT NULL ORDER BY temporada"
         results = self.execute_query(sql, (serie_name,))
-        return [r['temporada'] for r in results]
+        return [r["temporada"] for r in results]
 
     # ============================================================
     # HELPERS: Replays
@@ -642,7 +745,7 @@ class PostgresService:
         page: int,
         page_size: int,
         event_type: Optional[str] = None,
-        search: Optional[str] = None
+        search: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         """Obtiene replays con paginación y filtros"""
         filters = []
@@ -653,14 +756,16 @@ class PostgresService:
             params.append(event_type)
 
         if search:
-            filters.append("(title ILIKE %s OR event_name ILIKE %s OR description ILIKE %s)")
+            filters.append(
+                "(title ILIKE %s OR event_name ILIKE %s OR description ILIKE %s)"
+            )
             params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
 
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
         count_sql = f"SELECT COUNT(*) as total FROM replays {where_clause}"
         count_result = self.execute_query(count_sql, tuple(params))
-        total = count_result[0]['total'] if count_result else 0
+        total = count_result[0]["total"] if count_result else 0
 
         offset = (page - 1) * page_size
         data_sql = f"""
@@ -684,7 +789,9 @@ class PostgresService:
     # HELPERS: Watch Progress
     # ============================================================
 
-    def get_watch_progress_rows(self, user_id: str, content_id: str) -> List[Dict[str, Any]]:
+    def get_watch_progress_rows(
+        self, user_id: str, content_id: str
+    ) -> List[Dict[str, Any]]:
         """Busca registros de watch_progress por user_id y content_id (con soporte para IDs legacy movie:/series:)"""
         base_id = content_id.split(":", 1)[1] if ":" in content_id else content_id
         candidates = [content_id, base_id]
@@ -703,7 +810,9 @@ class PostgresService:
             unique[key] = row
         return list(unique.values())
 
-    def get_continue_watching(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    def get_continue_watching(
+        self, user_id: str, limit: int = 20
+    ) -> List[Dict[str, Any]]:
         """Obtiene items con progreso incompleto (entre 5% y 95%)"""
         sql = """
             SELECT * FROM watch_progress
@@ -713,16 +822,18 @@ class PostgresService:
         """
         return self.execute_query(sql, (user_id, limit))
 
-    def upsert_watch_progress(self, user_id: str, content_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def upsert_watch_progress(
+        self, user_id: str, content_id: str, data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Inserta o actualiza watch_progress"""
         position_ms = data.get("position_ms", 0)
         duration_ms = data.get("duration_ms", 0)
-        
+
         # Auto-mark como visto si >= 95%
         is_watched = data.get("is_watched", False)
         if not is_watched and duration_ms > 0 and position_ms >= duration_ms * 95 / 100:
             is_watched = True
-        
+
         sql = """
             INSERT INTO watch_progress (user_id, content_id, content_type, position_ms, duration_ms, series_name, season_number, episode_number, title, image_url, last_watched_at, is_watched)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -739,22 +850,27 @@ class PostgresService:
                 is_watched = EXCLUDED.is_watched
             RETURNING *
         """
-        return self.execute_insert(sql, (
-            user_id,
-            content_id,
-            data.get("content_type"),
-            position_ms,
-            duration_ms,
-            data.get("series_name"),
-            data.get("season_number"),
-            data.get("episode_number"),
-            data.get("title", ""),
-            data.get("image_url", ""),
-            data.get("last_watched_at"),
-            is_watched
-        ))
+        return self.execute_insert(
+            sql,
+            (
+                user_id,
+                content_id,
+                data.get("content_type"),
+                position_ms,
+                duration_ms,
+                data.get("series_name"),
+                data.get("season_number"),
+                data.get("episode_number"),
+                data.get("title", ""),
+                data.get("image_url", ""),
+                data.get("last_watched_at"),
+                is_watched,
+            ),
+        )
 
-    def update_is_watched(self, user_id: str, content_id: str, is_watched: bool) -> bool:
+    def update_is_watched(
+        self, user_id: str, content_id: str, is_watched: bool
+    ) -> bool:
         """Marca o desmarca como visto un contenido"""
         sql = """
             UPDATE watch_progress 
@@ -765,7 +881,9 @@ class PostgresService:
         rows = self.execute_query(sql, (is_watched, user_id, content_id))
         return rows[0].get("is_watched") if rows else None
 
-    def get_series_last_episode(self, user_id: str, series_name: str) -> Optional[Dict[str, Any]]:
+    def get_series_last_episode(
+        self, user_id: str, series_name: str
+    ) -> Optional[Dict[str, Any]]:
         """Obtiene el último episodio visto de una serie"""
         sql = """
             SELECT * FROM watch_progress
@@ -828,24 +946,26 @@ class PostgresService:
         """Obtiene valor de config por key"""
         sql = "SELECT value FROM config WHERE key = %s"
         results = self.execute_query(sql, (key,))
-        return results[0]['value'] if results else None
+        return results[0]["value"] if results else None
 
     def get_all_config(self) -> Dict[str, str]:
         """Obtiene todos los config como dict"""
         sql = "SELECT key, value FROM config"
         results = self.execute_query(sql)
-        return {r['key']: r['value'] for r in results if r.get('key')}
+        return {r["key"]: r["value"] for r in results if r.get("key")}
 
     # ============================================================
     # HELPERS: Groups / Countries
     # ============================================================
 
-    def get_distinct_groups(self, table: str, countries: Optional[List[str]] = None) -> List[str]:
+    def get_distinct_groups(
+        self, table: str, countries: Optional[List[str]] = None
+    ) -> List[str]:
         """
         Obtiene grupos distintos de una tabla.
         """
         if countries and len(countries) > 0:
-            placeholders = ','.join(['%s'] * len(countries))
+            placeholders = ",".join(["%s"] * len(countries))
             sql = f"""
                 SELECT DISTINCT COALESCE(NULLIF(grupo_normalizado, ''), grupo) AS grupo
                 FROM {table}
@@ -865,9 +985,11 @@ class PostgresService:
             """
             results = self.execute_query(sql)
 
-        return [row['grupo'] for row in results if row.get('grupo')]
+        return [row["grupo"] for row in results if row.get("grupo")]
 
-    def get_distinct_countries(self, table: str, use_language_names: bool = False) -> List[Dict[str, str]]:
+    def get_distinct_countries(
+        self, table: str, use_language_names: bool = False
+    ) -> List[Dict[str, str]]:
         """
         Obtiene países/idiomas distintos de una tabla usando GROUP BY.
         Si use_language_names=True, mapea códigos a nombres de idioma.
@@ -882,66 +1004,123 @@ class PostgresService:
         results = self.execute_query(sql)
 
         country_names = {
-            'AD': 'Andorra', 'AE': 'Emiratos Árabes Unidos', 'AF': 'Afganistán',
-            'AL': 'Albania', 'AM': 'Armenia', 'AR': 'Argentina', 'AT': 'Austria',
-            'AU': 'Australia', 'AZ': 'Azerbaiyán', 'BE': 'Bélgica', 'BG': 'Bulgaria',
-            'BH': 'Baréin', 'BR': 'Brasil', 'BY': 'Bielorrusia', 'CA': 'Canadá',
-            'CG': 'República del Congo', 'CH': 'Suiza', 'CY': 'Chipre',
-            'CZ': 'República Checa', 'DE': 'Alemania', 'DK': 'Dinamarca',
-            'ES': 'España', 'FI': 'Finlandia', 'FR': 'Francia', 'GE': 'Georgia',
-            'GR': 'Grecia', 'HK': 'Hong Kong', 'HR': 'Croacia', 'HU': 'Hungría',
-            'ID': 'Indonesia', 'IE': 'Irlanda', 'IL': 'Israel', 'IN': 'India',
-            'IQ': 'Irak', 'IR': 'Irán', 'IS': 'Islandia', 'IT': 'Italia',
-            'JP': 'Japón', 'KA': 'Kazajistán', 'KO': 'Corea del Sur', 'KU': 'Kuwait',
-            'LA': 'Laos', 'LT': 'Lituania', 'LU': 'Luxemburgo', 'LV': 'Letonia',
-            'MK': 'Macedonia del Norte', 'MT': 'Malta', 'MU': 'Mauricio',
-            'MX': 'México', 'MY': 'Malasia', 'NA': 'Namibia', 'NL': 'Países Bajos',
-            'NO': 'Noruega', 'NP': 'Nepal', 'NZ': 'Nueva Zelanda', 'PH': 'Filipinas',
-            'PK': 'Pakistán', 'PL': 'Polonia', 'PT': 'Portugal', 'RO': 'Rumania',
-            'RS': 'Serbia', 'RU': 'Rusia', 'SE': 'Suecia', 'SG': 'Singapur',
-            'SI': 'Eslovenia', 'SK': 'Eslovaquia', 'SL': 'Sierra Leona', 'SU': 'Sudán',
-            'TH': 'Tailandia', 'TR': 'Turquía', 'TW': 'Taiwán', 'UA': 'Ucrania',
-            'UK': 'Reino Unido', 'US': 'Estados Unidos', 'UZ': 'Uzbekistán',
-            'VT': 'Vaticano', 'WC': 'Islas Cook', 'ZA': 'Sudáfica',
-            'AS': 'Asia',
-            'CR': 'Costa Rica',
-            'EU': 'Unión Europea',
-            'EX': 'Ex-Yugoslavia',
-            'HI': 'India',
-            'IC': 'Islandia',
-            'SW': 'Suecia',
-            'TA': 'Taiwán',
-            'UR': 'Pakistán',
-            'VE': 'Venezuela',
-            'WO': 'Mundial',
+            "AD": "Andorra",
+            "AE": "Emiratos Árabes Unidos",
+            "AF": "Afganistán",
+            "AL": "Albania",
+            "AM": "Armenia",
+            "AR": "Argentina",
+            "AT": "Austria",
+            "AU": "Australia",
+            "AZ": "Azerbaiyán",
+            "BE": "Bélgica",
+            "BG": "Bulgaria",
+            "BH": "Baréin",
+            "BR": "Brasil",
+            "BY": "Bielorrusia",
+            "CA": "Canadá",
+            "CG": "República del Congo",
+            "CH": "Suiza",
+            "CY": "Chipre",
+            "CZ": "República Checa",
+            "DE": "Alemania",
+            "DK": "Dinamarca",
+            "ES": "España",
+            "FI": "Finlandia",
+            "FR": "Francia",
+            "GE": "Georgia",
+            "GR": "Grecia",
+            "HK": "Hong Kong",
+            "HR": "Croacia",
+            "HU": "Hungría",
+            "ID": "Indonesia",
+            "IE": "Irlanda",
+            "IL": "Israel",
+            "IN": "India",
+            "IQ": "Irak",
+            "IR": "Irán",
+            "IS": "Islandia",
+            "IT": "Italia",
+            "JP": "Japón",
+            "KA": "Kazajistán",
+            "KO": "Corea del Sur",
+            "KU": "Kuwait",
+            "LA": "Laos",
+            "LT": "Lituania",
+            "LU": "Luxemburgo",
+            "LV": "Letonia",
+            "MK": "Macedonia del Norte",
+            "MT": "Malta",
+            "MU": "Mauricio",
+            "MX": "México",
+            "MY": "Malasia",
+            "NA": "Namibia",
+            "NL": "Países Bajos",
+            "NO": "Noruega",
+            "NP": "Nepal",
+            "NZ": "Nueva Zelanda",
+            "PH": "Filipinas",
+            "PK": "Pakistán",
+            "PL": "Polonia",
+            "PT": "Portugal",
+            "RO": "Rumania",
+            "RS": "Serbia",
+            "RU": "Rusia",
+            "SE": "Suecia",
+            "SG": "Singapur",
+            "SI": "Eslovenia",
+            "SK": "Eslovaquia",
+            "SL": "Sierra Leona",
+            "SU": "Sudán",
+            "TH": "Tailandia",
+            "TR": "Turquía",
+            "TW": "Taiwán",
+            "UA": "Ucrania",
+            "UK": "Reino Unido",
+            "US": "Estados Unidos",
+            "UZ": "Uzbekistán",
+            "VT": "Vaticano",
+            "WC": "Islas Cook",
+            "ZA": "Sudáfica",
+            "AS": "Asia",
+            "CR": "Costa Rica",
+            "EU": "Unión Europea",
+            "EX": "Ex-Yugoslavia",
+            "HI": "India",
+            "IC": "Islandia",
+            "SW": "Suecia",
+            "TA": "Taiwán",
+            "UR": "Pakistán",
+            "VE": "Venezuela",
+            "WO": "Mundial",
         }
 
         language_names = {
-            'ES': 'Español',
-            'EN': 'Inglés',
-            'LATAM': 'Español Latinoamericano',
-            'LAT': 'Español Latinoamericano',
-            'LA': 'Español Latinoamericano',
-            'LATINO': 'Español Latinoamericano',
-            'ESP': 'Español',
-            'ENG': 'Inglés',
-            'SPANISH': 'Español',
-            'ENGLISH': 'Inglés',
-            'VOSE': 'VOSE',
-            'CAST': 'Castellano',
-            'CASTELLANO': 'Castellano',
-            'SUB': 'Subtitulado',
-            'SUBTITULADO': 'Subtitulado',
+            "ES": "Español",
+            "EN": "Inglés",
+            "LATAM": "Español Latinoamericano",
+            "LAT": "Español Latinoamericano",
+            "LA": "Español Latinoamericano",
+            "LATINO": "Español Latinoamericano",
+            "ESP": "Español",
+            "ENG": "Inglés",
+            "SPANISH": "Español",
+            "ENGLISH": "Inglés",
+            "VOSE": "VOSE",
+            "CAST": "Castellano",
+            "CASTELLANO": "Castellano",
+            "SUB": "Subtitulado",
+            "SUBTITULADO": "Subtitulado",
         }
 
         names_map = language_names if use_language_names else country_names
 
         countries = []
         for row in results:
-            code = row['country']
-            countries.append({'code': code, 'name': names_map.get(code, code)})
+            code = row["country"]
+            countries.append({"code": code, "name": names_map.get(code, code)})
 
-        countries.sort(key=lambda c: (0 if c['code'] in ('ES', 'US') else 1, c['name']))
+        countries.sort(key=lambda c: (0 if c["code"] in ("ES", "US") else 1, c["name"]))
         return countries
 
     def get_distinct_series_page(
@@ -1049,18 +1228,18 @@ class PostgresService:
         all_params = tuple([*params, page_size, offset])
         rows = self.execute_query(sql, all_params)
 
-        total = int(rows[0]['_total']) if rows else 0
+        total = int(rows[0]["_total"]) if rows else 0
 
         clean_rows = []
         for row in rows:
             r = dict(row)
-            r.pop('_total', None)
-            r.pop('catalog_series_key', None)
+            r.pop("_total", None)
+            r.pop("catalog_series_key", None)
             clean_rows.append(r)
 
         return {
-            'items': clean_rows,
-            'total': total,
+            "items": clean_rows,
+            "total": total,
         }
 
     def get_series_groups_page(
@@ -1172,23 +1351,23 @@ class PostgresService:
         all_params = tuple([*params, page_size, offset])
         rows = self.execute_query(sql, all_params)
 
-        total = int(rows[0]['_total']) if rows else 0
+        total = int(rows[0]["_total"]) if rows else 0
 
         clean_rows = []
         for row in rows:
             r = dict(row)
-            r.pop('_total', None)
-            r.pop('catalog_series_key', None)
-            provider_id = r.pop('first_provider_id', None)
-            r['provider_id'] = provider_id
-            r['id'] = r.pop('first_id', None)
-            r['nombre'] = r.pop('first_nombre', None)
-            r['nombre_normalizado'] = r.pop('first_nombre_normalizado', None)
+            r.pop("_total", None)
+            r.pop("catalog_series_key", None)
+            provider_id = r.pop("first_provider_id", None)
+            r["provider_id"] = provider_id
+            r["id"] = r.pop("first_id", None)
+            r["nombre"] = r.pop("first_nombre", None)
+            r["nombre_normalizado"] = r.pop("first_nombre_normalizado", None)
             clean_rows.append(r)
 
         return {
-            'items': clean_rows,
-            'total': total,
+            "items": clean_rows,
+            "total": total,
         }
 
 
