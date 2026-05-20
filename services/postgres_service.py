@@ -743,6 +743,383 @@ class PostgresService:
         return [r["temporada"] for r in results]
 
     # ============================================================
+    # HELPERS: Catálogo normalizado (series_catalog / movies_catalog)
+    # ============================================================
+
+    def get_series_catalog_by_key(self, series_key: str) -> Optional[Dict[str, Any]]:
+        """Obtiene entrada del catálogo de series por series_key"""
+        sql = """
+            SELECT sc.*,
+               sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
+               sm.genres, sm.backdrop_path, sm.poster_path, sm.title AS tmdb_title,
+               sm.release_date, sm.popularity, sm.status
+            FROM series_catalog sc
+            LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
+            WHERE sc.series_key = %s
+            LIMIT 1
+        """
+        results = self.execute_query(sql, (series_key,))
+        return results[0] if results else None
+
+    def get_series_catalog_by_title(self, title: str) -> Optional[Dict[str, Any]]:
+        """Resuelve un título de serie (posiblemente con prefijo de idioma) al catálogo"""
+        sql = """
+            SELECT sc.*,
+               sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
+               sm.genres, sm.backdrop_path, sm.poster_path, sm.title AS tmdb_title,
+               sm.release_date, sm.popularity, sm.status
+            FROM series_catalog sc
+            LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
+            WHERE LOWER(TRIM(sc.title)) = LOWER(TRIM(%s))
+               OR LOWER(TRIM(sc.title)) = LOWER(TRIM(REGEXP_REPLACE(%s, '^[a-z]{2,5}\\s*[-–]\\s*', '', 'i')))
+            LIMIT 1
+        """
+        results = self.execute_query(sql, (title, title))
+        if results:
+            return results[0]
+        # Fallback: buscar por series_key referenciada desde tabla series plana
+        fallback_sql = """
+            SELECT sc.*,
+               sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
+               sm.genres, sm.backdrop_path, sm.poster_path, sm.title AS tmdb_title,
+               sm.release_date, sm.popularity, sm.status
+            FROM series s
+            JOIN series_catalog sc ON sc.series_key = COALESCE(NULLIF(s.series_key, ''),
+                LOWER(REGEXP_REPLACE(COALESCE(NULLIF(s.serie_name, ''), s.nombre_normalizado, s.nombre),
+                '[^a-z0-9]', '', 'g')))
+            LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
+            WHERE s.serie_name = %s
+               OR LOWER(TRIM(COALESCE(NULLIF(s.nombre_normalizado, ''), s.nombre)))
+                  LIKE LOWER(TRIM(REGEXP_REPLACE(%s, '^[a-z]{2,5}\\s*[-–]\\s*', '', 'i')))
+            LIMIT 1
+        """
+        results = self.execute_query(fallback_sql, (title, title))
+        return results[0] if results else None
+
+    def get_series_episodes_grouped(
+        self,
+        catalog_id: str,
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Tuple[List[Dict[str, Any]], int, int]:
+        """
+        Devuelve episodios de una serie con TODOS sus stream_options agrupados.
+        Cada episodio tiene un array 'stream_options' con variantes de idioma/calidad.
+        """
+        offset = (page - 1) * page_size
+        count_sql = """
+            SELECT COUNT(*) as total
+            FROM series_episodes
+            WHERE catalog_id = %s
+        """
+        count_result = self.execute_query(count_sql, (catalog_id,))
+        total = count_result[0]["total"] if count_result else 0
+
+        seasons_sql = """
+            SELECT DISTINCT season_number
+            FROM series_episodes
+            WHERE catalog_id = %s
+            ORDER BY season_number
+        """
+        seasons_result = self.execute_query(seasons_sql, (catalog_id,))
+        seasons = [r["season_number"] for r in seasons_result]
+
+        data_sql = """
+            WITH episode_streams AS (
+                SELECT
+                    se.id AS episode_id,
+                    se.season_number,
+                    se.episode_number,
+                    se.numero,
+                    jsonb_agg(
+                        jsonb_build_object(
+                            'url', ss.stream_url,
+                            'label', COALESCE(ss.label, ss.country, 'Ver'),
+                            'country', ss.country,
+                            'provider_id', ss.provider_id,
+                            'numero', ss.numero
+                        ) ORDER BY
+                            CASE WHEN ss.country = 'ES' THEN 0
+                                 WHEN ss.country = 'EN' THEN 1
+                                 WHEN ss.country = 'LATAM' THEN 2
+                                 ELSE 3 END,
+                            ss.numero ASC
+                    ) AS stream_options
+                FROM series_episodes se
+                LEFT JOIN series_streams ss ON se.episode_id = ss.episode_id
+                WHERE se.catalog_id = %s
+                GROUP BY se.id, se.season_number, se.episode_number, se.numero
+            )
+            SELECT *
+            FROM episode_streams
+            ORDER BY season_number ASC, episode_number ASC
+            LIMIT %s OFFSET %s
+        """
+        items = self.execute_query(data_sql, (catalog_id, page_size, offset))
+        return items, total, seasons
+
+    def get_movies_catalog_page(
+        self,
+        page: int = 1,
+        page_size: int = 24,
+        group: Optional[str] = None,
+        upper_group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+        order_by: str = "year",
+        year: Optional[int] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        Reemplaza get_distinct_movies_page usando movies_catalog + movie_streams.
+        Devuelve películas con stream_options agrupados (todos los idiomas/calidades).
+        """
+        filters: List[str] = []
+        params: List[Any] = []
+
+        if group:
+            filters.append("(ms_country = %s OR ms_country IS NULL)")
+            params.append(group)
+
+        if upper_group:
+            filters.append("UPPER(ms_grupo_normalizado) LIKE %s")
+            params.append(f"%{upper_group}%")
+
+        if country:
+            filters.append("ms_country = %s")
+            params.append(country)
+
+        if search:
+            filters.append("(mc.title ILIKE %s OR mc.tmdb_id::text ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        if year:
+            filters.append("mc.year = %s")
+            params.append(year)
+
+        order_col = "mc.year" if order_by == "year" else "mc.title"
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+        offset = (page - 1) * page_size
+
+        count_sql = f"""
+            SELECT COUNT(DISTINCT mc.id) as total
+            FROM movies_catalog mc
+            LEFT JOIN LATERAL (
+                SELECT ms.country AS ms_country
+                FROM movie_streams ms
+                WHERE ms.movie_id = mc.id
+                LIMIT 1
+            ) ms_data ON true
+            {where_clause}
+        """
+        count_result = self.execute_query(count_sql, params)
+        total = count_result[0]["total"] if count_result else 0
+
+        data_sql = f"""
+            WITH movie_options AS (
+                SELECT
+                    mc.id,
+                    mc.title,
+                    mc.tmdb_id,
+                    mc.nombre_dedup_key,
+                    mc.poster_path,
+                    mc.backdrop_path,
+                    mc.overview_es,
+                    mc.overview_en,
+                    mc.genres,
+                    mc.vote_average,
+                    mc.vote_count,
+                    mc.runtime_minutes,
+                    mc.release_date,
+                    mc.year,
+                    mc.tagline,
+                    mc.status,
+                    mc.popularity,
+                    mm.overview_es AS mm_overview_es,
+                    mm.overview_en AS mm_overview_en,
+                    mm.vote_average AS mm_vote_average,
+                    mm.vote_count AS mm_vote_count,
+                    mm.genres AS mm_genres,
+                    mm.backdrop_path AS mm_backdrop,
+                    mm.poster_path AS mm_poster,
+                    mm.title AS tmdb_title,
+                    mm.release_date AS mm_release_date,
+                    mm.popularity AS mm_popularity,
+                    mm.status AS mm_status,
+                    jsonb_agg(
+                        jsonb_build_object(
+                            'url', ms.stream_url,
+                            'label', COALESCE(ms.label, ms.country, 'Ver'),
+                            'country', ms.country,
+                            'provider_id', ms.provider_id,
+                            'numero', ms.numero
+                        ) ORDER BY
+                            CASE WHEN ms.country = 'ES' THEN 0
+                                 WHEN ms.country = 'EN' THEN 1
+                                 WHEN ms.country = 'LATAM' THEN 2
+                                 ELSE 3 END,
+                            ms.numero ASC
+                    ) AS stream_options,
+                    MIN(ms.country) AS ms_country,
+                    COUNT(ms.id) AS stream_count
+                FROM movies_catalog mc
+                LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
+                LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
+                {where_clause}
+                GROUP BY mc.id, mc.title, mc.tmdb_id, mc.nombre_dedup_key,
+                    mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
+                    mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
+                    mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
+                    mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
+                    mm.genres, mm.backdrop_path, mm.poster_path, mm.title,
+                    mm.release_date, mm.popularity, mm.status
+            )
+            SELECT *
+            FROM movie_options
+            ORDER BY {order_col} DESC NULLS LAST
+            LIMIT %s OFFSET %s
+        """
+        all_params = params + [page_size, offset]
+        items = self.execute_query(data_sql, all_params)
+        return items, total
+
+    def get_movie_catalog_with_streams(self, catalog_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene una película del catálogo con todos sus stream_options"""
+        sql = """
+            SELECT
+                mc.*,
+                mm.overview_es AS mm_overview_es,
+                mm.overview_en AS mm_overview_en,
+                mm.vote_average AS mm_vote_average,
+                mm.vote_count AS mm_vote_count,
+                mm.genres AS mm_genres,
+                mm.backdrop_path AS mm_backdrop,
+                mm.poster_path AS mm_poster,
+                mm.title AS tmdb_title,
+                mm.release_date AS mm_release_date,
+                mm.popularity AS mm_popularity,
+                mm.status AS mm_status,
+                COALESCE(
+                    jsonb_agg(
+                        jsonb_build_object(
+                            'url', ms.stream_url,
+                            'label', COALESCE(ms.label, ms.country, 'Ver'),
+                            'country', ms.country,
+                            'provider_id', ms.provider_id,
+                            'numero', ms.numero
+                        ) ORDER BY
+                            CASE WHEN ms.country = 'ES' THEN 0
+                                 WHEN ms.country = 'EN' THEN 1
+                                 WHEN ms.country = 'LATAM' THEN 2
+                                 ELSE 3 END,
+                            ms.numero ASC
+                    ) FILTER (WHERE ms.id IS NOT NULL),
+                    '[]'::jsonb
+                ) AS stream_options
+            FROM movies_catalog mc
+            LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
+            LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
+            WHERE mc.id = %s
+            GROUP BY mc.id, mc.title, mc.tmdb_id, mc.nombre_dedup_key,
+                mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
+                mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
+                mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
+                mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
+                mm.genres, mm.backdrop_path, mm.poster_path, mm.title,
+                mm.release_date, mm.popularity, mm.status
+            LIMIT 1
+        """
+        results = self.execute_query(sql, (catalog_id,))
+        return results[0] if results else None
+
+    def get_distinct_series_groups_catalog(self, page: int, page_size: int, group: Optional[str] = None,
+        upper_group: Optional[str] = None, country: Optional[str] = None, search: Optional[str] = None,
+        year: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Versión para catálogo normalizado: devuelve series agrupadas con total de episodios
+        """
+        filters: List[str] = []
+        params: List[Any] = []
+
+        if group:
+            filters.append("(s.grupo_normalizado ILIKE %s OR s.grupo ILIKE %s)")
+            params.extend([f"%{group}%", f"%{group}%"])
+
+        if upper_group:
+            filters.append("UPPER(s.grupo_normalizado) LIKE %s")
+            params.append(f"%{upper_group}%")
+
+        if country:
+            filters.append("s.country = %s")
+            params.append(country)
+
+        if search:
+            filters.append("(s.serie_name ILIKE %s OR s.nombre_normalizado ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        if year:
+            filters.append("s.year = %s")
+            params.append(year)
+
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+        offset = (page - 1) * page_size
+
+        count_sql = f"""
+            SELECT COUNT(DISTINCT sc.id) as total
+            FROM series s
+            JOIN series_catalog sc ON sc.series_key = COALESCE(NULLIF(s.series_key, ''),
+                LOWER(REGEXP_REPLACE(COALESCE(NULLIF(s.serie_name, ''), s.nombre_normalizado, s.nombre),
+                '[^a-z0-9]', '', 'g')))
+            {where_clause}
+        """
+        count_result = self.execute_query(count_sql, params)
+        total = count_result[0]["total"] if count_result else 0
+
+        data_sql = f"""
+            SELECT
+                sc.id,
+                sc.title,
+                sc.series_key,
+                sc.tmdb_id,
+                sc.poster_path,
+                sc.backdrop_path,
+                sc.overview_es,
+                sc.overview_en,
+                sc.genres,
+                sc.vote_average,
+                sc.vote_count,
+                sc.year,
+                sc.status,
+                sc.popularity,
+                COUNT(DISTINCT se.id) AS total_episodes,
+                COUNT(DISTINCT se.season_number) AS total_seasons,
+                MAX(s.grupo) AS grupo,
+                MAX(s.grupo_normalizado) AS grupo_normalizado,
+                MAX(s.country) AS country,
+                MAX(s.logo) AS logo,
+                MIN(s.numero) AS numero,
+                MIN(s.provider_id) AS first_provider_id,
+                MIN(s.id) AS first_id,
+                MIN(s.nombre) AS first_nombre,
+                MIN(s.nombre_normalizado) AS first_nombre_normalizado
+            FROM series s
+            JOIN series_catalog sc ON sc.series_key = COALESCE(NULLIF(s.series_key, ''),
+                LOWER(REGEXP_REPLACE(COALESCE(NULLIF(s.serie_name, ''), s.nombre_normalizado, s.nombre),
+                '[^a-z0-9]', '', 'g')))
+            LEFT JOIN series_episodes se ON se.catalog_id = sc.id
+            {where_clause}
+            GROUP BY sc.id, sc.title, sc.series_key, sc.tmdb_id,
+                sc.poster_path, sc.backdrop_path, sc.overview_es, sc.overview_en,
+                sc.genres, sc.vote_average, sc.vote_count, sc.year,
+                sc.status, sc.popularity
+            ORDER BY sc.title ASC
+            LIMIT %s OFFSET %s
+        """
+        all_params = params + [page_size, offset]
+        items = self.execute_query(data_sql, all_params)
+
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+    # ============================================================
     # HELPERS: Replays
     # ============================================================
 
