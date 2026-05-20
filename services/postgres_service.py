@@ -846,7 +846,7 @@ class PostgresService:
                             ss.numero ASC
                     ) AS stream_options
                 FROM series_episodes se
-                LEFT JOIN series_streams ss ON se.episode_id = ss.episode_id
+                LEFT JOIN series_streams ss ON ss.episode_id = se.id
                 WHERE se.catalog_id = %s
                 GROUP BY se.id, se.season_number, se.episode_number, se.numero
             )
