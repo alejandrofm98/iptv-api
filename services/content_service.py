@@ -1122,9 +1122,12 @@ class ContentService:
             cached = self._get_cached(cache_key)
             if cached is not None:
                 return cached
-            result = self.pg.get_distinct_groups_catalog(content_type)
-            self._set_cached(cache_key, result)
-            return result
+            try:
+                result = self.pg.get_distinct_groups_catalog(content_type)
+                self._set_cached(cache_key, result)
+                return result
+            except Exception:
+                pass
 
         table = self.TABLE_MAP.get(content_type, "channels")
         cache_key = (
@@ -1145,9 +1148,12 @@ class ContentService:
             cached = self._get_cached(cache_key)
             if cached is not None:
                 return cached
-            result = self.pg.get_distinct_countries_catalog(content_type)
-            self._set_cached(cache_key, result)
-            return result
+            try:
+                result = self.pg.get_distinct_countries_catalog(content_type)
+                self._set_cached(cache_key, result)
+                return result
+            except Exception:
+                pass
 
         table = self.TABLE_MAP.get(content_type, "channels")
         cache_key = f"countries:{table}"

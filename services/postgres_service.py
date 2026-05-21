@@ -378,12 +378,11 @@ class PostgresService:
             FROM movies_catalog mc
             LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
             LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
-            WHERE mc.id::text = %s OR mc.nombre_dedup_key = %s
-            GROUP BY mc.id, mc.title, mc.tmdb_id, mc.nombre_dedup_key,
+            WHERE mc.id::text = %s
+            GROUP BY mc.id, mc.title, mc.tmdb_id,
                 mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
                 mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
                 mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
-                mc.group_normalizado, mc.country, mc.logo, mc.provider_id, mc.numero,
                 mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
                 mm.genres, mm.backdrop_path, mm.poster_path, mm.title,
                 mm.release_date, mm.popularity, mm.status
@@ -789,7 +788,6 @@ class PostgresService:
                     mc.id,
                     mc.title,
                     mc.tmdb_id,
-                    mc.nombre_dedup_key,
                     mc.poster_path,
                     mc.backdrop_path,
                     mc.overview_es,
@@ -834,7 +832,7 @@ class PostgresService:
                 LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
                 LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
                 {where_clause}
-                GROUP BY mc.id, mc.title, mc.tmdb_id, mc.nombre_dedup_key,
+                GROUP BY mc.id, mc.title, mc.tmdb_id,
                     mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
                     mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
                     mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
@@ -888,7 +886,7 @@ class PostgresService:
             LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
             LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
             WHERE mc.id = %s
-            GROUP BY mc.id, mc.title, mc.tmdb_id, mc.nombre_dedup_key,
+            GROUP BY mc.id, mc.title, mc.tmdb_id,
                 mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
                 mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
                 mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
