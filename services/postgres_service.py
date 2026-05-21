@@ -347,17 +347,17 @@ class PostgresService:
         """Obtiene película con metadata TMDB y stream_options desde catálogo"""
         sql = """
             SELECT mc.*,
-                mm.overview_es AS mm_overview_es,
-                mm.overview_en AS mm_overview_en,
-                mm.vote_average AS mm_vote_average,
-                mm.vote_count AS mm_vote_count,
-                mm.genres AS mm_genres,
-                mm.backdrop_path AS mm_backdrop,
-                mm.poster_path AS mm_poster,
+                mm.overview_es,
+                mm.overview_en,
+                mm.vote_average,
+                mm.vote_count,
+                mm.genres,
+                mm.backdrop_path,
+                mm.poster_path AS tmdb_poster_path,
                 mm.title AS tmdb_title,
-                mm.release_date AS mm_release_date,
-                mm.popularity AS mm_popularity,
-                mm.status AS mm_status,
+                mm.release_date,
+                mm.popularity,
+                mm.status,
                 COALESCE(
                     jsonb_agg(
                         jsonb_build_object(
