@@ -765,7 +765,7 @@ class PostgresService:
             filters.append("mc.year = %s")
             params.append(year)
 
-        order_col = "mc.year" if order_by == "year" else "mc.title"
+        order_col = "year" if order_by == "year" else "title"
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
         offset = (page - 1) * page_size
 
@@ -962,7 +962,6 @@ class PostgresService:
                 sc.logo,
                 sc.numero,
                 sc.provider_id,
-                sc.nombre_dedup_key,
                 sm.overview_es AS sm_overview_es,
                 sm.overview_en AS sm_overview_en,
                 sm.vote_average AS sm_vote_average,
@@ -984,7 +983,7 @@ class PostgresService:
                 sc.poster_path, sc.backdrop_path, sc.overview_es, sc.overview_en,
                 sc.genres, sc.vote_average, sc.vote_count, sc.year,
                 sc.status, sc.popularity, sc.group_normalizado, sc.country,
-                sc.logo, sc.numero, sc.provider_id, sc.nombre_dedup_key,
+                sc.logo, sc.numero, sc.provider_id,
                 sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
                 sm.genres, sm.backdrop_path, sm.poster_path, sm.title,
                 sm.release_date, sm.popularity, sm.status
