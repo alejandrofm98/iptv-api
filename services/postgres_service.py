@@ -745,15 +745,15 @@ class PostgresService:
         params: List[Any] = []
 
         if group:
-            filters.append("(ms_country = %s OR ms_country IS NULL)")
-            params.append(group)
+            filters.append("(mc.group_normalizado ILIKE %s OR mc.title ILIKE %s)")
+            params.extend([f"%{group}%", f"%{group}%"])
 
         if upper_group:
-            filters.append("UPPER(ms_grupo_normalizado) LIKE %s")
+            filters.append("UPPER(mc.group_normalizado) LIKE %s")
             params.append(f"%{upper_group}%")
 
         if country:
-            filters.append("ms_country = %s")
+            filters.append("mc.country = %s")
             params.append(country)
 
         if search:
@@ -771,12 +771,6 @@ class PostgresService:
         count_sql = f"""
             SELECT COUNT(DISTINCT mc.id) as total
             FROM movies_catalog mc
-            LEFT JOIN LATERAL (
-                SELECT ms.country AS ms_country
-                FROM movie_streams ms
-                WHERE ms.movie_id = mc.id
-                LIMIT 1
-            ) ms_data ON true
             {where_clause}
         """
         count_result = self.execute_query(count_sql, params)
@@ -801,6 +795,11 @@ class PostgresService:
                     mc.tagline,
                     mc.status,
                     mc.popularity,
+                    mc.country,
+                    mc.group_normalizado,
+                    mc.logo,
+                    mc.numero,
+                    mc.provider_id,
                     mm.overview_es AS mm_overview_es,
                     mm.overview_en AS mm_overview_en,
                     mm.vote_average AS mm_vote_average,
@@ -826,7 +825,6 @@ class PostgresService:
                                  ELSE 3 END,
                             ms.numero ASC
                     ) AS stream_options,
-                    MIN(ms.country) AS ms_country,
                     COUNT(ms.id) AS stream_count
                 FROM movies_catalog mc
                 LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
@@ -836,6 +834,7 @@ class PostgresService:
                     mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
                     mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
                     mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
+                    mc.country, mc.group_normalizado, mc.logo, mc.numero, mc.provider_id,
                     mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
                     mm.genres, mm.backdrop_path, mm.poster_path, mm.title,
                     mm.release_date, mm.popularity, mm.status
