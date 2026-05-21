@@ -388,7 +388,7 @@ class PostgresService:
                 mm.release_date, mm.popularity, mm.status
             LIMIT 1
         """
-        results = self.execute_query(sql, (movie_id, movie_id))
+        results = self.execute_query(sql, (movie_id,))
         return results[0] if results else None
 
     def get_series_with_metadata(self, series_id: str) -> Optional[Dict[str, Any]]:
