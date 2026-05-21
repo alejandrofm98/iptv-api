@@ -377,9 +377,9 @@ class PostgresService:
                 ) AS stream_options
             FROM movies_catalog mc
             LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
-            LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
+            LEFT JOIN movies_metadata mm ON mm.provider_id = mc.provider_id
             WHERE mc.id::text = %s
-            GROUP BY mc.id, mc.title, mc.tmdb_id,
+            GROUP BY mc.id, mc.title, mc.provider_id,
                 mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
                 mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
                 mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
@@ -828,9 +828,9 @@ class PostgresService:
                     COUNT(ms.id) AS stream_count
                 FROM movies_catalog mc
                 LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
-                LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
+                LEFT JOIN movies_metadata mm ON mm.provider_id = mc.provider_id
                 {where_clause}
-                GROUP BY mc.id, mc.title, mc.tmdb_id,
+                GROUP BY mc.id, mc.title, mc.provider_id,
                     mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
                     mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
                     mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
@@ -883,9 +883,9 @@ class PostgresService:
                 ) AS stream_options
             FROM movies_catalog mc
             LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
-            LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
+            LEFT JOIN movies_metadata mm ON mm.provider_id = mc.provider_id
             WHERE mc.id = %s
-            GROUP BY mc.id, mc.title, mc.tmdb_id,
+            GROUP BY mc.id, mc.title, mc.provider_id,
                 mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
                 mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
                 mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,

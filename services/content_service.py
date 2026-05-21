@@ -798,7 +798,7 @@ class ContentService:
             "normalized_title": row.get("title", ""),
             "subtitle": "",
             "description": row.get("description", overview),
-            "image_url": poster or row.get("image_url", ""),
+            "image_url": self._build_tmdb_image_url(poster) or row.get("image_url", ""),
             "group": row.get("group", ""),
             "normalized_group": row.get("group", row.get("normalized_group", "")),
             "badge_text": "CINE",
