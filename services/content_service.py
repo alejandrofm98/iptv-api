@@ -701,6 +701,69 @@ class ContentService:
             "total_seasons": None,
         }
 
+    def _to_android_series_from_catalog(
+        self,
+        row: Dict[str, Any],
+        username: str = "",
+        password: str = "",
+    ) -> Dict[str, Any]:
+        """
+        Convierte una fila de series_catalog (con metadata joinneada)
+        al formato Android CatalogItem.
+        """
+        serie_name = row.get("title", "")
+        normalized_title = serie_name.lower().strip() if serie_name else ""
+        original_group = row.get("group_normalizado") or ""
+        group = original_group
+
+        overview = (
+            row.get("sm_overview_es")
+            or row.get("overview_es")
+            or row.get("sm_overview_en")
+            or row.get("overview_en")
+            or ""
+        )
+        poster = row.get("sm_poster") or row.get("poster_path") or ""
+        backdrop = row.get("sm_backdrop") or row.get("backdrop_path") or ""
+
+        return {
+            "id": row.get("provider_id") or str(row.get("id") or ""),
+            "provider_id": row.get("provider_id") or "",
+            "type": "series_group",
+            "title": serie_name,
+            "normalized_title": normalized_title,
+            "original_title": serie_name,
+            "subtitle": group,
+            "description": overview or group,
+            "image_url": poster or row.get("logo") or "",
+            "group": group,
+            "normalized_group": group,
+            "badge_text": "SERIE",
+            "series_name": serie_name,
+            "series_key": row.get("series_key") or "",
+            "season_number": None,
+            "episode_number": None,
+            "stream_url": "",
+            "total_episodes": row.get("total_episodes", 0),
+            "total_seasons": row.get("total_seasons", 0),
+            "year": row.get("year"),
+            "language_label": row.get("country"),
+            "overview": overview,
+            "overview_es": row.get("sm_overview_es") or row.get("overview_es") or "",
+            "overview_en": row.get("sm_overview_en") or row.get("overview_en") or "",
+            "rating": row.get("sm_vote_average") or row.get("vote_average"),
+            "vote_count": row.get("sm_vote_count") or row.get("vote_count"),
+            "genres": row.get("sm_genres") or row.get("genres"),
+            "poster_path": poster,
+            "backdrop_path": backdrop,
+            "tagline": row.get("tagline"),
+            "release_date": str(row.get("sm_release_date") or row.get("release_date") or ""),
+            "tmdb_id": row.get("tmdb_id"),
+            "tmdb_title": row.get("tmdb_title") or serie_name,
+            "popularity": row.get("sm_popularity") or row.get("popularity"),
+            "status": row.get("sm_status") or row.get("status"),
+        }
+
     def _to_android_movie_from_catalog(
         self,
         row: Dict[str, Any],
@@ -924,71 +987,29 @@ class ContentService:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
         if content_type == "series":
-            return self._get_series_catalog_page(
-                page=page,
-                page_size=page_size,
-                group=group,
-                country=country,
-                search=search,
-                year=year,
-                username=username,
-                password=password,
+            result = self.pg.get_distinct_series_groups_catalog(
+                page=page, page_size=page_size, group=group,
+                country=country, search=search, year=year,
             )
-
-        if content_type == "movies":
-            # Intentar usar catálogo normalizado (con stream_options cross-idioma)
-            try:
-                items_cat, total_cat = self.pg.get_movies_catalog_page(
-                    page, page_size, group, None, country, search, year
-                )
-                if items_cat:
-                    parsed_items = [
-                        self._to_android_movie_from_catalog(
-                            row, username, password
-                        )
-                        for row in items_cat
-                    ]
-                    return self._build_paginated_payload(
-                        parsed_items, total_cat, page, page_size
-                    )
-            except Exception:
-                pass
-
-            # Fallback: tabla plana
-            if not search:
-                cache_key = self._catalog_cache_key(
-                    content_type, page, page_size, group, country, year
-                )
-                cached = self._get_cached(cache_key)
-                if cached is not None:
-                    return self._inject_stream_urls(
-                        cached, content_type, username, password
-                    )
-
-                items, total = self.pg.get_distinct_movies_page(
-                    page, page_size, group, None, country, None, year
-                )
-            else:
-                items, total = self.pg.get_distinct_movies_page(
-                    page, page_size, group, None, country, search, year
-                )
-
+            items = result.get("items") or []
+            total = result.get("total", 0) or 0
             parsed_items = [
-                self._parse_content_item(row, content_type, username, password)
+                self._to_android_series_from_catalog(row, username, password)
                 for row in items
             ]
+            return self._build_paginated_payload(parsed_items, total, page, page_size)
 
-            data = self._build_paginated_payload(
-                parsed_items, total, page, page_size
+        if content_type == "movies":
+            items_cat, total_cat = self.pg.get_movies_catalog_page(
+                page, page_size, group, None, country, search, year
             )
-
-            if not search:
-                cache_key = self._catalog_cache_key(
-                    content_type, page, page_size, group, country, year
-                )
-                self._set_cached(cache_key, self._strip_stream_urls(data))
-
-            return data
+            parsed_items = [
+                self._to_android_movie_from_catalog(row, username, password)
+                for row in (items_cat or [])
+            ]
+            return self._build_paginated_payload(
+                parsed_items, total_cat or 0, page, page_size
+            )
 
         if content_type == "channels":
             items, total = self.pg.get_distinct_channels_page(
@@ -1005,52 +1026,6 @@ class ContentService:
         ]
 
         return self._build_paginated_payload(parsed_items, total, page, page_size)
-
-    def _get_series_catalog_page(
-        self,
-        page: int,
-        page_size: int,
-        group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        year: Optional[int] = None,
-        username: str = "",
-        password: str = "",
-    ) -> Dict[str, Any]:
-        use_cache = not search
-        cache_key = self._catalog_cache_key(
-            "series", page, page_size, group, country, year
-        )
-
-        if use_cache:
-            cached = self._get_cached(cache_key)
-            if cached is not None:
-                return self._inject_stream_urls(cached, "series", username, password)
-
-        result = self.pg.get_distinct_series_page(
-            page=page,
-            page_size=page_size,
-            group=group,
-            country=country,
-            search=search,
-            year=year,
-        )
-
-        total = result.get("total", 0) or 0
-        data = self._build_paginated_payload(
-            [
-                self._to_android_catalog_item(row, "series", username, password)
-                for row in (result.get("items") or [])
-            ],
-            total,
-            page,
-            page_size,
-        )
-
-        if use_cache:
-            self._set_cached(cache_key, self._strip_stream_urls(data))
-
-        return data
 
     def get_content_item(
         self,
@@ -1142,6 +1117,15 @@ class ContentService:
     def get_groups(
         self, content_type: str = "channels", countries: Optional[List[str]] = None
     ) -> List[str]:
+        if content_type in ("movies", "series"):
+            cache_key = f"groups_catalog:{content_type}"
+            cached = self._get_cached(cache_key)
+            if cached is not None:
+                return cached
+            result = self.pg.get_distinct_groups_catalog(content_type)
+            self._set_cached(cache_key, result)
+            return result
+
         table = self.TABLE_MAP.get(content_type, "channels")
         cache_key = (
             f"groups:{table}:{','.join(sorted(countries)) if countries else 'all'}"
@@ -1156,6 +1140,15 @@ class ContentService:
         return result
 
     def get_countries(self, content_type: str = "channels") -> List[Dict[str, str]]:
+        if content_type in ("movies", "series"):
+            cache_key = f"countries_catalog:{content_type}"
+            cached = self._get_cached(cache_key)
+            if cached is not None:
+                return cached
+            result = self.pg.get_distinct_countries_catalog(content_type)
+            self._set_cached(cache_key, result)
+            return result
+
         table = self.TABLE_MAP.get(content_type, "channels")
         cache_key = f"countries:{table}"
 
@@ -1428,29 +1421,7 @@ class ContentService:
             return items, total
 
         elif content_type == "movies":
-            # Intentar usar catálogo normalizado (con stream_options cross-idioma)
-            try:
-                items_cat, total_cat = self.pg.get_movies_catalog_page(
-                    page=page,
-                    page_size=page_size,
-                    group=group_filter,
-                    upper_group=upper_group,
-                    country=effective_country,
-                    search=None,
-                    year=year,
-                )
-                if items_cat:
-                    return [
-                        self._to_android_movie_from_catalog(
-                            row, username, password
-                        )
-                        for row in items_cat
-                    ], total_cat
-            except Exception:
-                pass
-
-            # Fallback: tabla plana (comportamiento anterior)
-            items, total = self.pg.get_distinct_movies_page(
+            items_cat, total_cat = self.pg.get_movies_catalog_page(
                 page=page,
                 page_size=page_size,
                 group=group_filter,
@@ -1459,10 +1430,14 @@ class ContentService:
                 search=None,
                 year=year,
             )
-            return [
-                self._to_android_catalog_item(row, "movies", username, password)
-                for row in items
-            ], total
+            if items_cat:
+                return [
+                    self._to_android_movie_from_catalog(
+                        row, username, password
+                    )
+                    for row in items_cat
+                ], total_cat
+            return [], 0
 
         return [], 0
 
@@ -1552,7 +1527,7 @@ class ContentService:
             )
             return result.get("items") or []
         elif content_type == "movies":
-            items, _ = self.pg.get_distinct_movies_page(
+            items, _ = self.pg.get_movies_catalog_page(
                 page,
                 page_size,
                 group=group_filter,
@@ -1635,17 +1610,34 @@ class ContentService:
         password: str = "",
         country: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        table = self.TABLE_MAP.get(content_type)
-        if not table:
-            raise ValueError(f"Tipo de contenido inválido: {content_type}")
-
-        items, _ = self.pg.get_content_items_paginated(
-            table, 1, page_size, None, None, country, None, "year"
-        )
-        return [
-            self._to_android_catalog_item(row, content_type, username, password)
-            for row in items
-        ]
+        if content_type == "movies":
+            items, _ = self.pg.get_movies_catalog_page(
+                1, page_size, group=None, upper_group=None,
+                country=country, search=None, year=None,
+            )
+            return [
+                self._to_android_movie_from_catalog(row, username, password)
+                for row in (items or [])
+            ]
+        elif content_type == "series":
+            result = self.pg.get_distinct_series_groups_catalog(
+                page=1, page_size=page_size, country=country,
+            )
+            return [
+                self._to_android_series_from_catalog(row, username, password)
+                for row in (result.get("items") or [])
+            ]
+        else:
+            table = self.TABLE_MAP.get(content_type)
+            if not table:
+                raise ValueError(f"Tipo de contenido inválido: {content_type}")
+            items, _ = self.pg.get_content_items_paginated(
+                table, 1, page_size, None, None, country, None, "year"
+            )
+            return [
+                self._to_android_catalog_item(row, content_type, username, password)
+                for row in items
+            ]
 
     def get_android_content_list(
         self,
@@ -1660,16 +1652,17 @@ class ContentService:
         password: str = "",
     ) -> Dict[str, Any]:
         if content_type == "series":
-            return self._get_series_catalog_page(
-                page=page,
-                page_size=page_size,
-                group=group,
-                country=country,
-                search=search,
-                year=year,
-                username=username,
-                password=password,
+            result = self.pg.get_distinct_series_groups_catalog(
+                page=page, page_size=page_size, group=group,
+                country=country, search=search, year=year,
             )
+            items = result.get("items") or []
+            total = result.get("total", 0) or 0
+            parsed_items = [
+                self._to_android_series_from_catalog(row, username, password)
+                for row in items
+            ]
+            return self._build_paginated_payload(parsed_items, total, page, page_size)
 
         result = self.get_content_list(
             content_type=content_type,
@@ -1730,23 +1723,32 @@ class ContentService:
         merged_items: List[Dict[str, Any]] = []
         for content_type in requested_types:
             if content_type == "movies":
-                rows, _ = self.pg.get_distinct_movies_page(1, 1000, search=query)
-            elif content_type == "series":
-                result = self.pg.get_distinct_series_page(
-                    page=1,
-                    page_size=1000,
-                    search=query,
+                rows, _ = self.pg.get_movies_catalog_page(1, 1000, search=query)
+                merged_items.extend(
+                    self._to_android_movie_from_catalog(row, username, password)
+                    for row in rows
                 )
-                rows = result.get("items") or []
+            elif content_type == "series":
+                result = self.pg.get_distinct_series_groups_catalog(
+                    page=1, page_size=1000, search=query,
+                )
+                merged_items.extend(
+                    self._to_android_series_from_catalog(row, username, password)
+                    for row in (result.get("items") or [])
+                )
             elif content_type == "channels":
                 rows, _ = self.pg.get_distinct_channels_page(1, 1000, search=query)
+                merged_items.extend(
+                    self._to_android_catalog_item(row, content_type, username, password)
+                    for row in rows
+                )
             else:
                 table = self.TABLE_MAP[content_type]
                 rows = self.pg.search_content(table, query)
-            merged_items.extend(
-                self._to_android_catalog_item(row, content_type, username, password)
-                for row in rows
-            )
+                merged_items.extend(
+                    self._to_android_catalog_item(row, content_type, username, password)
+                    for row in rows
+                )
 
         merged_items.sort(key=lambda item: item.get("title") or "")
         total = len(merged_items)
@@ -1771,25 +1773,18 @@ class ContentService:
         username: str = "",
         password: str = "",
     ) -> List[Dict[str, Any]]:
-        # Intentar usar catálogo normalizado (resuelve cross-idioma)
         catalog = self.pg.get_series_catalog_by_title(serie_name)
-        if catalog:
-            catalog_id = catalog["id"]
-            items, total, seasons = self.pg.get_series_episodes_grouped(
-                catalog_id, page=1, page_size=1000
-            )
-            if items:
-                return [
-                    self._to_android_episode_from_catalog(
-                        row, catalog["title"], catalog_id, username, password
-                    )
-                    for row in items
-                ]
-
-        # Fallback: tabla plana (comportamiento anterior)
-        rows = self.pg.get_episodes_by_serie_name(serie_name)
+        if not catalog:
+            return []
+        catalog_id = catalog["id"]
+        items, total, seasons = self.pg.get_series_episodes_grouped(
+            catalog_id, page=1, page_size=1000
+        )
         return [
-            self._parse_content_item(row, "series", username, password) for row in rows
+            self._to_android_episode_from_catalog(
+                row, catalog["title"], catalog_id, username, password
+            )
+            for row in (items or [])
         ]
 
     def get_episodes_by_serie_name_paginated(
@@ -1800,50 +1795,28 @@ class ContentService:
         page: int = 1,
         page_size: int = 50,
     ) -> Dict[str, Any]:
-        # Intentar usar catálogo normalizado (resuelve cross-idioma)
         catalog = self.pg.get_series_catalog_by_title(serie_name)
-        if catalog:
-            catalog_id = catalog["id"]
-            items, total, seasons = self.pg.get_series_episodes_grouped(
-                catalog_id, page=page, page_size=page_size
-            )
-            if items:
-                return self._build_paginated_payload(
-                    [
-                        self._to_android_episode_from_catalog(
-                            row, catalog["title"], catalog_id, username, password
-                        )
-                        for row in items
-                    ],
-                    total,
-                    page,
-                    page_size,
-                    extra={
-                        "serie_name": catalog["title"],
-                        "episodes": items,
-                        "total_episodes": total,
-                        "seasons": seasons,
-                    },
-                )
-
-        # Fallback: tabla plana
-        rows, total, seasons = self.pg.get_episodes_paginated(
-            serie_name, page, page_size
+        if not catalog:
+            return self._build_paginated_payload([], 0, page, page_size)
+        catalog_id = catalog["id"]
+        items, total, seasons = self.pg.get_series_episodes_grouped(
+            catalog_id, page=page, page_size=page_size
         )
-
         return self._build_paginated_payload(
             [
-                self._to_android_catalog_item(row, "series", username, password)
-                for row in rows
+                self._to_android_episode_from_catalog(
+                    row, catalog["title"], catalog_id, username, password
+                )
+                for row in (items or [])
             ],
-            total,
+            total or 0,
             page,
             page_size,
             extra={
-                "serie_name": serie_name,
-                "episodes": rows,
-                "total_episodes": total,
-                "seasons": seasons,
+                "serie_name": catalog["title"],
+                "episodes": items or [],
+                "total_episodes": total or 0,
+                "seasons": seasons or 0,
             },
         )
 
@@ -2129,7 +2102,12 @@ class ContentService:
         if not table:
             raise ValueError(f"Tipo de contenido inválido: {content_type}")
 
-        total = self.pg.count_table(table)
+        if content_type == "movies":
+            total = self.pg.count_catalog_movies()
+        elif content_type == "series":
+            total = self.pg.count_catalog_series()
+        else:
+            total = self.pg.count_table(table)
         return {
             content_type: {"total": total, "generatedAt": datetime.utcnow().isoformat()}
         }
@@ -2251,24 +2229,23 @@ class ContentService:
         }
 
     def _get_all_movies_from_db(self) -> Dict[str, Any]:
-        """Genera JSON de películas desde PostgreSQL (fallback)."""
-        rows, _ = self.pg.get_distinct_movies_page(1, 999999)
+        """Genera JSON de películas desde movies_catalog + movie_streams."""
+        items, _ = self.pg.get_movies_catalog_page(1, 999999)
 
         parsed_items = []
-        for row in rows:
+        for row in (items or []):
+            stream_options = row.get("stream_options") or []
+            first = stream_options[0] if stream_options else {}
+            title = row.get("title") or ""
             parsed_items.append(
                 {
                     "id": str(row.get("id") or ""),
-                    "provider_id": str(row.get("provider_id") or ""),
-                    "nombre": row.get("nombre") or "",
-                    "logo": row.get("logo") or "",
-                    "country": row.get("country") or "",
-                    "nombre_normalizado": row.get("nombre_normalizado")
-                    or row.get("nombre")
-                    or "",
-                    "grupo_normalizado": row.get("grupo_normalizado")
-                    or row.get("grupo")
-                    or "",
+                    "provider_id": str(first.get("provider_id") or ""),
+                    "nombre": title,
+                    "logo": "",
+                    "country": first.get("country") or row.get("ms_country") or "",
+                    "nombre_normalizado": title,
+                    "grupo_normalizado": "",
                 }
             )
 
@@ -2284,27 +2261,24 @@ class ContentService:
         }
 
     def _get_all_series_from_db(self) -> Dict[str, Any]:
-        """Genera JSON de series desde PostgreSQL (fallback)."""
-        result = self.pg.get_distinct_series_page(page=1, page_size=999999)
+        """Genera JSON de series desde series_catalog + series_episodes + series_streams."""
+        result = self.pg.get_distinct_series_groups_catalog(page=1, page_size=999999)
         rows = result.get("items") or []
 
         parsed_items = []
         for row in rows:
+            title = row.get("title") or ""
             parsed_items.append(
                 {
                     "id": str(row.get("id") or ""),
                     "provider_id": str(row.get("provider_id") or ""),
                     "logo": row.get("logo") or "",
                     "country": row.get("country") or "",
-                    "temporada": row.get("temporada"),
-                    "episodio": row.get("episodio"),
-                    "serie_name": row.get("serie_name") or "",
-                    "nombre_normalizado": row.get("nombre_normalizado")
-                    or row.get("nombre")
-                    or "",
-                    "grupo_normalizado": row.get("grupo_normalizado")
-                    or row.get("grupo")
-                    or "",
+                    "temporada": None,
+                    "episodio": None,
+                    "serie_name": title,
+                    "nombre_normalizado": title,
+                    "grupo_normalizado": row.get("group_normalizado") or "",
                 }
             )
 

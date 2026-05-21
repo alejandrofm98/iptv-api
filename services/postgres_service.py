@@ -10,6 +10,7 @@ Optimizaciones v2:
 """
 
 import logging
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from psycopg2.extras import RealDictCursor, execute_batch
 from psycopg2 import pool
@@ -343,35 +344,58 @@ class PostgresService:
         return results[0] if results else None
 
     def get_movie_with_metadata(self, movie_id: str) -> Optional[Dict[str, Any]]:
-        """Obtiene película con metadata TMDB por id interno o provider_id"""
+        """Obtiene película con metadata TMDB y stream_options desde catálogo"""
         sql = """
-            SELECT m.*,
-                mm.overview_es,
-                mm.overview_en,
-                mm.vote_average,
-                mm.vote_count,
-                mm.genres,
-                mm.backdrop_path,
-                mm.poster_path as tmdb_poster_path,
-                mm.runtime_minutes,
-                mm.tagline,
-                mm.tmdb_id,
-                mm.title as tmdb_title,
-                mm.release_date,
-                mm.popularity,
-                mm.status
-            FROM movies m
-            LEFT JOIN movies_metadata mm ON m.provider_id = mm.provider_id
-            WHERE m.id = %s OR m.provider_id = %s
+            SELECT mc.*,
+                mm.overview_es AS mm_overview_es,
+                mm.overview_en AS mm_overview_en,
+                mm.vote_average AS mm_vote_average,
+                mm.vote_count AS mm_vote_count,
+                mm.genres AS mm_genres,
+                mm.backdrop_path AS mm_backdrop,
+                mm.poster_path AS mm_poster,
+                mm.title AS tmdb_title,
+                mm.release_date AS mm_release_date,
+                mm.popularity AS mm_popularity,
+                mm.status AS mm_status,
+                COALESCE(
+                    jsonb_agg(
+                        jsonb_build_object(
+                            'url', ms.stream_url,
+                            'label', COALESCE(ms.label, ms.country, 'Ver'),
+                            'country', ms.country,
+                            'provider_id', ms.provider_id,
+                            'numero', ms.numero
+                        ) ORDER BY
+                            CASE WHEN ms.country = 'ES' THEN 0
+                                 WHEN ms.country = 'EN' THEN 1
+                                 WHEN ms.country = 'LATAM' THEN 2
+                                 ELSE 3 END,
+                            ms.numero ASC
+                    ) FILTER (WHERE ms.id IS NOT NULL),
+                    '[]'::jsonb
+                ) AS stream_options
+            FROM movies_catalog mc
+            LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
+            LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
+            WHERE mc.id::text = %s OR mc.nombre_dedup_key = %s
+            GROUP BY mc.id, mc.title, mc.tmdb_id, mc.nombre_dedup_key,
+                mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
+                mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
+                mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
+                mc.group_normalizado, mc.country, mc.logo, mc.provider_id, mc.numero,
+                mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
+                mm.genres, mm.backdrop_path, mm.poster_path, mm.title,
+                mm.release_date, mm.popularity, mm.status
             LIMIT 1
         """
         results = self.execute_query(sql, (movie_id, movie_id))
         return results[0] if results else None
 
     def get_series_with_metadata(self, series_id: str) -> Optional[Dict[str, Any]]:
-        """Obtiene serie con metadata TMDB por id interno o series_key"""
+        """Obtiene serie con metadata TMDB desde catálogo"""
         sql = """
-            SELECT s.*,
+            SELECT sc.*,
                 sm.overview_es,
                 sm.overview_en,
                 sm.vote_average,
@@ -385,19 +409,21 @@ class PostgresService:
                 sm.release_date,
                 sm.popularity,
                 sm.status,
-                seasons.total_seasons
-            FROM series s
-            LEFT JOIN series_metadata sm ON s.series_key = sm.series_key
+                ep_counts.total_episodes,
+                ep_counts.total_seasons
+            FROM series_catalog sc
+            LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
             LEFT JOIN (
-                SELECT series_key, COUNT(DISTINCT temporada) AS total_seasons
-                FROM series
-                WHERE temporada IS NOT NULL
-                GROUP BY series_key
-            ) seasons ON s.series_key = seasons.series_key
-            WHERE s.id = %s OR s.series_key = %s OR s.provider_id = %s
+                SELECT catalog_id,
+                    COUNT(DISTINCT id) AS total_episodes,
+                    COUNT(DISTINCT season_number) AS total_seasons
+                FROM series_episodes
+                GROUP BY catalog_id
+            ) ep_counts ON ep_counts.catalog_id = sc.id
+            WHERE sc.id::text = %s OR sc.series_key = %s
             LIMIT 1
         """
-        results = self.execute_query(sql, (series_id, series_id, series_id))
+        results = self.execute_query(sql, (series_id, series_id))
         return results[0] if results else None
 
     def get_content_items_paginated(
@@ -461,121 +487,6 @@ class PostgresService:
         """
         data_params = tuple([*params, page_size, offset])
         items = self.execute_query(data_sql, data_params)
-
-        return items, total
-
-    def get_distinct_movies_page(
-        self,
-        page: int,
-        page_size: int,
-        group: Optional[str] = None,
-        upper_group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        year: Optional[int] = None,
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        """Obtiene películas deduplicadas por nombre_dedup_key con paginación usando ROW_NUMBER()"""
-        filters = []
-        params = []
-
-        if group:
-            filters.append("(m.grupo_normalizado ILIKE %s OR m.grupo ILIKE %s)")
-            params.extend([f"%{group}%", f"%{group}%"])
-
-        if upper_group:
-            filters.append("UPPER(m.grupo_normalizado) LIKE %s")
-            params.append(f"%{upper_group}%")
-
-        if country:
-            filters.append("m.country = %s")
-            params.append(country)
-
-        if search:
-            filters.append("(m.nombre_normalizado ILIKE %s OR m.nombre ILIKE %s)")
-            params.extend([f"%{search}%", f"%{search}%"])
-
-        if year:
-            filters.append("m.year = %s")
-            params.append(year)
-
-        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
-
-        dedup_key_expr = """
-            COALESCE(
-                NULLIF(tm.tmdb_id::text, ''),
-                NULLIF(m.nombre_dedup_key, ''),
-                LOWER(NULLIF(m.nombre_normalizado, '')),
-                LOWER(m.nombre)
-            )
-        """
-
-        count_sql = f"""
-            SELECT COUNT(DISTINCT {dedup_key_expr}) as total
-            FROM movies m
-            LEFT JOIN movies_metadata tm ON m.provider_id = tm.provider_id
-            {where_clause}
-        """
-        count_result = self.execute_query(count_sql, tuple(params))
-        total = count_result[0]["total"] if count_result else 0
-
-        # Usar ROW_NUMBER() para paginar correctamente después de la deduplicación
-        # El orden final debe ser consistente: dedup primero, luego номер
-        start_row = (page - 1) * page_size + 1
-        end_row = page * page_size
-
-        data_sql = f"""
-            WITH tmdb_lookup AS (
-                SELECT provider_id, tmdb_id
-                FROM movies_metadata
-            ),
-            base AS (
-                SELECT
-                    m.*,
-                    {dedup_key_expr} AS dedup_key
-                FROM movies m
-                LEFT JOIN tmdb_lookup tm ON m.provider_id = tm.provider_id
-                {where_clause}
-            ),
-            deduped AS (
-                SELECT DISTINCT ON (dedup_key) *
-                FROM base
-                ORDER BY dedup_key ASC, year DESC NULLS LAST, numero ASC
-            ),
-            with_metadata AS (
-                SELECT
-                    d.*,
-                    mm.overview_es,
-                    mm.overview_en,
-                    mm.vote_average,
-                    mm.vote_count,
-                    mm.genres,
-                    mm.backdrop_path,
-                    mm.poster_path as tmdb_poster_path,
-                    mm.runtime_minutes,
-                    mm.tagline,
-                    mm.tmdb_id,
-                    mm.title as tmdb_title,
-                    mm.release_date,
-                    mm.popularity,
-                    mm.status
-                FROM deduped d
-                LEFT JOIN movies_metadata mm ON d.provider_id = mm.provider_id
-            ),
-            numbered AS (
-                SELECT *,
-                ROW_NUMBER() OVER (ORDER BY year DESC NULLS LAST, nombre_normalizado ASC, id ASC) as rn
-                FROM with_metadata
-            )
-            SELECT * FROM numbered
-            WHERE rn BETWEEN %s AND %s
-            ORDER BY rn
-        """
-        data_params = tuple([*params, start_row, end_row])
-        items = self.execute_query(data_sql, data_params)
-
-        # Limpiar el campo 'rn' de los resultados
-        for item in items:
-            item.pop("rn", None)
 
         return items, total
 
@@ -679,13 +590,23 @@ class PostgresService:
         return self.execute_query(sql, (f"%{query}%", f"%{query}%"))
 
     def get_content_counts(self) -> Dict[str, int]:
-        """Obtiene conteo de todas las tablas de contenido"""
+        """Obtiene conteo de contenido desde tablas catálogo + flat channels/replays"""
         return {
             "channels": self.count_table("channels"),
-            "movies": self.count_table("movies"),
-            "series": self.count_table("series"),
+            "movies": self.count_catalog_movies(),
+            "series": self.count_catalog_series(),
             "replays": self.count_table("replays"),
         }
+
+    def count_catalog_movies(self) -> int:
+        sql = "SELECT COUNT(*) as count FROM movies_catalog"
+        result = self.execute_query(sql)
+        return result[0]["count"] if result else 0
+
+    def count_catalog_series(self) -> int:
+        sql = "SELECT COUNT(*) as count FROM series_catalog"
+        result = self.execute_query(sql)
+        return result[0]["count"] if result else 0
 
     def get_channels_by_provider_ids(self, provider_ids: List) -> List[Dict[str, Any]]:
         """Obtiene canales por lista de provider_ids"""
@@ -704,43 +625,9 @@ class PostgresService:
     # HELPERS: Series
     # ============================================================
 
-    def get_episodes_by_serie_name(self, serie_name: str) -> List[Dict[str, Any]]:
-        """Obtiene episodios de una serie ordenados"""
-        sql = """
-            SELECT * FROM series
-            WHERE serie_name = %s
-            ORDER BY temporada ASC, episodio ASC
-        """
-        return self.execute_query(sql, (serie_name,))
-
-    def get_episodes_paginated(
-        self, serie_name: str, page: int, page_size: int
-    ) -> Tuple[List[Dict[str, Any]], int, List]:
-        """Obtiene episodios paginados de una serie"""
-        count_sql = "SELECT COUNT(*) as total FROM series WHERE serie_name = %s"
-        count_result = self.execute_query(count_sql, (serie_name,))
-        total = count_result[0]["total"] if count_result else 0
-
-        offset = (page - 1) * page_size
-        data_sql = """
-            SELECT * FROM series
-            WHERE serie_name = %s
-            ORDER BY temporada ASC, episodio ASC
-            LIMIT %s OFFSET %s
-        """
-        items = self.execute_query(data_sql, (serie_name, page_size, offset))
-
-        seasons_sql = "SELECT DISTINCT temporada FROM series WHERE serie_name = %s AND temporada IS NOT NULL ORDER BY temporada"
-        seasons_result = self.execute_query(seasons_sql, (serie_name,))
-        seasons = [r["temporada"] for r in seasons_result]
-
-        return items, total, seasons
-
-    def get_series_seasons(self, serie_name: str) -> List:
-        """Obtiene lista de temporadas distintas de una serie"""
-        sql = "SELECT DISTINCT temporada FROM series WHERE serie_name = %s AND temporada IS NOT NULL ORDER BY temporada"
-        results = self.execute_query(sql, (serie_name,))
-        return [r["temporada"] for r in results]
+    # NOTA: get_episodes_by_serie_name, get_episodes_paginated, get_series_seasons,
+    # get_series_groups_page, get_distinct_series_page han sido reemplazados por métodos
+    # de catálogo. Ver get_series_episodes_grouped y get_distinct_series_groups_catalog.
 
     # ============================================================
     # HELPERS: Catálogo normalizado (series_catalog / movies_catalog)
@@ -763,6 +650,7 @@ class PostgresService:
 
     def get_series_catalog_by_title(self, title: str) -> Optional[Dict[str, Any]]:
         """Resuelve un título de serie (posiblemente con prefijo de idioma) al catálogo"""
+        stripped = re.sub(r'^[a-z]{2,5}\s*[-–]\s*', '', title, flags=re.IGNORECASE).strip()
         sql = """
             SELECT sc.*,
                sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
@@ -770,30 +658,11 @@ class PostgresService:
                sm.release_date, sm.popularity, sm.status
             FROM series_catalog sc
             LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
-            WHERE LOWER(TRIM(sc.title)) = LOWER(TRIM(%s))
-               OR LOWER(TRIM(sc.title)) = LOWER(TRIM(REGEXP_REPLACE(%s, '^[a-z]{2,5}\\s*[-–]\\s*', '', 'i')))
+            WHERE LOWER(TRIM(sc.title)) IN (LOWER(TRIM(%s)), LOWER(TRIM(%s)))
+               OR LOWER(TRIM(sc.title)) LIKE LOWER(TRIM(%s))
             LIMIT 1
         """
-        results = self.execute_query(sql, (title, title))
-        if results:
-            return results[0]
-        # Fallback: buscar por series_key referenciada desde tabla series plana
-        fallback_sql = """
-            SELECT sc.*,
-               sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
-               sm.genres, sm.backdrop_path, sm.poster_path, sm.title AS tmdb_title,
-               sm.release_date, sm.popularity, sm.status
-            FROM series s
-            JOIN series_catalog sc ON sc.series_key = COALESCE(NULLIF(s.series_key, ''),
-                LOWER(REGEXP_REPLACE(COALESCE(NULLIF(s.serie_name, ''), s.nombre_normalizado, s.nombre),
-                '[^a-z0-9]', '', 'g')))
-            LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
-            WHERE s.serie_name = %s
-               OR LOWER(TRIM(COALESCE(NULLIF(s.nombre_normalizado, ''), s.nombre)))
-                  LIKE LOWER(TRIM(REGEXP_REPLACE(%s, '^[a-z]{2,5}\\s*[-–]\\s*', '', 'i')))
-            LIMIT 1
-        """
-        results = self.execute_query(fallback_sql, (title, title))
+        results = self.execute_query(sql, (title, stripped, f"%{stripped}%"))
         return results[0] if results else None
 
     def get_series_episodes_grouped(
@@ -1035,29 +904,30 @@ class PostgresService:
         upper_group: Optional[str] = None, country: Optional[str] = None, search: Optional[str] = None,
         year: Optional[int] = None) -> Dict[str, Any]:
         """
-        Versión para catálogo normalizado: devuelve series agrupadas con total de episodios
+        Versión para catálogo normalizado: devuelve series agrupadas con total de episodios.
+        Solo consulta series_catalog + series_episodes + series_metadata (sin tablas planas).
         """
         filters: List[str] = []
         params: List[Any] = []
 
         if group:
-            filters.append("(s.grupo_normalizado ILIKE %s OR s.grupo ILIKE %s)")
+            filters.append("(sc.group_normalizado ILIKE %s OR sc.title ILIKE %s)")
             params.extend([f"%{group}%", f"%{group}%"])
 
         if upper_group:
-            filters.append("UPPER(s.grupo_normalizado) LIKE %s")
+            filters.append("UPPER(sc.group_normalizado) LIKE %s")
             params.append(f"%{upper_group}%")
 
         if country:
-            filters.append("s.country = %s")
+            filters.append("sc.country = %s")
             params.append(country)
 
         if search:
-            filters.append("(s.serie_name ILIKE %s OR s.nombre_normalizado ILIKE %s)")
+            filters.append("(sc.title ILIKE %s OR sc.title ILIKE %s)")
             params.extend([f"%{search}%", f"%{search}%"])
 
         if year:
-            filters.append("s.year = %s")
+            filters.append("sc.year = %s")
             params.append(year)
 
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
@@ -1065,10 +935,7 @@ class PostgresService:
 
         count_sql = f"""
             SELECT COUNT(DISTINCT sc.id) as total
-            FROM series s
-            JOIN series_catalog sc ON sc.series_key = COALESCE(NULLIF(s.series_key, ''),
-                LOWER(REGEXP_REPLACE(COALESCE(NULLIF(s.serie_name, ''), s.nombre_normalizado, s.nombre),
-                '[^a-z0-9]', '', 'g')))
+            FROM series_catalog sc
             {where_clause}
         """
         count_result = self.execute_query(count_sql, params)
@@ -1090,27 +957,37 @@ class PostgresService:
                 sc.year,
                 sc.status,
                 sc.popularity,
+                sc.group_normalizado,
+                sc.country,
+                sc.logo,
+                sc.numero,
+                sc.provider_id,
+                sc.nombre_dedup_key,
+                sm.overview_es AS sm_overview_es,
+                sm.overview_en AS sm_overview_en,
+                sm.vote_average AS sm_vote_average,
+                sm.vote_count AS sm_vote_count,
+                sm.genres AS sm_genres,
+                sm.backdrop_path AS sm_backdrop,
+                sm.poster_path AS sm_poster,
+                sm.title AS tmdb_title,
+                sm.release_date AS sm_release_date,
+                sm.popularity AS sm_popularity,
+                sm.status AS sm_status,
                 COUNT(DISTINCT se.id) AS total_episodes,
-                COUNT(DISTINCT se.season_number) AS total_seasons,
-                MAX(s.grupo) AS grupo,
-                MAX(s.grupo_normalizado) AS grupo_normalizado,
-                MAX(s.country) AS country,
-                MAX(s.logo) AS logo,
-                MIN(s.numero) AS numero,
-                MIN(s.provider_id) AS first_provider_id,
-                MIN(s.id) AS first_id,
-                MIN(s.nombre) AS first_nombre,
-                MIN(s.nombre_normalizado) AS first_nombre_normalizado
-            FROM series s
-            JOIN series_catalog sc ON sc.series_key = COALESCE(NULLIF(s.series_key, ''),
-                LOWER(REGEXP_REPLACE(COALESCE(NULLIF(s.serie_name, ''), s.nombre_normalizado, s.nombre),
-                '[^a-z0-9]', '', 'g')))
+                COUNT(DISTINCT se.season_number) AS total_seasons
+            FROM series_catalog sc
+            LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
             LEFT JOIN series_episodes se ON se.catalog_id = sc.id
             {where_clause}
             GROUP BY sc.id, sc.title, sc.series_key, sc.tmdb_id,
                 sc.poster_path, sc.backdrop_path, sc.overview_es, sc.overview_en,
                 sc.genres, sc.vote_average, sc.vote_count, sc.year,
-                sc.status, sc.popularity
+                sc.status, sc.popularity, sc.group_normalizado, sc.country,
+                sc.logo, sc.numero, sc.provider_id, sc.nombre_dedup_key,
+                sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
+                sm.genres, sm.backdrop_path, sm.poster_path, sm.title,
+                sm.release_date, sm.popularity, sm.status
             ORDER BY sc.title ASC
             LIMIT %s OFFSET %s
         """
@@ -1506,6 +1383,61 @@ class PostgresService:
         countries.sort(key=lambda c: (0 if c["code"] in ("ES", "US") else 1, c["name"]))
         return countries
 
+    def get_distinct_groups_catalog(self, content_type: str) -> List[str]:
+        table = "movies_catalog" if content_type == "movies" else "series_catalog"
+        sql = f"""
+            SELECT DISTINCT group_normalizado AS grupo
+            FROM {table}
+            WHERE group_normalizado IS NOT NULL AND group_normalizado != ''
+            ORDER BY 1 ASC
+        """
+        results = self.execute_query(sql)
+        return [row["grupo"] for row in results if row.get("grupo")]
+
+    def get_distinct_countries_catalog(self, content_type: str) -> List[Dict[str, str]]:
+        table = "movies_catalog" if content_type == "movies" else "series_catalog"
+        sql = f"""
+            SELECT country
+            FROM {table}
+            WHERE country IS NOT NULL AND country != ''
+            GROUP BY country
+            ORDER BY country ASC
+        """
+        results = self.execute_query(sql)
+
+        country_names = {
+            "AD": "Andorra", "AE": "Emiratos Árabes Unidos", "AF": "Afganistán",
+            "AL": "Albania", "AM": "Armenia", "AR": "Argentina", "AT": "Austria",
+            "AU": "Australia", "AZ": "Azerbaiyán", "BE": "Bélgica", "BG": "Bulgaria",
+            "BH": "Baréin", "BR": "Brasil", "BY": "Bielorrusia", "CA": "Canadá",
+            "CG": "República del Congo", "CH": "Suiza", "CY": "Chipre",
+            "CZ": "República Checa", "DE": "Alemania", "DK": "Dinamarca",
+            "DO": "República Dominicana", "DZ": "Argelia", "EC": "Ecuador",
+            "EG": "Egipto", "ES": "España", "FI": "Finlandia", "FR": "Francia",
+            "GB": "Reino Unido", "GR": "Grecia", "GT": "Guatemala", "HK": "Hong Kong",
+            "HN": "Honduras", "HR": "Croacia", "HU": "Hungría", "ID": "Indonesia",
+            "IE": "Irlanda", "IL": "Israel", "IN": "India", "IQ": "Irak",
+            "IR": "Irán", "IS": "Islandia", "IT": "Italia", "JM": "Jamaica",
+            "JO": "Jordania", "JP": "Japón", "KE": "Kenia", "KH": "Camboya",
+            "KR": "Corea del Sur", "KW": "Kuwait", "KZ": "Kazajistán",
+            "LB": "Líbano", "LT": "Lituania", "LU": "Luxemburgo", "LV": "Letonia",
+            "MA": "Marruecos", "MK": "Macedonia del Norte", "MT": "Malta",
+            "MX": "México", "MY": "Malasia", "NG": "Nigeria", "NL": "Países Bajos",
+            "NO": "Noruega", "NP": "Nepal", "NZ": "Nueva Zelanda", "PE": "Perú",
+            "PH": "Filipinas", "PK": "Pakistán", "PL": "Polonia", "PT": "Portugal",
+            "RO": "Rumania", "RS": "Serbia", "RU": "Rusia", "SA": "Arabia Saudita",
+            "SE": "Suecia", "SG": "Singapur", "SI": "Eslovenia", "SK": "Eslovaquia",
+            "SV": "El Salvador", "TH": "Tailandia", "TN": "Túnez", "TR": "Turquía",
+            "TW": "Taiwán", "UA": "Ucrania", "UK": "Reino Unido", "US": "Estados Unidos",
+            "UY": "Uruguay", "VE": "Venezuela", "VN": "Vietnam", "ZA": "Sudáfrica",
+        }
+
+        countries = []
+        for row in results:
+            code = row["country"]
+            countries.append({"code": code, "name": country_names.get(code, code)})
+        return countries
+
     def get_distinct_series_page(
         self,
         page: int,
@@ -1517,135 +1449,13 @@ class PostgresService:
         year: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Obtiene una página de series únicas.
+        Obtiene una página de series únicas desde catálogo normalizado.
         """
-        filters: List[str] = []
-        params: List[Any] = []
-
-        if group:
-            filters.append("(s.grupo_normalizado ILIKE %s OR s.grupo ILIKE %s)")
-            params.extend([f"%{group}%", f"%{group}%"])
-
-        if upper_group:
-            filters.append("UPPER(s.grupo_normalizado) LIKE %s")
-            params.append(f"%{upper_group}%")
-
-        if country:
-            filters.append("s.country = %s")
-            params.append(country)
-
-        if search:
-            filters.append(
-                "(s.serie_name ILIKE %s OR s.nombre_normalizado ILIKE %s OR s.nombre ILIKE %s)"
-            )
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-
-        if year:
-            filters.append("s.year = %s")
-            params.append(year)
-
-        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
-        offset = (page - 1) * page_size
-
-        series_key_expr = """
-            COALESCE(
-                NULLIF(tm.tmdb_id::text, ''),
-                NULLIF(s.series_key, ''),
-                NULLIF(s.nombre_dedup_key, ''),
-                NULLIF(s.serie_name, ''),
-                LOWER(NULLIF(s.nombre_normalizado, '')),
-                LOWER(s.nombre)
-            )
-        """
-
-        count_sql = f"""
-            SELECT COUNT(DISTINCT {series_key_expr}) as total
-            FROM series s
-            LEFT JOIN series_metadata tm ON s.series_key = tm.series_key
-            {where_clause}
-        """
-        count_result = self.execute_query(count_sql, tuple(params))
-        total = int(count_result[0]["total"]) if count_result else 0
-
-        offset = (page - 1) * page_size
-
-        sql = f"""
-        WITH tmdb_lookup AS (
-            SELECT series_key, tmdb_id
-            FROM series_metadata
-        ),
-        base AS (
-            SELECT
-                s.*,
-                {series_key_expr} AS catalog_series_key
-            FROM series s
-            LEFT JOIN tmdb_lookup tm ON s.series_key = tm.series_key
-            {where_clause}
-        ),
-        deduped AS (
-            SELECT DISTINCT ON (catalog_series_key) *
-            FROM base
-            ORDER BY catalog_series_key ASC, year DESC NULLS LAST, numero ASC
-        ),
-        season_counts AS (
-            SELECT catalog_series_key, COUNT(DISTINCT temporada) AS total_seasons
-            FROM base
-            WHERE temporada IS NOT NULL
-            GROUP BY catalog_series_key
-        ),
-        with_seasons AS (
-            SELECT
-                d.*,
-                sc.total_seasons
-            FROM deduped d
-            LEFT JOIN season_counts sc
-                ON d.catalog_series_key = sc.catalog_series_key
-        ),
-        with_metadata AS (
-            SELECT
-                ws.*,
-                sm.overview_es,
-                sm.overview_en,
-                sm.vote_average,
-                sm.vote_count,
-                sm.genres,
-                sm.backdrop_path,
-                sm.poster_path as tmdb_poster_path,
-                sm.tagline,
-                sm.tmdb_id,
-                sm.title as tmdb_title,
-                sm.release_date,
-                sm.popularity,
-                sm.status
-            FROM with_seasons ws
-            LEFT JOIN series_metadata sm ON ws.series_key = sm.series_key
-        ),
-        counted AS (
-            SELECT *, COUNT(*) OVER() AS _total
-            FROM with_metadata
+        return self.get_distinct_series_groups_catalog(
+            page=page, page_size=page_size, group=group,
+            upper_group=upper_group, country=country,
+            search=search, year=year,
         )
-        SELECT *
-        FROM counted
-        ORDER BY year DESC NULLS LAST
-        LIMIT %s OFFSET %s
-        """
-
-        all_params = tuple([*params, page_size, offset])
-        rows = self.execute_query(sql, all_params)
-
-        total = int(rows[0]["_total"]) if rows else 0
-
-        clean_rows = []
-        for row in rows:
-            r = dict(row)
-            r.pop("_total", None)
-            r.pop("catalog_series_key", None)
-            clean_rows.append(r)
-
-        return {
-            "items": clean_rows,
-            "total": total,
-        }
 
     def get_series_groups_page(
         self,
@@ -1658,129 +1468,13 @@ class PostgresService:
         year: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Obtiene series agrupadas con total de episodios por serie.
+        Obtiene series agrupadas desde catálogo normalizado.
         """
-        filters: List[str] = []
-        params: List[Any] = []
-
-        if group:
-            filters.append("(s.grupo_normalizado ILIKE %s OR s.grupo ILIKE %s)")
-            params.extend([f"%{group}%", f"%{group}%"])
-
-        if upper_group:
-            filters.append("UPPER(s.grupo_normalizado) LIKE %s")
-            params.append(f"%{upper_group}%")
-
-        if country:
-            filters.append("s.country = %s")
-            params.append(country)
-
-        if search:
-            filters.append("(s.serie_name ILIKE %s OR s.nombre_normalizado ILIKE %s)")
-            params.extend([f"%{search}%", f"%{search}%"])
-
-        if year:
-            filters.append("s.year = %s")
-            params.append(year)
-
-        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
-        offset = (page - 1) * page_size
-
-        series_key_expr = """
-            COALESCE(
-                NULLIF(tm.tmdb_id::text, ''),
-                NULLIF(s.series_key, ''),
-                NULLIF(s.nombre_dedup_key, ''),
-                NULLIF(s.serie_name, ''),
-                LOWER(NULLIF(s.nombre_normalizado, '')),
-                LOWER(s.nombre)
-            )
-        """
-
-        sql = f"""
-        WITH tmdb_lookup AS (
-            SELECT series_key, tmdb_id
-            FROM series_metadata
-        ),
-        base AS (
-            SELECT
-                s.*,
-                {series_key_expr} AS catalog_series_key
-            FROM series s
-            LEFT JOIN tmdb_lookup tm ON s.series_key = tm.series_key
-            {where_clause}
-        ),
-        grouped AS (
-            SELECT
-                catalog_series_key,
-                MIN(series_key) AS series_key,
-                COUNT(*) AS total_episodes,
-                MAX(year) AS year,
-                MAX(logo) AS logo,
-                MAX(grupo) AS grupo,
-                MAX(grupo_normalizado) AS grupo_normalizado,
-                MAX(country) AS country,
-                COUNT(DISTINCT temporada) AS total_seasons,
-                MIN(numero) AS first_numero,
-                MIN(provider_id) AS first_provider_id,
-                MIN(id) AS first_id,
-                MIN(nombre) AS first_nombre,
-                MIN(nombre_normalizado) AS first_nombre_normalizado,
-                MIN(serie_name) AS serie_name
-            FROM base
-            WHERE catalog_series_key IS NOT NULL AND catalog_series_key != ''
-            GROUP BY catalog_series_key
-        ),
-        with_metadata AS (
-            SELECT
-                g.*,
-                sm.overview_es,
-                sm.overview_en,
-                sm.vote_average,
-                sm.vote_count,
-                sm.genres,
-                sm.backdrop_path,
-                sm.poster_path as tmdb_poster_path,
-                sm.tagline,
-                sm.tmdb_id,
-                sm.title as tmdb_title,
-                sm.release_date,
-                sm.popularity,
-                sm.status
-            FROM grouped g
-            LEFT JOIN series_metadata sm ON g.series_key = sm.series_key
-        ),
-        counted AS (
-            SELECT *, COUNT(*) OVER() AS _total
-            FROM with_metadata
+        return self.get_distinct_series_groups_catalog(
+            page=page, page_size=page_size, group=group,
+            upper_group=upper_group, country=country,
+            search=search, year=year,
         )
-        SELECT *
-        FROM counted
-        ORDER BY total_episodes DESC NULLS LAST, year DESC NULLS LAST, serie_name ASC
-        LIMIT %s OFFSET %s
-        """
-
-        all_params = tuple([*params, page_size, offset])
-        rows = self.execute_query(sql, all_params)
-
-        total = int(rows[0]["_total"]) if rows else 0
-
-        clean_rows = []
-        for row in rows:
-            r = dict(row)
-            r.pop("_total", None)
-            r.pop("catalog_series_key", None)
-            provider_id = r.pop("first_provider_id", None)
-            r["provider_id"] = provider_id
-            r["id"] = r.pop("first_id", None)
-            r["nombre"] = r.pop("first_nombre", None)
-            r["nombre_normalizado"] = r.pop("first_nombre_normalizado", None)
-            clean_rows.append(r)
-
-        return {
-            "items": clean_rows,
-            "total": total,
-        }
 
 
 # Singleton instance
