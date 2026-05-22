@@ -717,14 +717,12 @@ class ContentService:
         group = original_group
 
         overview = (
-            row.get("sm_overview_es")
-            or row.get("overview_es")
-            or row.get("sm_overview_en")
+            row.get("overview_es")
             or row.get("overview_en")
             or ""
         )
-        poster = row.get("sm_poster") or row.get("poster_path") or ""
-        backdrop = row.get("sm_backdrop") or row.get("backdrop_path") or ""
+        poster = row.get("poster_path") or ""
+        backdrop = row.get("backdrop_path") or ""
 
         return {
             "id": row.get("provider_id") or str(row.get("id") or ""),
@@ -749,19 +747,19 @@ class ContentService:
             "year": row.get("year"),
             "language_label": row.get("country"),
             "overview": overview,
-            "overview_es": row.get("sm_overview_es") or row.get("overview_es") or "",
-            "overview_en": row.get("sm_overview_en") or row.get("overview_en") or "",
-            "rating": row.get("sm_vote_average") or row.get("vote_average"),
-            "vote_count": row.get("sm_vote_count") or row.get("vote_count"),
-            "genres": row.get("sm_genres") or row.get("genres"),
+            "overview_es": row.get("overview_es") or "",
+            "overview_en": row.get("overview_en") or "",
+            "rating": row.get("vote_average"),
+            "vote_count": row.get("vote_count"),
+            "genres": row.get("genres"),
             "poster_path": poster,
             "backdrop_path": backdrop,
             "tagline": row.get("tagline"),
-            "release_date": str(row.get("sm_release_date") or row.get("release_date") or ""),
+            "release_date": str(row.get("release_date") or ""),
             "tmdb_id": row.get("tmdb_id"),
             "tmdb_title": row.get("tmdb_title") or serie_name,
-            "popularity": row.get("sm_popularity") or row.get("popularity"),
-            "status": row.get("sm_status") or row.get("status"),
+            "popularity": row.get("popularity"),
+            "status": row.get("status"),
         }
 
     def _to_android_movie_from_catalog(
@@ -777,17 +775,14 @@ class ContentService:
         stream_options = row.get("stream_options") or []
         first_stream = stream_options[0] if stream_options else {}
 
-        # Preferir campos de movies_metadata si están disponibles
         overview = (
-            row.get("mm_overview_es")
-            or row.get("mm_overview_en")
-            or row.get("overview_es")
+            row.get("overview_es")
             or row.get("overview_en")
             or ""
         )
-        overview_es = row.get("mm_overview_es") or row.get("overview_es") or ""
-        poster = row.get("mm_poster") or row.get("poster_path") or ""
-        backdrop = row.get("mm_backdrop") or row.get("backdrop_path") or ""
+        overview_es = row.get("overview_es") or ""
+        poster = row.get("poster_path") or ""
+        backdrop = row.get("backdrop_path") or ""
         tmdb_title = row.get("tmdb_title") or row.get("title") or ""
 
         return {
@@ -811,20 +806,20 @@ class ContentService:
             "language_label": first_stream.get("country", ""),
             "overview": overview,
             "overview_es": overview_es,
-            "overview_en": row.get("mm_overview_en") or row.get("overview_en") or "",
-            "rating": row.get("mm_vote_average") or row.get("vote_average"),
-            "vote_count": row.get("mm_vote_count") or row.get("vote_count"),
-            "genres": row.get("mm_genres") or row.get("genres"),
+            "overview_en": row.get("overview_en") or "",
+            "rating": row.get("vote_average"),
+            "vote_count": row.get("vote_count"),
+            "genres": row.get("genres"),
             "poster_path": poster,
             "backdrop_path": backdrop,
             "runtime_minutes": row.get("runtime_minutes"),
             "tagline": row.get("tagline"),
-            "release_date": str(row.get("mm_release_date") or row.get("release_date") or ""),
+            "release_date": str(row.get("release_date") or ""),
             "year": row.get("year"),
             "tmdb_id": row.get("tmdb_id"),
             "tmdb_title": tmdb_title,
-            "popularity": row.get("mm_popularity") or row.get("popularity"),
-            "status": row.get("mm_status") or row.get("status"),
+            "popularity": row.get("popularity"),
+            "status": row.get("status"),
             "total_seasons": None,
         }
 
@@ -875,7 +870,7 @@ class ContentService:
             "rating": row.get("vote_average"),
             "vote_count": row.get("vote_count"),
             "genres": row.get("genres"),
-            "poster_path": row.get("tmdb_poster_path") or row.get("poster_path"),
+            "poster_path": row.get("poster_path"),
             "backdrop_path": row.get("backdrop_path"),
             "tagline": row.get("tagline"),
             "release_date": row.get("release_date"),

@@ -356,8 +356,10 @@ class PostgresService:
                 mm.poster_path AS tmdb_poster_path,
                 mm.title AS tmdb_title,
                 mm.release_date,
+                mm.runtime_minutes,
                 mm.popularity,
                 mm.status,
+                mm.tagline,
                 COALESCE(
                     jsonb_agg(
                         jsonb_build_object(
@@ -377,15 +379,12 @@ class PostgresService:
                 ) AS stream_options
             FROM movies_catalog mc
             LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
-            LEFT JOIN movies_metadata mm ON mm.provider_id = mc.provider_id
-            WHERE mc.id::text = %s OR mc.provider_id = %s
-            GROUP BY mc.id, mc.title, mc.provider_id,
-                mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
-                mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
-                mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
-                mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
-                mm.genres, mm.backdrop_path, mm.poster_path, mm.title,
-                mm.release_date, mm.popularity, mm.status
+            LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
+            WHERE mc.id::text = %s OR mc.tmdb_id = %s
+            GROUP BY mc.id, mc.title, mc.provider_id, mc.tmdb_id,
+                mc.nombre_dedup_key, mc.year, mc.country, mc.group_normalizado, mc.logo,
+                mc.created_at, mc.updated_at,
+                mm.id
             LIMIT 1
         """
         results = self.execute_query(sql, (movie_id, movie_id))
@@ -403,7 +402,7 @@ class PostgresService:
                 sm.backdrop_path,
                 sm.poster_path as tmdb_poster_path,
                 sm.tagline,
-                sm.tmdb_id,
+                sm.tmdb_id as metadata_tmdb_id,
                 sm.title as tmdb_title,
                 sm.release_date,
                 sm.popularity,
@@ -411,7 +410,7 @@ class PostgresService:
                 ep_counts.total_episodes,
                 ep_counts.total_seasons
             FROM series_catalog sc
-            LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
+            LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
             LEFT JOIN (
                 SELECT catalog_id,
                     COUNT(DISTINCT id) AS total_episodes,
@@ -419,10 +418,10 @@ class PostgresService:
                 FROM series_episodes
                 GROUP BY catalog_id
             ) ep_counts ON ep_counts.catalog_id = sc.id
-            WHERE sc.id::text = %s OR sc.series_key = %s OR sc.provider_id = %s
+            WHERE sc.id::text = %s OR sc.tmdb_id = %s
             LIMIT 1
         """
-        results = self.execute_query(sql, (series_id, series_id, series_id))
+        results = self.execute_query(sql, (series_id, series_id))
         return results[0] if results else None
 
     def get_content_items_paginated(
@@ -640,7 +639,7 @@ class PostgresService:
                sm.genres, sm.backdrop_path, sm.poster_path, sm.title AS tmdb_title,
                sm.release_date, sm.popularity, sm.status
             FROM series_catalog sc
-            LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
+            LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
             WHERE sc.series_key = %s
             LIMIT 1
         """
@@ -656,7 +655,7 @@ class PostgresService:
                sm.genres, sm.backdrop_path, sm.poster_path, sm.title AS tmdb_title,
                sm.release_date, sm.popularity, sm.status
             FROM series_catalog sc
-            LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
+            LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
             WHERE LOWER(TRIM(sc.title)) IN (LOWER(TRIM(%s)), LOWER(TRIM(%s)))
                OR LOWER(TRIM(sc.title)) LIKE LOWER(TRIM(%s))
             LIMIT 1
@@ -782,35 +781,24 @@ class PostgresService:
                     mc.id,
                     mc.title,
                     mc.tmdb_id,
-                    mc.poster_path,
-                    mc.backdrop_path,
-                    mc.overview_es,
-                    mc.overview_en,
-                    mc.genres,
-                    mc.vote_average,
-                    mc.vote_count,
-                    mc.runtime_minutes,
-                    mc.release_date,
                     mc.year,
-                    mc.tagline,
-                    mc.status,
-                    mc.popularity,
                     mc.country,
                     mc.group_normalizado,
                     mc.logo,
-                    mc.numero,
                     mc.provider_id,
-                    mm.overview_es AS mm_overview_es,
-                    mm.overview_en AS mm_overview_en,
-                    mm.vote_average AS mm_vote_average,
-                    mm.vote_count AS mm_vote_count,
-                    mm.genres AS mm_genres,
-                    mm.backdrop_path AS mm_backdrop,
-                    mm.poster_path AS mm_poster,
+                    mm.overview_es,
+                    mm.overview_en,
+                    mm.vote_average,
+                    mm.vote_count,
+                    mm.genres,
+                    mm.backdrop_path,
+                    mm.poster_path,
                     mm.title AS tmdb_title,
-                    mm.release_date AS mm_release_date,
-                    mm.popularity AS mm_popularity,
-                    mm.status AS mm_status,
+                    mm.release_date,
+                    mm.runtime_minutes,
+                    mm.popularity,
+                    mm.status,
+                    mm.tagline,
                     jsonb_agg(
                         jsonb_build_object(
                             'url', ms.stream_url,
@@ -828,16 +816,11 @@ class PostgresService:
                     COUNT(ms.id) AS stream_count
                 FROM movies_catalog mc
                 LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
-                LEFT JOIN movies_metadata mm ON mm.provider_id = mc.provider_id
+                LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
                 {where_clause}
-                GROUP BY mc.id, mc.title, mc.provider_id,
-                    mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
-                    mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
-                    mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
-                    mc.country, mc.group_normalizado, mc.logo, mc.numero, mc.provider_id,
-                    mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
-                    mm.genres, mm.backdrop_path, mm.poster_path, mm.title,
-                    mm.release_date, mm.popularity, mm.status
+                GROUP BY mc.id, mc.title, mc.tmdb_id, mc.year, mc.country,
+                    mc.group_normalizado, mc.logo, mc.provider_id,
+                    mm.id
             )
             SELECT *
             FROM movie_options
@@ -853,17 +836,19 @@ class PostgresService:
         sql = """
             SELECT
                 mc.*,
-                mm.overview_es AS mm_overview_es,
-                mm.overview_en AS mm_overview_en,
-                mm.vote_average AS mm_vote_average,
-                mm.vote_count AS mm_vote_count,
-                mm.genres AS mm_genres,
-                mm.backdrop_path AS mm_backdrop,
-                mm.poster_path AS mm_poster,
+                mm.overview_es,
+                mm.overview_en,
+                mm.vote_average,
+                mm.vote_count,
+                mm.genres,
+                mm.backdrop_path,
+                mm.poster_path,
                 mm.title AS tmdb_title,
-                mm.release_date AS mm_release_date,
-                mm.popularity AS mm_popularity,
-                mm.status AS mm_status,
+                mm.release_date,
+                mm.runtime_minutes,
+                mm.popularity,
+                mm.status,
+                mm.tagline,
                 COALESCE(
                     jsonb_agg(
                         jsonb_build_object(
@@ -883,15 +868,12 @@ class PostgresService:
                 ) AS stream_options
             FROM movies_catalog mc
             LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
-            LEFT JOIN movies_metadata mm ON mm.provider_id = mc.provider_id
+            LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
             WHERE mc.id = %s
-            GROUP BY mc.id, mc.title, mc.provider_id,
-                mc.poster_path, mc.backdrop_path, mc.overview_es, mc.overview_en,
-                mc.genres, mc.vote_average, mc.vote_count, mc.runtime_minutes,
-                mc.release_date, mc.year, mc.tagline, mc.status, mc.popularity,
-                mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
-                mm.genres, mm.backdrop_path, mm.poster_path, mm.title,
-                mm.release_date, mm.popularity, mm.status
+            GROUP BY mc.id, mc.title, mc.provider_id, mc.tmdb_id,
+                mc.nombre_dedup_key, mc.year, mc.country, mc.group_normalizado, mc.logo,
+                mc.created_at, mc.updated_at,
+                mm.id
             LIMIT 1
         """
         results = self.execute_query(sql, (catalog_id,))
@@ -944,46 +926,31 @@ class PostgresService:
                 sc.title,
                 sc.series_key,
                 sc.tmdb_id,
-                sc.poster_path,
-                sc.backdrop_path,
-                sc.overview_es,
-                sc.overview_en,
-                sc.genres,
-                sc.vote_average,
-                sc.vote_count,
                 sc.year,
-                sc.status,
-                sc.popularity,
-                sc.group_normalizado,
                 sc.country,
+                sc.group_normalizado,
                 sc.logo,
-                sc.numero,
                 sc.provider_id,
-                sm.overview_es AS sm_overview_es,
-                sm.overview_en AS sm_overview_en,
-                sm.vote_average AS sm_vote_average,
-                sm.vote_count AS sm_vote_count,
-                sm.genres AS sm_genres,
-                sm.backdrop_path AS sm_backdrop,
-                sm.poster_path AS sm_poster,
+                sm.overview_es,
+                sm.overview_en,
+                sm.vote_average,
+                sm.vote_count,
+                sm.genres,
+                sm.backdrop_path,
+                sm.poster_path,
                 sm.title AS tmdb_title,
-                sm.release_date AS sm_release_date,
-                sm.popularity AS sm_popularity,
-                sm.status AS sm_status,
+                sm.release_date,
+                sm.popularity,
+                sm.status,
                 COUNT(DISTINCT se.id) AS total_episodes,
                 COUNT(DISTINCT se.season_number) AS total_seasons
             FROM series_catalog sc
-            LEFT JOIN series_metadata sm ON sc.series_key = sm.series_key
+            LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
             LEFT JOIN series_episodes se ON se.catalog_id = sc.id
             {where_clause}
             GROUP BY sc.id, sc.title, sc.series_key, sc.tmdb_id,
-                sc.poster_path, sc.backdrop_path, sc.overview_es, sc.overview_en,
-                sc.genres, sc.vote_average, sc.vote_count, sc.year,
-                sc.status, sc.popularity, sc.group_normalizado, sc.country,
-                sc.logo, sc.numero, sc.provider_id,
-                sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
-                sm.genres, sm.backdrop_path, sm.poster_path, sm.title,
-                sm.release_date, sm.popularity, sm.status
+                sc.year, sc.country, sc.group_normalizado, sc.logo, sc.provider_id,
+                sm.id
             ORDER BY sc.title ASC
             LIMIT %s OFFSET %s
         """
