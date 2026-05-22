@@ -12,8 +12,8 @@ class WatchProgressService:
     TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p"
 
     TABLE_BY_TYPE = {
-        "movie": "movies",
-        "series": "series",
+        "movie": "movies_catalog",
+        "series": "series_catalog",
     }
 
     def __init__(self, pg_service: PostgresService):

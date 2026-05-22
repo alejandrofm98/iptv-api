@@ -234,6 +234,7 @@ CREATE TABLE IF NOT EXISTS movies_metadata (
 CREATE INDEX IF NOT EXISTS idx_movies_metadata_tmdb ON movies_metadata(tmdb_id);
 CREATE INDEX IF NOT EXISTS idx_movies_metadata_year ON movies_metadata(year);
 CREATE INDEX IF NOT EXISTS idx_movies_metadata_not_found ON movies_metadata(not_found);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_movies_metadata_provider_nf ON movies_metadata(provider_id) WHERE tmdb_id IS NULL;
 
 -- --------------------------------------------
 -- 10b. movies_catalog (variantes IPTV por idioma/calidad)
@@ -312,6 +313,7 @@ CREATE TABLE IF NOT EXISTS series_metadata (
 CREATE INDEX IF NOT EXISTS idx_series_metadata_tmdb ON series_metadata(tmdb_id);
 CREATE INDEX IF NOT EXISTS idx_series_metadata_year ON series_metadata(year);
 CREATE INDEX IF NOT EXISTS idx_series_metadata_not_found ON series_metadata(not_found);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_series_metadata_provider_nf ON series_metadata(series_key) WHERE tmdb_id IS NULL;
 
 -- --------------------------------------------
 -- 10e. series_catalog (variantes IPTV por idioma/calidad)

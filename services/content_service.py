@@ -25,8 +25,6 @@ class ContentService:
 
     TABLE_MAP = {
         "channels": "channels",
-        "movies": "movies",
-        "series": "series",
         "replays": "replays",
     }
 
