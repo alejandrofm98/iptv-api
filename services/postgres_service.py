@@ -614,9 +614,9 @@ class PostgresService:
         sql = f"SELECT * FROM channels WHERE provider_id::text IN ({placeholders})"
         return self.execute_query(sql, tuple(provider_ids))
 
-    def get_all_content_urls(self, table: str) -> List[Dict[str, Any]]:
+    def get_all_content_urls(self, table: str, url_column: str = "url") -> List[Dict[str, Any]]:
         """Obtiene todos los IDs y URLs de una tabla para precargar cache"""
-        sql = f"SELECT id, provider_id, url FROM {table} WHERE url IS NOT NULL AND url != ''"
+        sql = f"SELECT id, provider_id, {url_column} as url FROM {table} WHERE {url_column} IS NOT NULL AND {url_column} != ''"
         return self.execute_query(sql)
 
     # ============================================================

@@ -499,12 +499,14 @@ class StreamProxyService:
 
     def preload_cache(self):
         """Precarga el cache con todas las URLs"""
-        tables = ['channels', 'movies', 'series']
-        type_map = {'channels': 'live', 'movies': 'movie', 'series': 'series'}
+        sources = [
+            ('channels', 'live', 'url'),
+            ('movie_streams', 'movie', 'COALESCE(url, stream_url)'),
+            ('series_streams', 'series', 'COALESCE(url, stream_url)'),
+        ]
 
-        for table in tables:
-            rows = self.pg.get_all_content_urls(table)
-            content_type = type_map[table]
+        for table, content_type, url_col in sources:
+            rows = self.pg.get_all_content_urls(table, url_column=url_col)
 
             for item in rows:
                 url_value = item.get('url')

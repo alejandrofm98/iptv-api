@@ -1232,9 +1232,10 @@ class ContentService:
         password: str = "",
         country: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        table = self.TABLE_MAP.get(content_type)
-        if not table:
-            return []
+        if content_type not in ("movies", "series"):
+            table = self.TABLE_MAP.get(content_type)
+            if not table:
+                return []
 
         sections = []
 
@@ -1443,7 +1444,7 @@ class ContentService:
     def _fetch_section_with_dedup(
         self,
         content_type: str,
-        table: str,
+        table: Optional[str],
         gp: dict,
         group_year: Optional[int],
         use_upper_group: bool,
@@ -1496,7 +1497,7 @@ class ContentService:
     def _fetch_raw_items(
         self,
         content_type: str,
-        table: str,
+        table: Optional[str],
         gp: dict,
         group_year: Optional[int],
         use_upper_group: bool,
@@ -1715,7 +1716,7 @@ class ContentService:
         username: str = "",
         password: str = "",
     ) -> Dict[str, Any]:
-        requested_types = [ct for ct in types if ct in self.TABLE_MAP]
+        requested_types = [ct for ct in types if ct in self.TABLE_MAP or ct in ("movies", "series")]
         if not requested_types:
             requested_types = ["channels", "movies", "series"]
 
@@ -2097,15 +2098,14 @@ class ContentService:
                 generated_at = metadata.get(generated_key, "")
                 return {content_type: {"total": total, "generatedAt": generated_at}}
 
-        table = self.TABLE_MAP.get(content_type)
-        if not table:
-            raise ValueError(f"Tipo de contenido inválido: {content_type}")
-
         if content_type == "movies":
             total = self.pg.count_catalog_movies()
         elif content_type == "series":
             total = self.pg.count_catalog_series()
         else:
+            table = self.TABLE_MAP.get(content_type)
+            if not table:
+                raise ValueError(f"Tipo de contenido inválido: {content_type}")
             total = self.pg.count_table(table)
         return {
             content_type: {"total": total, "generatedAt": datetime.utcnow().isoformat()}
