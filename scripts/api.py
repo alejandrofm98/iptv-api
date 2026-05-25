@@ -37,6 +37,7 @@ import requests
 from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse, FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 
@@ -177,6 +178,12 @@ app.add_middleware(
     expose_headers=["*"],
     max_age=3600,
 )
+
+# Servir imágenes placeholder estáticas
+from pathlib import Path
+IMAGES_DIR = Path(__file__).parent.parent / "resources" / "images"
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/assets/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
 
 
 @app.exception_handler(Exception)

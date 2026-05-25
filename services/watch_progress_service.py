@@ -10,6 +10,8 @@ class WatchProgressService:
     """Servicio para CRUD de progreso de visualizacion."""
 
     TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p"
+    DEFAULT_IMAGE_MOVIE = "/assets/images/movies.png"
+    DEFAULT_IMAGE_SERIES = "/assets/images/series.png"
 
     TABLE_BY_TYPE = {
         "movie": "movies_catalog",
@@ -116,7 +118,7 @@ class WatchProgressService:
         if content_row:
             normalized["title"] = content_row.get("nombre") or row.get("title") or ""
             normalized["normalized_title"] = self._normalized_title_for_content(content_type, content_row) or row.get("normalized_title") or normalized["title"]
-            normalized["image_url"] = self._image_url_for_content(content_row, row)
+            normalized["image_url"] = self._image_url_for_content(content_row, row, content_type)
             self._apply_metadata_fields(normalized, content_type, content_row)
             if content_type == "series":
                 normalized["series_name"] = content_row.get("serie_name") or row.get("series_name")
@@ -175,12 +177,17 @@ class WatchProgressService:
         if content_type == "series":
             normalized["total_seasons"] = content_row.get("total_seasons")
 
-    def _image_url_for_content(self, content_row: Dict[str, Any], progress_row: Dict[str, Any]) -> str:
+    def _image_url_for_content(self, content_row: Dict[str, Any], progress_row: Dict[str, Any], content_type: Optional[str] = None) -> str:
+        default_map = {
+            "movie": self.DEFAULT_IMAGE_MOVIE,
+            "series": self.DEFAULT_IMAGE_SERIES,
+        }
+        default_img = default_map.get(content_type, self.DEFAULT_IMAGE_MOVIE)
         logo = str(content_row.get("logo") or "")
         poster_path = content_row.get("poster_path")
         if self._is_placeholder_logo(logo):
-            return self._build_tmdb_image_url(poster_path) or logo or progress_row.get("image_url") or ""
-        return logo or self._build_tmdb_image_url(poster_path) or progress_row.get("image_url") or ""
+            return self._build_tmdb_image_url(poster_path) or logo or progress_row.get("image_url") or default_img
+        return logo or self._build_tmdb_image_url(poster_path) or progress_row.get("image_url") or default_img
 
     @classmethod
     def _build_tmdb_image_url(cls, path: Optional[str], size: str = "w500") -> str:

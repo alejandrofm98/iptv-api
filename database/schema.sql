@@ -382,3 +382,21 @@ CREATE TABLE IF NOT EXISTS series_streams (
 
 CREATE INDEX IF NOT EXISTS idx_series_streams_episode ON series_streams(episode_id);
 CREATE INDEX IF NOT EXISTS idx_series_streams_country ON series_streams(country);
+
+-- ============================================
+-- 12. Fallos del scraper TMDB (persistente)
+-- ============================================
+CREATE TABLE IF NOT EXISTS scraper_failures (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider_id VARCHAR(50),
+    series_key VARCHAR(255),
+    title TEXT NOT NULL,
+    year INTEGER,
+    error_message TEXT,
+    failed_at TIMESTAMPTZ DEFAULT NOW(),
+    retry_count INTEGER DEFAULT 1,
+    last_retry_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_failures_provider ON scraper_failures(provider_id) WHERE provider_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_failures_series ON scraper_failures(series_key) WHERE series_key IS NOT NULL;

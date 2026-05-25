@@ -42,6 +42,9 @@ class ContentService:
     REPLAY_EMBED_BASE_URL = "https://dailywrestling.cc/embed"
     REPLAY_METADATA_EMBEDDER = "https://dailywrestling.cc/"
     TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p"
+    DEFAULT_IMAGE_MOVIE = "/assets/images/movies.png"
+    DEFAULT_IMAGE_SERIES = "/assets/images/series.png"
+    DEFAULT_IMAGE_CHANNEL = "/assets/images/channels.png"
 
     HOME_PAGE_SIZE = 24
 
@@ -544,7 +547,14 @@ class ContentService:
             if tmdb_url:
                 return tmdb_url
         logo = item.get("logo") or ""
-        return logo
+        if logo:
+            return logo
+        default_map = {
+            "movies": self.DEFAULT_IMAGE_MOVIE,
+            "series": self.DEFAULT_IMAGE_SERIES,
+            "channels": self.DEFAULT_IMAGE_CHANNEL,
+        }
+        return default_map.get(content_type, self.DEFAULT_IMAGE_CHANNEL)
 
     def _to_android_catalog_item(
         self,
@@ -731,7 +741,7 @@ class ContentService:
             "original_title": serie_name,
             "subtitle": group,
             "description": overview or group,
-            "image_url": poster or row.get("logo") or "",
+            "image_url": self._build_tmdb_image_url(poster) or row.get("logo") or self.DEFAULT_IMAGE_SERIES,
             "group": group,
             "normalized_group": group,
             "badge_text": "SERIE",
@@ -791,7 +801,7 @@ class ContentService:
             "normalized_title": row.get("title", ""),
             "subtitle": "",
             "description": row.get("description", overview),
-            "image_url": self._build_tmdb_image_url(poster) or row.get("image_url", ""),
+            "image_url": self._build_tmdb_image_url(poster) or row.get("image_url", "") or self.DEFAULT_IMAGE_MOVIE,
             "group": row.get("group", ""),
             "normalized_group": row.get("group", row.get("normalized_group", "")),
             "badge_text": "CINE",
