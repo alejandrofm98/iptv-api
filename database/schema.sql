@@ -244,7 +244,8 @@ CREATE TABLE IF NOT EXISTS movies_catalog (
     title TEXT NOT NULL,
     provider_id VARCHAR(50),
     tmdb_id VARCHAR(20),
-    nombre_dedup_key TEXT UNIQUE,
+    nombre_dedup_key TEXT,
+    canonical_key VARCHAR,
     year INTEGER,
     country VARCHAR(10),
     group_normalizado TEXT,
@@ -261,6 +262,7 @@ CREATE INDEX IF NOT EXISTS idx_movies_catalog_dedup ON movies_catalog(nombre_ded
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_year ON movies_catalog(year);
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_country ON movies_catalog(country);
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_group ON movies_catalog(group_normalizado);
+CREATE INDEX IF NOT EXISTS idx_movies_catalog_canonical ON movies_catalog(canonical_key);
 
 -- --------------------------------------------
 -- 10c. movie_streams (URLs de stream por variante)
@@ -321,7 +323,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_series_metadata_provider_nf ON series_meta
 CREATE TABLE IF NOT EXISTS series_catalog (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
-    series_key TEXT NOT NULL UNIQUE,
+    series_key TEXT NOT NULL,
+    canonical_key VARCHAR,
     provider_id VARCHAR(50),
     tmdb_id VARCHAR(20),
     nombre_dedup_key TEXT,
@@ -341,6 +344,7 @@ CREATE INDEX IF NOT EXISTS idx_series_catalog_series_key ON series_catalog(serie
 CREATE INDEX IF NOT EXISTS idx_series_catalog_year ON series_catalog(year);
 CREATE INDEX IF NOT EXISTS idx_series_catalog_country ON series_catalog(country);
 CREATE INDEX IF NOT EXISTS idx_series_catalog_group ON series_catalog(group_normalizado);
+CREATE INDEX IF NOT EXISTS idx_series_catalog_canonical ON series_catalog(canonical_key);
 
 -- --------------------------------------------
 -- 10f. series_episodes (episodios por variante de serie)
