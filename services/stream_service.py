@@ -216,15 +216,15 @@ class StreamProxyService:
 
         table_map = {
             'live': 'channels',
-            'movie': 'movies',
-            'series': 'series'
+            'movie': 'movie_streams',
+            'series': 'series_streams'
         }
 
         table = table_map.get(content_type, 'channels')
 
         row = self.pg.get_content_item_by_provider_id(table, provider_id)
         if row:
-            url_value = row.get('url')
+            url_value = row.get('stream_url') or row.get('url')
             if url_value:
                 self._url_cache[cache_key] = url_value
                 return url_value

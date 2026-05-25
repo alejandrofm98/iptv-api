@@ -169,7 +169,7 @@ class WatchProgressService:
         normalized["vote_average"] = content_row.get("vote_average")
         normalized["vote_count"] = content_row.get("vote_count")
         normalized["genres"] = content_row.get("genres")
-        normalized["poster_path"] = content_row.get("poster_path")
+        normalized["poster_path"] = content_row.get("poster_path") or content_row.get("tmdb_poster_path")
         normalized["backdrop_path"] = content_row.get("backdrop_path")
         normalized["runtime_minutes"] = content_row.get("runtime_minutes")
         normalized["tagline"] = content_row.get("tagline")
@@ -189,7 +189,7 @@ class WatchProgressService:
         }
         default_img = default_map.get(content_type, self.DEFAULT_IMAGE_MOVIE)
         logo = str(content_row.get("logo") or "")
-        poster_path = content_row.get("poster_path")
+        poster_path = content_row.get("poster_path") or content_row.get("tmdb_poster_path")
         if self._is_placeholder_logo(logo):
             return self._build_tmdb_image_url(poster_path) or logo or progress_row.get("image_url") or default_img
         return logo or self._build_tmdb_image_url(poster_path) or progress_row.get("image_url") or default_img

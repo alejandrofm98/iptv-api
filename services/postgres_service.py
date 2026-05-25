@@ -385,14 +385,14 @@ class PostgresService:
             FROM movies_catalog mc
             LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
             LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
-            WHERE mc.id::text = %s OR mc.tmdb_id = %s
+            WHERE mc.id::text = %s OR mc.tmdb_id = %s OR mc.provider_id = %s
             GROUP BY mc.id, mc.title, mc.provider_id, mc.tmdb_id,
                 mc.nombre_dedup_key, mc.year, mc.country, mc.group_normalizado, mc.logo,
                 mc.created_at, mc.updated_at,
                 mm.id
             LIMIT 1
         """
-        results = self.execute_query(sql, (movie_id, movie_id))
+        results = self.execute_query(sql, (movie_id, movie_id, movie_id))
         return results[0] if results else None
 
     def get_series_with_metadata(self, series_id: str) -> Optional[Dict[str, Any]]:
@@ -423,10 +423,10 @@ class PostgresService:
                 FROM series_episodes
                 GROUP BY catalog_id
             ) ep_counts ON ep_counts.catalog_id = sc.id
-            WHERE sc.id::text = %s OR sc.tmdb_id = %s
+            WHERE sc.id::text = %s OR sc.tmdb_id = %s OR sc.provider_id = %s
             LIMIT 1
         """
-        results = self.execute_query(sql, (series_id, series_id))
+        results = self.execute_query(sql, (series_id, series_id, series_id))
         return results[0] if results else None
 
     def get_content_items_paginated(
