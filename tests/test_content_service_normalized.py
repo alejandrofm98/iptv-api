@@ -196,10 +196,9 @@ def test_android_series_group_item_includes_tmdb_metadata():
     row = {
         "id": "serie-1",
         "provider_id": "100",
-        "serie_name": "Serie Uno",
+        "title": "Serie Uno",
         "logo": "https://img.test/serie.png",
-        "grupo": "Drama",
-        "grupo_normalizado": "Drama",
+        "group_normalizado": "Drama",
         "total_episodes": 8,
         "year": 2025,
         "country": "ES",
@@ -208,7 +207,7 @@ def test_android_series_group_item_includes_tmdb_metadata():
         "vote_average": 8.2,
         "vote_count": 120,
         "genres": ["Drama"],
-        "tmdb_poster_path": "/poster.jpg",
+        "poster_path": "/poster.jpg",
         "backdrop_path": "/backdrop.jpg",
         "tagline": "Tagline",
         "release_date": "2025-01-01",
@@ -222,6 +221,11 @@ def test_android_series_group_item_includes_tmdb_metadata():
     item = service._to_android_series_group_item(row)
 
     assert item["type"] == "series_group"
+    assert item["title"] == "TMDB Serie Uno"
+    assert item["series_name"] == "TMDB Serie Uno"
+    assert item["group"] == "Drama"
+    assert item["normalized_group"] == "Drama"
+    assert item["year"] == 2025
     assert item["overview"] == "Descripcion ES"
     assert item["rating"] == 8.2
     assert item["poster_path"] == "/poster.jpg"
@@ -229,6 +233,35 @@ def test_android_series_group_item_includes_tmdb_metadata():
     assert item["tmdb_id"] == 123
     assert item["tmdb_title"] == "TMDB Serie Uno"
     assert item["total_seasons"] == 2
+
+
+def test_android_series_group_item_no_tmdb_fallback():
+    service = ContentService(FakeSupabase())
+
+    row = {
+        "id": "serie-2",
+        "provider_id": "200",
+        "title": "Serie Sin TMDB",
+        "logo": "https://img.test/serie.png",
+        "group_normalizado": "Accion",
+        "total_episodes": 3,
+        "year": 2020,
+        "country": "MX",
+    }
+
+    item = service._to_android_series_group_item(row)
+
+    assert item["type"] == "series_group"
+    assert item["title"] == "Serie Sin TMDB"
+    assert item["series_name"] == "Serie Sin TMDB"
+    assert item["group"] == "Accion"
+    assert item["normalized_group"] == "Accion"
+    assert item["original_group"] == "Accion"
+    assert item["year"] == 2020
+    assert item["language_label"] == "MX"
+    assert item["tmdb_title"] == ""
+    assert item["tmdb_id"] is None
+    assert item["overview"] is None
 
 
 def test_android_movie_item_includes_tmdb_title():

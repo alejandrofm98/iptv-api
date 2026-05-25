@@ -1,9 +1,14 @@
 """Servicio de progreso de visualizacion."""
 
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from .postgres_service import PostgresService
+
+UUID_RE = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I
+)
 
 
 class WatchProgressService:
@@ -251,8 +256,10 @@ class WatchProgressService:
                 continue
             if field == "provider_id":
                 result = self.pg.get_content_item_by_provider_id(table, value)
-            else:
+            elif UUID_RE.match(str(value)):
                 result = self.pg.get_content_item_by_id(table, value)
+            else:
+                continue
             if result:
                 return result
         return None

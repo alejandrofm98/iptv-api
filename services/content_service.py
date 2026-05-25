@@ -838,11 +838,22 @@ class ContentService:
         password: str = "",
     ) -> Dict[str, Any]:
         """Transforma una serie agrupada al formato Android."""
-        serie_name = row.get("serie_name", "")
+        catalog_title = row.get("title", "")
+        tmdb_title = row.get("tmdb_title") or ""
+        serie_name = tmdb_title or catalog_title
         normalized_title = serie_name.lower().strip() if serie_name else ""
-        original_group = row.get("grupo") or ""
-        group = row.get("grupo_normalizado") or original_group
+        group = row.get("group_normalizado") or ""
         provider_id = row.get("provider_id") or ""
+
+        release_date = row.get("release_date")
+        year = None
+        if release_date:
+            try:
+                year = int(str(release_date)[:4])
+            except (ValueError, TypeError):
+                pass
+        if year is None:
+            year = row.get("year")
 
         return {
             "id": provider_id or row.get("id") or "",
@@ -863,13 +874,13 @@ class ContentService:
             ),
             "group": group,
             "normalized_group": group,
-            "original_group": original_group,
+            "original_group": group,
             "badge_text": "SERIE",
             "series_name": serie_name,
             "season_number": None,
             "episode_number": None,
             "total_episodes": row.get("total_episodes", 0),
-            "year": row.get("year"),
+            "year": year,
             "language_label": row.get("country"),
             "stream_url": "",
             "overview": row.get("overview_es") or row.get("overview_en"),
@@ -883,7 +894,7 @@ class ContentService:
             "tagline": row.get("tagline"),
             "release_date": row.get("release_date"),
             "tmdb_id": row.get("tmdb_id"),
-            "tmdb_title": row.get("tmdb_title"),
+            "tmdb_title": tmdb_title,
             "popularity": row.get("popularity"),
             "status": row.get("status"),
             "total_seasons": row.get("total_seasons"),

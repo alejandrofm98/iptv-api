@@ -12,6 +12,7 @@ Optimizaciones v2:
 import logging
 import re
 from typing import List, Dict, Any, Optional, Tuple
+import psycopg2
 from psycopg2.extras import RealDictCursor, execute_batch
 from psycopg2 import pool
 from contextlib import contextmanager
@@ -332,7 +333,11 @@ class PostgresService:
     ) -> Optional[Dict[str, Any]]:
         """Obtiene item de contenido por ID interno"""
         sql = f"SELECT * FROM {table} WHERE id = %s"
-        results = self.execute_query(sql, (item_id,))
+        try:
+            results = self.execute_query(sql, (item_id,))
+        except psycopg2.errors.InvalidTextRepresentation:
+            logger.warning("get_content_item_by_id: valor no UUID '%s' en tabla %s", item_id, table)
+            return None
         return results[0] if results else None
 
     def get_content_item_by_provider_id(
