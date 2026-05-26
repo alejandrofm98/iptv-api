@@ -26,7 +26,7 @@ class MovieMetadata(Base):
     original_title = Column(String(255), nullable=True)
     overview_es = Column(Text, nullable=True)
     overview_en = Column(Text, nullable=True)
-    genres = Column(ARRAY(String), nullable=True)
+    genres = Column(ARRAY(String), nullable=True)  # type: ignore  # mypy: ARRAY typing
     vote_average = Column(Float, nullable=True)
     vote_count = Column(Integer, nullable=True)
     poster_path = Column(String(255), nullable=True)

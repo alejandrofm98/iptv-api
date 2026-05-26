@@ -110,17 +110,16 @@ ALLOWED_WEB_ORIGINS = ["https://walactvweb.walerike.com", "http://localhost:4200
 
 
 async def cleanup_sessions_task():
-    """Tarea periódica para limpiar sesiones inactivas"""
     from app.database import SessionLocal
-    from app.repositories.device_repo import DeviceRepository
+    from app.repositories.session_repo import SessionRepository
 
     while True:
         try:
             await asyncio.sleep(settings.cleanup_interval_minutes * 60)
             session = SessionLocal()
             try:
-                repo = DeviceRepository(session)
-                cleaned = repo.delete_inactive(settings.cleanup_inactive_minutes)
+                repo = SessionRepository(session)
+                cleaned = repo.cleanup_inactive(settings.cleanup_inactive_minutes)
                 session.commit()
                 if cleaned > 0:
                     print(f"🧹 Limpiadas {cleaned} sesiones inactivas")
@@ -149,10 +148,24 @@ async def lifespan(app: FastAPI):
     if not settings.is_valid():
         print("❌ Error: Configuración incompleta")
     else:
-        from utils.dependencies import get_stream_service_v2
+        from app.database import SessionLocal
+        from app.repositories.config_repo import ConfigRepository
+        from app.repositories.channel_repo import ChannelRepository
+        from app.repositories.content_repo import ContentRepository
+        from app.repositories.series_repo import SeriesRepository
+        from app.services.stream_service import StreamProxyServiceV2
 
-        stream_svc = get_stream_service_v2()
-        stream_svc.preload_cache()
+        session = SessionLocal()
+        try:
+            stream_svc = StreamProxyServiceV2(
+                config_repo=ConfigRepository(session),
+                channel_repo=ChannelRepository(session),
+                content_repo=ContentRepository(session),
+                series_repo=SeriesRepository(session),
+            )
+            stream_svc.preload_cache()
+        finally:
+            session.close()
         asyncio.create_task(cleanup_sessions_task())
         asyncio.create_task(cleanup_hls_task())
         print("✅ IPTV API iniciada correctamente")

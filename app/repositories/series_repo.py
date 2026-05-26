@@ -32,7 +32,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
             .where(
                 or_(
-                    SeriesCatalog.id.cast(str) == series_id,
+                    SeriesCatalog.id.cast(str) == series_id,  # type: ignore[arg-type]
                     SeriesCatalog.tmdb_id == series_id,
                     SeriesCatalog.provider_id == series_id,
                 )

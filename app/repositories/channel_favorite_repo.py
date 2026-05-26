@@ -19,7 +19,7 @@ class ChannelFavoriteRepository(BaseRepository[ChannelFavorite]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def add(self, user_id: str, channel_provider_id: str) -> ChannelFavorite:
+    def add(self, user_id: str, channel_provider_id: str) -> ChannelFavorite:  # type: ignore[override]
         fav = ChannelFavorite(user_id=user_id, channel_provider_id=channel_provider_id)
         self.session.add(fav)
         self.session.flush()
@@ -27,11 +27,8 @@ class ChannelFavoriteRepository(BaseRepository[ChannelFavorite]):
 
     def remove(self, user_id: str, channel_provider_id: str) -> bool:
         stmt = delete(ChannelFavorite).where(
-            and_(
-                ChannelFavorite.user_id == user_id,
-                ChannelFavorite.channel_provider_id == channel_provider_id,
-            )
+            and_(ChannelFavorite.user_id == user_id, ChannelFavorite.channel_provider_id == channel_provider_id)
         )
         result = self.session.execute(stmt)
         self.session.flush()
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore[attr-defined]

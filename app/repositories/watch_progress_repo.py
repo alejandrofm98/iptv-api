@@ -71,7 +71,7 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
     ) -> Optional[WatchProgress]:
         wp = self.get_by_user_and_content(user_id, content_id)
         if wp:
-            wp.is_watched = is_watched
+            wp.is_watched = is_watched  # type: ignore[assignment]
             self.session.flush()
         return wp
 
@@ -84,7 +84,7 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         )
         result = self.session.execute(stmt)
         self.session.flush()
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore[attr-defined]
 
     def get_series_last_episode(
         self, user_id: str, series_name: str
