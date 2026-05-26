@@ -34,7 +34,7 @@ logging.getLogger("httpx").setLevel(logging.DEBUG)
 
 import uvicorn
 import requests
-from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status, Response
+from fastapi import FastAPI, HTTPException, Request, Query, Depends, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -55,8 +55,6 @@ from utils.config import get_settings
 from utils.models import (
     UserCreate,
     UserUpdate,
-    ValidateCredentials,
-    AuthResult,
     SystemStats,
     Token,
     CalendarDayResponse,
@@ -72,7 +70,7 @@ from utils.exceptions import (
 )
 from utils.dependencies import (
     get_transcode_service, require_admin,
-    require_auth_with_session, require_auth_with_jwt,
+    require_auth_with_jwt,
     get_watch_progress_service_v2, get_user_service_v2,
     get_device_service_v2, get_content_service_v2,
     get_channel_favorites_service_v2, get_calendar_service_v2,
@@ -81,9 +79,8 @@ from utils.dependencies import (
 )
 
 from services.video_extractor_service import VideoExtractorService
-from fastapi import FastAPI, HTTPException, Request, Query, Depends, Body
-from pydantic import BaseModel, HttpUrl
-from typing import Optional, List
+from pydantic import BaseModel
+from typing import List
 
 # Configuración
 settings = get_settings()
