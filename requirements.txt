@@ -13,3 +13,5 @@ passlib
 requests==2.32.3
 yt-dlp
 curl_cffi
+sqlalchemy==2.0.50
+alembic==1.18.4

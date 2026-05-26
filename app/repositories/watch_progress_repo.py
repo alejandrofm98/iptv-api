@@ -1,0 +1,96 @@
+from typing import Optional, List, Dict, Any
+from sqlalchemy.orm import Session
+from sqlalchemy import select, delete, and_, desc
+
+from app.models.watch_progress import WatchProgress
+from app.repositories.base import BaseRepository
+
+
+class WatchProgressRepository(BaseRepository[WatchProgress]):
+    def __init__(self, session: Session):
+        super().__init__(WatchProgress, session)
+
+    def get_by_user_and_content(self, user_id: str, content_id: str) -> Optional[WatchProgress]:
+        stmt = select(WatchProgress).where(
+            and_(
+                WatchProgress.user_id == user_id,
+                WatchProgress.content_id == content_id,
+            )
+        )
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def get_continue_watching(self, user_id: str, limit: int = 60) -> List[WatchProgress]:
+        stmt = (
+            select(WatchProgress)
+            .where(
+                and_(
+                    WatchProgress.user_id == user_id,
+                    WatchProgress.position_ms > 0,
+                )
+            )
+            .order_by(desc(WatchProgress.last_watched_at))
+            .limit(limit)
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
+    def get_watched_items(self, user_id: str, limit: int = 100) -> List[WatchProgress]:
+        stmt = (
+            select(WatchProgress)
+            .where(
+                and_(
+                    WatchProgress.user_id == user_id,
+                    WatchProgress.is_watched.is_(True),
+                )
+            )
+            .order_by(desc(WatchProgress.last_watched_at))
+            .limit(limit)
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
+    def upsert(self, user_id: str, content_id: str, data: Dict[str, Any]) -> WatchProgress:
+        existing = self.get_by_user_and_content(user_id, content_id)
+        if existing:
+            for key, value in data.items():
+                setattr(existing, key, value)
+            self.session.flush()
+            return existing
+        wp = WatchProgress(user_id=user_id, content_id=content_id, **data)
+        self.session.add(wp)
+        self.session.flush()
+        return wp
+
+    def mark_watched(self, user_id: str, content_id: str, is_watched: bool) -> Optional[WatchProgress]:
+        wp = self.get_by_user_and_content(user_id, content_id)
+        if wp:
+            wp.is_watched = is_watched
+            self.session.flush()
+        return wp
+
+    def delete_by_user_and_content(self, user_id: str, content_id: str) -> bool:
+        stmt = delete(WatchProgress).where(
+            and_(
+                WatchProgress.user_id == user_id,
+                WatchProgress.content_id == content_id,
+            )
+        )
+        result = self.session.execute(stmt)
+        self.session.flush()
+        return result.rowcount > 0
+
+    def get_series_last_episode(self, user_id: str, series_name: str) -> Optional[WatchProgress]:
+        stmt = (
+            select(WatchProgress)
+            .where(
+                and_(
+                    WatchProgress.user_id == user_id,
+                    WatchProgress.series_name == series_name,
+                    WatchProgress.content_type == "series",
+                )
+            )
+            .order_by(
+                desc(WatchProgress.season_number).nullslast(),
+                desc(WatchProgress.episode_number).nullslast(),
+            )
+            .limit(1)
+        )
+        return self.session.execute(stmt).scalar_one_or_none()

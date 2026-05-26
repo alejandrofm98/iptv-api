@@ -5,3 +5,8 @@ postman/environment.json
 .idea/*
 *.iml
 /.playwright-cli/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
