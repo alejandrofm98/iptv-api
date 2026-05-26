@@ -1,18 +1,18 @@
 """
 Módulo optimizado para inserciones masivas en PostgreSQL
-Implementa múltiples estrategias para acelerar la inserción de grandes volúmenes
+Usa SQLAlchemy core engine directamente.
 """
-
 import time
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from .postgres_service import PostgresService
+
+from sqlalchemy import text
+from app.database import engine as default_engine
 
 
 @dataclass
 class InsertStats:
-    """Estadísticas de inserción"""
     total_records: int = 0
     inserted_records: int = 0
     failed_records: int = 0
@@ -52,27 +52,27 @@ class InsertStats:
             return f"{seconds/3600:.1f}h"
 
 
+def _bulk_insert(engine, table_name: str, columns: List[str], rows: Sequence[tuple]) -> int:
+    col_names = ", ".join(columns)
+    placeholders = ", ".join([f":{c}" for c in columns])
+    sql = f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
+    params_list = [dict(zip(columns, row)) for row in rows]
+    with engine.begin() as conn:
+        conn.execute(text(sql), params_list)
+    return len(rows)
+
+
 class BulkInserter:
-    """
-    Clase para inserciones masivas optimizadas en PostgreSQL
-
-    Características:
-    - Procesamiento paralelo con múltiples workers
-    - Batch size configurable
-    - Manejo de errores robusto
-    - Estadísticas en tiempo real
-    """
-
     def __init__(
         self,
-        pg_service: PostgresService,
         table_name: str,
         columns: List[str],
         batch_size: int = 1000,
         max_workers: int = 4,
-        progress_callback: Optional[Callable[[InsertStats], None]] = None
+        progress_callback: Optional[Callable[[InsertStats], None]] = None,
+        engine=None,
     ):
-        self.pg = pg_service
+        self.engine = engine or default_engine
         self.table_name = table_name
         self.columns = columns
         self.batch_size = batch_size
@@ -82,7 +82,6 @@ class BulkInserter:
         self._lock_lock = None
 
     def _create_batches(self, data: List[Dict[str, Any]]) -> List[List[tuple]]:
-        """Divide los datos en batches de tuplas"""
         batches = []
         for i in range(0, len(data), self.batch_size):
             batch = data[i:i + self.batch_size]
@@ -98,24 +97,21 @@ class BulkInserter:
         for attempt in range(3):
             try:
                 rows = [tuple(self._row_to_tuple(item)) for item in batch]
-                inserted = self.pg.bulk_insert(self.table_name, self.columns, rows)
+                inserted = _bulk_insert(self.engine, self.table_name, self.columns, rows)
                 with self._lock():
                     self.stats.inserted_records += inserted
                     self.stats.batches_completed += 1
                     if self.progress_callback:
                         self.progress_callback(self.stats)
-                if len(batch) >= 500:
-                    time.sleep(0.1)
-                else:
-                    time.sleep(0.05)
+                time.sleep(0.05 if len(batch) < 500 else 0.1)
                 return True, inserted
             except Exception as e:
                 if attempt < 2:
                     wait_time = (attempt + 1) * 2
-                    print(f"⚠️  Batch {batch_num}/{total_batches} falló (intento {attempt + 1}/3), reintentando en {wait_time}s...")
+                    print(f"Batch {batch_num}/{total_batches} fallo (intento {attempt + 1}/3), reintentando en {wait_time}s...")
                     time.sleep(wait_time)
                 else:
-                    print(f"❌ Batch {batch_num}/{total_batches} falló después de 3 intentos: {e}")
+                    print(f"Batch {batch_num}/{total_batches} fallo tras 3 intentos: {e}")
                     with self._lock():
                         self.stats.failed_records += len(batch)
                     return False, 0
@@ -129,20 +125,20 @@ class BulkInserter:
 
     def insert_bulk(self, data: List[Dict[str, Any]]) -> InsertStats:
         if not data:
-            print("⚠️  No hay datos para insertar")
+            print("No hay datos para insertar")
             return self.stats
 
         self.stats = InsertStats()
         self.stats.total_records = len(data)
 
-        print(f"\n🚀 Iniciando inserción masiva en tabla '{self.table_name}':")
-        print(f"   📊 Total de registros: {len(data):,}")
-        print(f"   📦 Tamaño de batch: {self.batch_size:,}")
-        print(f"   👷 Workers paralelos: {self.max_workers}")
+        print(f"Iniciando insercion masiva en tabla '{self.table_name}':")
+        print(f"   Registros: {len(data):,}")
+        print(f"   Batch size: {self.batch_size:,}")
+        print(f"   Workers: {self.max_workers}")
 
         batches = self._create_batches(data)
         total_batches = len(batches)
-        print(f"   🔢 Total de batches: {total_batches}")
+        print(f"   Total batches: {total_batches}")
         print()
 
         import threading
@@ -158,7 +154,7 @@ class BulkInserter:
                 try:
                     success, records = future.result()
                 except Exception as e:
-                    print(f"❌ Error inesperado en batch {batch_idx + 1}: {e}")
+                    print(f"Error inesperado en batch {batch_idx + 1}: {e}")
 
         self._print_summary()
         return self.stats
@@ -166,47 +162,52 @@ class BulkInserter:
     def _print_summary(self):
         elapsed = self.stats.get_elapsed_time()
         rate = self.stats.get_rate()
-
         print(f"\n{'='*60}")
-        print(f"✅ Inserción completada en tabla '{self.table_name}'")
+        print(f"Insercion completada en tabla '{self.table_name}'")
         print(f"{'='*60}")
-        print(f"📊 Total registros:     {self.stats.total_records:,}")
-        print(f"✅ Insertados:          {self.stats.inserted_records:,} ({self.stats.get_progress_pct():.1f}%)")
-        print(f"❌ Fallidos:            {self.stats.failed_records:,}")
-        print(f"⏱️  Tiempo total:        {self.stats.format_time(elapsed)}")
-        print(f"🚀 Velocidad promedio:  {rate:.0f} registros/seg")
+        print(f"Total:     {self.stats.total_records:,}")
+        print(f"OK:        {self.stats.inserted_records:,} ({self.stats.get_progress_pct():.1f}%)")
+        print(f"Fallidos:  {self.stats.failed_records:,}")
+        print(f"Tiempo:    {self.stats.format_time(elapsed)}")
+        print(f"Velocidad: {rate:.0f} reg/s")
         print(f"{'='*60}\n")
 
 
+def insert_bulk_optimized(
+    table_name: str = None,
+    columns: List[str] = None,
+    data: List[Dict[str, Any]] = None,
+    batch_size: int = 1000,
+    max_workers: int = 4,
+    engine=None,
+    pool=None,
+    **kwargs,
+) -> InsertStats:
+    engine = engine or pool or default_engine
+    cols = columns or kwargs.pop("columns", None)
+    tbl = table_name or kwargs.pop("table_name", None)
+    dt = data or kwargs.pop("data", None)
+    if not tbl or not dt:
+        raise ValueError("table_name and data are required")
+    inserter = BulkInserter(
+        table_name=tbl,
+        columns=cols or list(dt[0].keys()) if dt else [],
+        batch_size=batch_size,
+        max_workers=max_workers,
+        progress_callback=default_progress_callback,
+        engine=engine,
+    )
+    return inserter.insert_bulk(dt)
+
+
 def default_progress_callback(stats: InsertStats):
-    """Callback por defecto para mostrar progreso"""
     if stats.batches_completed % 5 == 0:
         progress_pct = stats.get_progress_pct()
         rate = stats.get_rate()
         eta = stats.get_eta()
-
         print(
-            f"      📊 {stats.inserted_records:,}/{stats.total_records:,} "
+            f"      {stats.inserted_records:,}/{stats.total_records:,} "
             f"({progress_pct:.1f}%) | "
-            f"⚡ {rate:.0f} reg/seg | "
-            f"⏱️  ETA: {stats.format_time(eta)}"
+            f"{rate:.0f} reg/s | "
+            f"ETA: {stats.format_time(eta)}"
         )
-
-
-def insert_bulk_optimized(
-    pg_service: PostgresService,
-    table_name: str,
-    columns: List[str],
-    data: List[Dict[str, Any]],
-    batch_size: int = 1000,
-    max_workers: int = 4
-) -> InsertStats:
-    inserter = BulkInserter(
-        pg_service=pg_service,
-        table_name=table_name,
-        columns=columns,
-        batch_size=batch_size,
-        max_workers=max_workers,
-        progress_callback=default_progress_callback
-    )
-    return inserter.insert_bulk(data)
