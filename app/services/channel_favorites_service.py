@@ -1,4 +1,5 @@
 """Channel Favorites Service v2 — uses SQLAlchemy repositories."""
+
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
@@ -51,21 +52,27 @@ class ChannelFavoritesServiceV2:
         favorites = self.list_favorites(user_id)
         provider_ids = [
             item["channel_provider_id"]
-            for item in favorites if item.get("channel_provider_id")
+            for item in favorites
+            if item.get("channel_provider_id")
         ]
         if not provider_ids:
             return content_svc.build_paginated_payload([], 0, page, page_size)
 
         channels, _ = self.channel_repo.get_paginated(
-            page=1, page_size=999999, country=country, search=search,
+            page=1,
+            page_size=999999,
+            country=country,
+            search=search,
         )
         filtered = [c for c in channels if str(c.provider_id) in provider_ids]
         favorite_order = {pid: i for i, pid in enumerate(provider_ids)}
-        filtered.sort(key=lambda c: favorite_order.get(str(c.provider_id), len(provider_ids)))
+        filtered.sort(
+            key=lambda c: favorite_order.get(str(c.provider_id), len(provider_ids))
+        )
 
         total = len(filtered)
         offset = (page - 1) * page_size
-        page_channels = filtered[offset:offset + page_size]
+        page_channels = filtered[offset : offset + page_size]
 
         items = [
             content_svc.to_android_catalog_item(

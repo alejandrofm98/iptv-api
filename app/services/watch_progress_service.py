@@ -1,16 +1,17 @@
 """Watch Progress Service v2 — uses SQLAlchemy repositories."""
+
 import re
 from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.repositories.watch_progress_repo import WatchProgressRepository
 from app.repositories.content_repo import ContentRepository
 from app.repositories.series_repo import SeriesRepository
+from app.repositories.watch_progress_repo import WatchProgressRepository
 
 UUID_RE = re.compile(
-    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
 )
 
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p"
@@ -101,7 +102,9 @@ class WatchProgressServiceV2:
         content_row = self._find_content_row(content_type, row.content_id)
 
         if content_row:
-            canonical_id = str(content_row.get("provider_id") or lookup_id or row.content_id or "")
+            canonical_id = str(
+                content_row.get("provider_id") or lookup_id or row.content_id or ""
+            )
         else:
             canonical_id = str(lookup_id or row.content_id or "")
 
@@ -117,32 +120,46 @@ class WatchProgressServiceV2:
             "episode_number": row.episode_number,
             "title": row.title,
             "image_url": row.image_url,
-            "last_watched_at": row.last_watched_at.isoformat() if row.last_watched_at else None,
+            "last_watched_at": (
+                row.last_watched_at.isoformat() if row.last_watched_at else None
+            ),
             "is_watched": row.is_watched,
         }
 
         if content_row:
             normalized["title"] = content_row.get("nombre") or row.title or ""
-            normalized["normalized_title"] = self._normalized_title(content_type, content_row) or normalized["title"]
+            normalized["normalized_title"] = (
+                self._normalized_title(content_type, content_row) or normalized["title"]
+            )
             normalized["image_url"] = self._image_url(content_row, row, content_type)
             self._apply_metadata(normalized, content_type, content_row)
             if content_type == "series":
-                normalized["series_name"] = content_row.get("serie_name") or row.series_name
-                normalized["season_number"] = self._safe_int(content_row.get("temporada")) or row.season_number
-                normalized["episode_number"] = self._safe_int(content_row.get("episodio")) or row.episode_number
+                normalized["series_name"] = (
+                    content_row.get("serie_name") or row.series_name
+                )
+                normalized["season_number"] = (
+                    self._safe_int(content_row.get("temporada")) or row.season_number
+                )
+                normalized["episode_number"] = (
+                    self._safe_int(content_row.get("episodio")) or row.episode_number
+                )
         else:
             normalized["normalized_title"] = row.title or ""
 
         position = row.position_ms or 0
         duration = row.duration_ms or 0
-        normalized["progress_percent"] = int((position / duration * 100)) if duration > 0 else 0
+        normalized["progress_percent"] = (
+            int((position / duration * 100)) if duration > 0 else 0
+        )
         normalized["is_watched"] = row.is_watched
 
         return normalized
 
     def _normalized_title(self, content_type: Optional[str], content_row: dict) -> str:
         if content_type == "movie":
-            return str(content_row.get("nombre_normalizado") or content_row.get("nombre") or "")
+            return str(
+                content_row.get("nombre_normalizado") or content_row.get("nombre") or ""
+            )
         if content_type == "series":
             return str(
                 content_row.get("serie_name")
@@ -150,9 +167,13 @@ class WatchProgressServiceV2:
                 or content_row.get("nombre")
                 or ""
             )
-        return str(content_row.get("nombre_normalizado") or content_row.get("nombre") or "")
+        return str(
+            content_row.get("nombre_normalizado") or content_row.get("nombre") or ""
+        )
 
-    def _apply_metadata(self, normalized: dict, content_type: Optional[str], content_row: dict) -> None:
+    def _apply_metadata(
+        self, normalized: dict, content_type: Optional[str], content_row: dict
+    ) -> None:
         if content_type not in ("movie", "series"):
             return
         overview = content_row.get("overview_es") or content_row.get("overview_en")
@@ -163,7 +184,9 @@ class WatchProgressServiceV2:
         normalized["vote_average"] = content_row.get("vote_average")
         normalized["vote_count"] = content_row.get("vote_count")
         normalized["genres"] = content_row.get("genres")
-        normalized["poster_path"] = content_row.get("poster_path") or content_row.get("tmdb_poster_path")
+        normalized["poster_path"] = content_row.get("poster_path") or content_row.get(
+            "tmdb_poster_path"
+        )
         normalized["backdrop_path"] = content_row.get("backdrop_path")
         normalized["runtime_minutes"] = content_row.get("runtime_minutes")
         normalized["tagline"] = content_row.get("tagline")
@@ -176,17 +199,31 @@ class WatchProgressServiceV2:
         if content_type == "series":
             normalized["total_seasons"] = content_row.get("total_seasons")
 
-    def _image_url(self, content_row: dict, progress_row, content_type: Optional[str] = None) -> str:
+    def _image_url(
+        self, content_row: dict, progress_row, content_type: Optional[str] = None
+    ) -> str:
         default_map = {
             "movie": DEFAULT_IMAGE_MOVIE,
             "series": DEFAULT_IMAGE_SERIES,
         }
         default_img = default_map.get(content_type, DEFAULT_IMAGE_MOVIE)
         logo = str(content_row.get("logo") or "")
-        poster_path = content_row.get("poster_path") or content_row.get("tmdb_poster_path")
+        poster_path = content_row.get("poster_path") or content_row.get(
+            "tmdb_poster_path"
+        )
         if self._is_placeholder(logo):
-            return self._build_tmdb_url(poster_path) or logo or progress_row.image_url or default_img
-        return logo or self._build_tmdb_url(poster_path) or progress_row.image_url or default_img
+            return (
+                self._build_tmdb_url(poster_path)
+                or logo
+                or progress_row.image_url
+                or default_img
+            )
+        return (
+            logo
+            or self._build_tmdb_url(poster_path)
+            or progress_row.image_url
+            or default_img
+        )
 
     @staticmethod
     def _build_tmdb_url(path: Optional[str], size: str = "w500") -> str:
@@ -206,7 +243,9 @@ class WatchProgressServiceV2:
         lower = url.lower()
         return "placeholder" in lower or "via.placeholder.com" in lower
 
-    def _canonical_content_id(self, content_type: Optional[str], content_id: str) -> str:
+    def _canonical_content_id(
+        self, content_type: Optional[str], content_id: str
+    ) -> str:
         content_row = self._find_content_row(content_type, content_id)
         if content_row and content_row.get("provider_id"):
             return str(content_row["provider_id"])
@@ -214,8 +253,12 @@ class WatchProgressServiceV2:
 
     def _lookup_rows(self, user_id: str, content_id: str) -> list:
         candidates = []
-        for c in (content_id, self._lookup_id(content_id),
-                  f"movie:{self._lookup_id(content_id)}", f"series:{self._lookup_id(content_id)}"):
+        for c in (
+            content_id,
+            self._lookup_id(content_id),
+            f"movie:{self._lookup_id(content_id)}",
+            f"series:{self._lookup_id(content_id)}",
+        ):
             if c and c not in candidates:
                 candidates.append(c)
 
@@ -228,7 +271,9 @@ class WatchProgressServiceV2:
                 seen.add(str(wp.id))
         return rows
 
-    def _find_content_row(self, content_type: Optional[str], content_id: Optional[str]) -> Optional[dict]:
+    def _find_content_row(
+        self, content_type: Optional[str], content_id: Optional[str]
+    ) -> Optional[dict]:
         if not content_type or not content_id:
             return None
         lookup_id = self._lookup_id(content_id)

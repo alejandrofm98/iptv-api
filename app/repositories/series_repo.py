@@ -1,8 +1,9 @@
-from typing import Optional, List, Tuple, Any
-from sqlalchemy.orm import Session
-from sqlalchemy import select, func, or_, and_, text
+from typing import Any, List, Optional, Tuple
 
-from app.models.series import SeriesCatalog, SeriesMetadata, SeriesEpisode
+from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy.orm import Session
+
+from app.models.series import SeriesCatalog, SeriesEpisode, SeriesMetadata
 from app.repositories.base import BaseRepository
 
 
@@ -48,13 +49,10 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         return result
 
     def _get_episode_counts(self, catalog_uuid: Any) -> dict:
-        stmt = (
-            select(
-                func.count(SeriesEpisode.id.distinct()).label("total_episodes"),
-                func.count(SeriesEpisode.season_number.distinct()).label("total_seasons"),
-            )
-            .where(SeriesEpisode.catalog_id == catalog_uuid)
-        )
+        stmt = select(
+            func.count(SeriesEpisode.id.distinct()).label("total_episodes"),
+            func.count(SeriesEpisode.season_number.distinct()).label("total_seasons"),
+        ).where(SeriesEpisode.catalog_id == catalog_uuid)
         row = self.session.execute(stmt).mappings().first()
         return dict(row) if row else {"total_episodes": 0, "total_seasons": 0}
 
@@ -115,7 +113,8 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             LIMIT :limit OFFSET :offset
         """)
         items = [
-            dict(r._mapping) for r in self.session.execute(
+            dict(r._mapping)
+            for r in self.session.execute(
                 data_sql, {"cid": catalog_id, "limit": page_size, "offset": offset}
             ).all()
         ]
@@ -127,7 +126,10 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
 
     def get_by_title(self, title: str) -> Optional[dict]:
         import re
-        stripped = re.sub(r'^[a-z]{2,5}\s*[-–]\s*', '', title, flags=re.IGNORECASE).strip()
+
+        stripped = re.sub(
+            r"^[a-z]{2,5}\s*[-–]\s*", "", title, flags=re.IGNORECASE
+        ).strip()
         stmt = (
             select(
                 SeriesCatalog,
@@ -149,7 +151,9 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                     func.lower(func.trim(SeriesCatalog.title)).in_(
                         [title.lower().strip(), stripped.lower().strip()]
                     ),
-                    func.lower(func.trim(SeriesCatalog.title)).like(f"%{stripped.lower().strip()}%"),
+                    func.lower(func.trim(SeriesCatalog.title)).like(
+                        f"%{stripped.lower().strip()}%"
+                    ),
                 )
             )
             .limit(1)

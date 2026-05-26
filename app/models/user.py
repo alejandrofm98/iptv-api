@@ -1,7 +1,15 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -19,16 +27,22 @@ class User(Base):
     role = Column(String(20), default="user")
     expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
-    sessions = relationship("ActiveSession", back_populates="user", cascade="all, delete-orphan")
+    sessions = relationship(
+        "ActiveSession", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class ActiveSession(Base):
     __tablename__ = "active_sessions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     device_id = Column(String(64), nullable=False)
     device_name = Column(String(100), nullable=True)
     device_type = Column(String(20), default="unknown")
@@ -37,8 +51,6 @@ class ActiveSession(Base):
     last_activity = Column(DateTime(timezone=True), default=datetime.utcnow)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
-    __table_args__ = (
-        UniqueConstraint("user_id", "device_id"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "device_id"),)
 
     user = relationship("User", back_populates="sessions")

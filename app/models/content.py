@@ -2,10 +2,17 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, String, Integer, Boolean, DateTime, Float, Date, Text,
-    ForeignKey
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -37,7 +44,9 @@ class MovieMetadata(Base):
     last_error = Column(Text, nullable=True)
     retry_count = Column(Integer, default=0)
     scraped_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class MovieCatalog(Base):
@@ -46,7 +55,11 @@ class MovieCatalog(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(Text, nullable=False)
     provider_id = Column(String(50), nullable=True)
-    tmdb_id = Column(String(20), ForeignKey("movies_metadata.tmdb_id", ondelete="SET NULL"), nullable=True)
+    tmdb_id = Column(
+        String(20),
+        ForeignKey("movies_metadata.tmdb_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     nombre_dedup_key = Column(Text, nullable=True)
     canonical_key = Column(String, nullable=True)
     year = Column(Integer, nullable=True)
@@ -54,17 +67,29 @@ class MovieCatalog(Base):
     group_normalizado = Column(Text, nullable=True)
     logo = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
-    metadata_row = relationship("MovieMetadata", primaryjoin="MovieCatalog.tmdb_id == MovieMetadata.tmdb_id", uselist=False)
-    streams = relationship("MovieStream", back_populates="movie", cascade="all, delete-orphan")
+    metadata_row = relationship(
+        "MovieMetadata",
+        primaryjoin="MovieCatalog.tmdb_id == MovieMetadata.tmdb_id",
+        uselist=False,
+    )
+    streams = relationship(
+        "MovieStream", back_populates="movie", cascade="all, delete-orphan"
+    )
 
 
 class MovieStream(Base):
     __tablename__ = "movie_streams"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    movie_id = Column(UUID(as_uuid=True), ForeignKey("movies_catalog.id", ondelete="CASCADE"), nullable=False)
+    movie_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("movies_catalog.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     country = Column(String(10), nullable=False)
     quality = Column(String(10), nullable=True)
     provider_id = Column(String(50), nullable=True)

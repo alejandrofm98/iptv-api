@@ -1,6 +1,7 @@
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
+
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, or_, and_, desc
 
 from app.models.replay import Replay
 from app.repositories.base import BaseRepository
@@ -15,7 +16,10 @@ class ReplayRepository(BaseRepository[Replay]):
         return self.session.execute(stmt).scalar_one_or_none()
 
     def get_paginated(
-        self, page: int, page_size: int, search: Optional[str] = None,
+        self,
+        page: int,
+        page_size: int,
+        search: Optional[str] = None,
     ) -> Tuple[List[Replay], int]:
         filters = []
         if search:
@@ -34,9 +38,11 @@ class ReplayRepository(BaseRepository[Replay]):
         data_stmt = select(Replay)
         if filters:
             data_stmt = data_stmt.where(and_(*filters))
-        data_stmt = data_stmt.order_by(
-            desc(Replay.event_date), desc(Replay.created_at)
-        ).offset((page - 1) * page_size).limit(page_size)
+        data_stmt = (
+            data_stmt.order_by(desc(Replay.event_date), desc(Replay.created_at))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
 
         replays = list(self.session.execute(data_stmt).scalars().all())
         return replays, total

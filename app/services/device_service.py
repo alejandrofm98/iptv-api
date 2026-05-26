@@ -1,6 +1,7 @@
 """Device/Session Service v2 — uses SQLAlchemy repository."""
+
 from datetime import datetime
-from typing import Optional, Tuple, List
+from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -13,27 +14,39 @@ class DeviceServiceV2:
         self.session_repo = SessionRepository(session)
 
     def register_or_update_session(
-        self, user_id: str, user_agent: str, ip_address: str, max_connections: int,
+        self,
+        user_id: str,
+        user_agent: str,
+        ip_address: str,
+        max_connections: int,
     ) -> Tuple[bool, str, Optional[dict]]:
         device_id = self._device_id_from_ua(user_agent, ip_address)
         active = self.session_repo.count_by_user(user_id)
         if active >= max_connections:
             return False, "Límite de dispositivos alcanzado", None
 
-        session = self.session_repo.upsert(user_id, device_id, {
-            "device_name": self._device_name_from_ua(user_agent),
-            "device_type": self._device_type_from_ua(user_agent),
-            "ip_address": ip_address,
-            "user_agent": user_agent,
-            "last_activity": datetime.utcnow(),
-        })
-        return True, "Sesión registrada", {
-            "id": str(session.id),
-            "device_id": session.device_id,
-            "device_name": session.device_name,
-            "device_type": session.device_type,
-            "ip_address": session.ip_address,
-        }
+        session = self.session_repo.upsert(
+            user_id,
+            device_id,
+            {
+                "device_name": self._device_name_from_ua(user_agent),
+                "device_type": self._device_type_from_ua(user_agent),
+                "ip_address": ip_address,
+                "user_agent": user_agent,
+                "last_activity": datetime.utcnow(),
+            },
+        )
+        return (
+            True,
+            "Sesión registrada",
+            {
+                "id": str(session.id),
+                "device_id": session.device_id,
+                "device_name": session.device_name,
+                "device_type": session.device_type,
+                "ip_address": session.ip_address,
+            },
+        )
 
     def get_user_devices(self, user_id: str) -> List[dict]:
         """Alias for compatibility with old DeviceService interface."""
@@ -48,7 +61,9 @@ class DeviceServiceV2:
                 "device_name": s.device_name,
                 "device_type": s.device_type,
                 "ip_address": s.ip_address,
-                "last_activity": s.last_activity.isoformat() if s.last_activity else None,
+                "last_activity": (
+                    s.last_activity.isoformat() if s.last_activity else None
+                ),
                 "created_at": s.created_at.isoformat() if s.created_at else None,
             }
             for s in sessions
@@ -80,6 +95,7 @@ class DeviceServiceV2:
     @staticmethod
     def _device_id_from_ua(user_agent: str, ip: str) -> str:
         import hashlib
+
         raw = f"{user_agent}|{ip}"
         return hashlib.md5(raw.encode()).hexdigest()[:16]
 

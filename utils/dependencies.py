@@ -1,28 +1,34 @@
 """
 Dependencias reutilizables para la API
 """
+
 import logging
 from typing import Optional
-from fastapi import Depends, Query, Request, HTTPException, status
+
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger("iptv-api")
 
-from services.transcode_service import TranscodeService
-from utils.config import get_settings
-from utils.exceptions import UnauthorizedException, ForbiddenException, ServiceUnavailableException
-from utils.models import AuthResult
 from app.database import SessionLocal
-from app.services.watch_progress_service import WatchProgressServiceV2
-from app.services.user_service import UserServiceV2
-from app.services.device_service import DeviceServiceV2
-from app.services.content_service import ContentServiceV2
-from app.services.channel_favorites_service import ChannelFavoritesServiceV2
 from app.services.calendar_service import CalendarServiceV2
+from app.services.channel_favorites_service import ChannelFavoritesServiceV2
+from app.services.content_service import ContentServiceV2
+from app.services.device_service import DeviceServiceV2
 from app.services.playlist_service import PlaylistServiceV2
 from app.services.stream_service import StreamProxyServiceV2
+from app.services.user_service import UserServiceV2
+from app.services.watch_progress_service import WatchProgressServiceV2
+from services.transcode_service import TranscodeService
+from utils.config import get_settings
+from utils.exceptions import (
+    ForbiddenException,
+    ServiceUnavailableException,
+    UnauthorizedException,
+)
+from utils.models import AuthResult
 
 # Configuración JWT
 settings = get_settings()
@@ -40,6 +46,7 @@ transcode_service: Optional[TranscodeService] = None
 # Dependencias de Servicios
 # ============================================
 
+
 def get_transcode_service() -> TranscodeService:
     if not transcode_service:
         raise ServiceUnavailableException("Servicio de transcodificación no disponible")
@@ -49,6 +56,7 @@ def get_transcode_service() -> TranscodeService:
 # ============================================
 # Dependencias SQLAlchemy v2
 # ============================================
+
 
 def get_db() -> Session:
     """Crea una sesión de SQLAlchemy por request."""
@@ -95,10 +103,11 @@ _playlist_service_v2: Optional[PlaylistServiceV2] = None
 def get_stream_service_v2(
     session: Session = Depends(get_db),
 ) -> StreamProxyServiceV2:
-    from app.repositories.config_repo import ConfigRepository
     from app.repositories.channel_repo import ChannelRepository
+    from app.repositories.config_repo import ConfigRepository
     from app.repositories.content_repo import ContentRepository
     from app.repositories.series_repo import SeriesRepository
+
     return StreamProxyServiceV2(
         config_repo=ConfigRepository(session),
         channel_repo=ChannelRepository(session),
@@ -123,6 +132,7 @@ def get_content_service_v2(
 # ============================================
 # Dependencias de Autenticación
 # ============================================
+
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     """
@@ -155,7 +165,7 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
 
 async def require_auth_with_jwt(
     token: str = Depends(oauth2_scheme),
-    user_svc: UserServiceV2 = Depends(get_user_service_v2)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
 ) -> AuthResult:
     """
     Valida token JWT Bearer y retorna AuthResult.
@@ -164,20 +174,22 @@ async def require_auth_with_jwt(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
-        
+
         if user_id is None:
             logger.warning("[DIAG] JWT auth: token has no 'sub' claim")
             raise UnauthorizedException("Token inválido")
-        
+
         user = user_svc.get_user(user_id)
-        logger.info(f"[DIAG] JWT auth: user_id={user_id}, user_found={user is not None}")
-        
+        logger.info(
+            f"[DIAG] JWT auth: user_id={user_id}, user_found={user is not None}"
+        )
+
         if user is None:
             raise UnauthorizedException("Usuario no encontrado")
-        
+
         if not user.get("is_active", True):
             raise ForbiddenException("Usuario desactivado")
-        
+
         return AuthResult(
             valid=True,
             user_id=user_id,
@@ -185,9 +197,9 @@ async def require_auth_with_jwt(
             message="OK",
             can_connect=True,
             current_devices=user.get("active_devices", 0),
-            max_devices=user.get("max_connections", 5)
+            max_devices=user.get("max_connections", 5),
         )
-        
+
     except JWTError:
         raise UnauthorizedException("Token inválido o expirado")
 
@@ -195,17 +207,17 @@ async def require_auth_with_jwt(
 async def require_auth_with_credentials(
     username: str = Query(..., description="Nombre de usuario"),
     password: str = Query(..., description="Contraseña"),
-    user_svc: UserServiceV2 = Depends(get_user_service_v2)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
 ) -> AuthResult:
     """
     Valida credenciales desde query parameters.
     Usado para endpoints públicos que requieren autenticación.
     """
     auth = user_svc.validate_credentials(username, password)
-    
+
     if not auth.valid:
         raise UnauthorizedException(auth.message)
-    
+
     return AuthResult(
         valid=auth.valid,
         user_id=auth.user_id,
@@ -213,7 +225,7 @@ async def require_auth_with_credentials(
         message=auth.message,
         can_connect=auth.can_connect,
         current_devices=auth.current_devices,
-        max_devices=auth.max_devices
+        max_devices=auth.max_devices,
     )
 
 
@@ -222,36 +234,35 @@ async def require_auth_with_session(
     username: str = Query(..., description="Nombre de usuario"),
     password: str = Query(..., description="Contraseña"),
     user_svc: UserServiceV2 = Depends(get_user_service_v2),
-    device_svc: DeviceServiceV2 = Depends(get_device_service_v2)
+    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
 ) -> AuthResult:
     """
     Valida credenciales y registra/actualiza la sesión del dispositivo.
     Usado para endpoints de streaming que requieren control de dispositivos.
     """
     auth = user_svc.validate_credentials(username, password)
-    
+
     if not auth.valid:
         raise UnauthorizedException(auth.message)
-    
+
     if not auth.can_connect:
         raise ForbiddenException(auth.message)
-    
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    ip_address = request.client.host if request.client else 'Unknown'
-    
+
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    ip_address = request.client.host if request.client else "Unknown"
+
     success, message, _ = device_svc.register_or_update_session(
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
-        max_connections=auth.max_devices
+        max_connections=auth.max_devices,
     )
-    
+
     if not success:
         raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=message
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message
         )
-    
+
     return AuthResult(
         valid=auth.valid,
         user_id=auth.user_id,
@@ -259,5 +270,5 @@ async def require_auth_with_session(
         message=auth.message,
         can_connect=auth.can_connect,
         current_devices=auth.current_devices,
-        max_devices=auth.max_devices
+        max_devices=auth.max_devices,
     )

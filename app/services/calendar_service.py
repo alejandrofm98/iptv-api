@@ -1,6 +1,7 @@
 """Calendar Service v2 — uses SQLAlchemy session for raw SQL."""
+
 from datetime import date
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session

@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, BigInteger, DateTime, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import BigInteger, Column, DateTime, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.database import Base
 
@@ -29,4 +29,6 @@ class Replay(Base):
     match_card = Column(JSONB, nullable=False, default=list)
     raw_payload = Column(JSONB, nullable=False, default=dict)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )

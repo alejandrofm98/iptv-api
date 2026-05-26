@@ -1,7 +1,8 @@
-from typing import Optional, List
-from sqlalchemy.orm import Session
-from sqlalchemy import select, func, delete, and_, desc
 from datetime import datetime, timedelta
+from typing import List, Optional
+
+from sqlalchemy import and_, delete, desc, func, select
+from sqlalchemy.orm import Session
 
 from app.models.user import ActiveSession, User
 from app.repositories.base import BaseRepository
@@ -19,7 +20,9 @@ class SessionRepository(BaseRepository[ActiveSession]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_user_and_device(self, user_id: str, device_id: str) -> Optional[ActiveSession]:
+    def get_by_user_and_device(
+        self, user_id: str, device_id: str
+    ) -> Optional[ActiveSession]:
         stmt = select(ActiveSession).where(
             and_(
                 ActiveSession.user_id == user_id,
@@ -40,8 +43,10 @@ class SessionRepository(BaseRepository[ActiveSession]):
         return session
 
     def count_by_user(self, user_id: str) -> int:
-        stmt = select(func.count()).select_from(ActiveSession).where(
-            ActiveSession.user_id == user_id
+        stmt = (
+            select(func.count())
+            .select_from(ActiveSession)
+            .where(ActiveSession.user_id == user_id)
         )
         return self.session.execute(stmt).scalar() or 0
 

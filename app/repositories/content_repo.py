@@ -1,6 +1,7 @@
-from typing import Optional, List, Tuple, Any
+from typing import Any, List, Optional, Tuple
+
+from sqlalchemy import and_, case, desc, func, or_, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, or_, and_, case, desc
 
 from app.models.content import MovieCatalog, MovieMetadata, MovieStream
 from app.repositories.base import BaseRepository
@@ -74,8 +75,12 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         ]
 
     def get_movies_paginated(
-        self, page: int, page_size: int, country: Optional[str] = None,
-        search: Optional[str] = None, year: Optional[int] = None,
+        self,
+        page: int,
+        page_size: int,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+        year: Optional[int] = None,
     ) -> Tuple[List[dict], int]:
         filters = []
         if country:
@@ -113,12 +118,15 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         rows = self.session.execute(data_stmt).mappings().all()
         return [dict(r) for r in rows], total
 
-    def get_distinct_groups(self, content_type: str, countries: Optional[List[str]] = None) -> List[str]:
+    def get_distinct_groups(
+        self, content_type: str, countries: Optional[List[str]] = None
+    ) -> List[str]:
         if content_type == "movies":
             table = MovieCatalog
             col = MovieCatalog.nombre_dedup_key
         elif content_type == "channels":
             from app.models.channel import Channel
+
             q = select(Channel.grupo).distinct().order_by(Channel.grupo)
             if countries:
                 q = q.where(Channel.country.in_(countries))
@@ -126,7 +134,12 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             return [r for r in rows if r]
         else:
             from app.models.series import SeriesCatalog
-            q = select(SeriesCatalog.nombre_normalizado).distinct().order_by(SeriesCatalog.nombre_normalizado)
+
+            q = (
+                select(SeriesCatalog.nombre_normalizado)
+                .distinct()
+                .order_by(SeriesCatalog.nombre_normalizado)
+            )
             if countries:
                 q = q.where(SeriesCatalog.country.in_(countries))
             rows = self.session.execute(q).scalars().all()
@@ -142,11 +155,13 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             table = MovieCatalog
         elif content_type == "channels":
             from app.models.channel import Channel
+
             q = select(Channel.country).distinct().order_by(Channel.country)
             rows = self.session.execute(q).scalars().all()
             return [r for r in rows if r]
         else:
             from app.models.series import SeriesCatalog
+
             q = select(SeriesCatalog.country).distinct().order_by(SeriesCatalog.country)
             rows = self.session.execute(q).scalars().all()
             return [r for r in rows if r]

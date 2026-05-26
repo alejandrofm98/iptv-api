@@ -1,12 +1,13 @@
 """User Service v2 — uses SQLAlchemy repository."""
-import bcrypt
-from datetime import datetime
-from typing import Optional, List, Tuple
 
+from datetime import datetime
+from typing import List, Optional, Tuple
+
+import bcrypt
 from sqlalchemy.orm import Session
 
-from app.repositories.user_repo import UserRepository
 from app.repositories.session_repo import SessionRepository
+from app.repositories.user_repo import UserRepository
 
 
 class UserServiceV2:
@@ -59,6 +60,7 @@ class UserServiceV2:
 
     def validate_credentials(self, username: str, password: str):
         from utils.models import AuthResult
+
         user = self.get_by_username(username)
         if not user:
             return AuthResult(valid=False, user_id="", message="Usuario no encontrado")
@@ -102,8 +104,10 @@ class UserServiceV2:
             password=user_data.password,
             max_connections=user_data.max_connections,
             is_active=True,
-            role=getattr(user_data, 'role', 'user'),
-            expires_at=user_data.expires_at.isoformat() if user_data.expires_at else None,
+            role=getattr(user_data, "role", "user"),
+            expires_at=(
+                user_data.expires_at.isoformat() if user_data.expires_at else None
+            ),
         )
 
     def update_user(self, user_id: str, user_data) -> Optional[dict]:
@@ -119,7 +123,7 @@ class UserServiceV2:
             update_dict["is_active"] = user_data.is_active
         if user_data.expires_at is not None:
             update_dict["expires_at"] = user_data.expires_at
-        if hasattr(user_data, 'role') and user_data.role is not None:
+        if hasattr(user_data, "role") and user_data.role is not None:
             update_dict["role"] = user_data.role
         if update_dict:
             for key, val in update_dict.items():

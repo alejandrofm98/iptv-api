@@ -1,6 +1,7 @@
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
+
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, or_, and_, text
 
 from app.models.channel import Channel
 from app.repositories.base import BaseRepository
@@ -19,16 +20,16 @@ class ChannelRepository(BaseRepository[Channel]):
         return list(self.session.execute(stmt).scalars().all())
 
     def get_by_provider_ids(self, provider_ids: List[str]) -> List[Channel]:
-        stmt = select(Channel).where(
-            Channel.provider_id.cast(str).in_(provider_ids)
-        )
+        stmt = select(Channel).where(Channel.provider_id.cast(str).in_(provider_ids))
         return list(self.session.execute(stmt).scalars().all())
 
     def get_distinct_groups(self) -> List[str]:
         stmt = (
-            select(func.distinct(
-                func.coalesce(Channel.grupo_normalizado, Channel.grupo)
-            ).label("grupo"))
+            select(
+                func.distinct(
+                    func.coalesce(Channel.grupo_normalizado, Channel.grupo)
+                ).label("grupo")
+            )
             .where(
                 and_(
                     Channel.grupo.isnot(None),
@@ -54,8 +55,12 @@ class ChannelRepository(BaseRepository[Channel]):
         return [r[0] for r in self.session.execute(stmt).all()]
 
     def get_paginated(
-        self, page: int, page_size: int, country: Optional[str] = None,
-        group: Optional[str] = None, search: Optional[str] = None,
+        self,
+        page: int,
+        page_size: int,
+        country: Optional[str] = None,
+        group: Optional[str] = None,
+        search: Optional[str] = None,
     ) -> Tuple[List[Channel], int]:
         filters = []
         if country:
@@ -83,9 +88,11 @@ class ChannelRepository(BaseRepository[Channel]):
         data_stmt = select(Channel)
         if filters:
             data_stmt = data_stmt.where(and_(*filters))
-        data_stmt = data_stmt.order_by(Channel.numero).offset(
-            (page - 1) * page_size
-        ).limit(page_size)
+        data_stmt = (
+            data_stmt.order_by(Channel.numero)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
 
         channels = list(self.session.execute(data_stmt).scalars().all())
         return channels, total

@@ -1,6 +1,7 @@
 from typing import List
+
+from sqlalchemy import and_, delete, desc, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, delete, and_, desc
 
 from app.models.channel import ChannelFavorite
 from app.repositories.base import BaseRepository

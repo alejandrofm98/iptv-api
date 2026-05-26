@@ -2,10 +2,18 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, String, Integer, Boolean, DateTime, Float, Date, Text,
-    ForeignKey, UniqueConstraint
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -36,7 +44,9 @@ class SeriesMetadata(Base):
     last_error = Column(Text, nullable=True)
     retry_count = Column(Integer, default=0)
     scraped_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class SeriesCatalog(Base):
@@ -47,24 +57,40 @@ class SeriesCatalog(Base):
     series_key = Column(Text, nullable=False)
     canonical_key = Column(String, nullable=True)
     provider_id = Column(String(50), nullable=True)
-    tmdb_id = Column(String(20), ForeignKey("series_metadata.tmdb_id", ondelete="SET NULL"), nullable=True)
+    tmdb_id = Column(
+        String(20),
+        ForeignKey("series_metadata.tmdb_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     nombre_dedup_key = Column(Text, nullable=True)
     year = Column(Integer, nullable=True)
     country = Column(String(10), nullable=True)
     group_normalizado = Column(Text, nullable=True)
     logo = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
-    metadata_row = relationship("SeriesMetadata", primaryjoin="SeriesCatalog.tmdb_id == SeriesMetadata.tmdb_id", uselist=False)
-    episodes = relationship("SeriesEpisode", back_populates="catalog", cascade="all, delete-orphan")
+    metadata_row = relationship(
+        "SeriesMetadata",
+        primaryjoin="SeriesCatalog.tmdb_id == SeriesMetadata.tmdb_id",
+        uselist=False,
+    )
+    episodes = relationship(
+        "SeriesEpisode", back_populates="catalog", cascade="all, delete-orphan"
+    )
 
 
 class SeriesEpisode(Base):
     __tablename__ = "series_episodes"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    catalog_id = Column(UUID(as_uuid=True), ForeignKey("series_catalog.id", ondelete="CASCADE"), nullable=False)
+    catalog_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("series_catalog.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     season_number = Column(Integer, nullable=False)
     episode_number = Column(Integer, nullable=False)
     title = Column(Text, nullable=True)
@@ -78,14 +104,20 @@ class SeriesEpisode(Base):
     )
 
     catalog = relationship("SeriesCatalog", back_populates="episodes")
-    streams = relationship("SeriesStream", back_populates="episode", cascade="all, delete-orphan")
+    streams = relationship(
+        "SeriesStream", back_populates="episode", cascade="all, delete-orphan"
+    )
 
 
 class SeriesStream(Base):
     __tablename__ = "series_streams"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    episode_id = Column(UUID(as_uuid=True), ForeignKey("series_episodes.id", ondelete="CASCADE"), nullable=False)
+    episode_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("series_episodes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     country = Column(String(10), nullable=False)
     quality = Column(String(10), nullable=True)
     provider_id = Column(String(50), nullable=True)

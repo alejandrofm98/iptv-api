@@ -1,6 +1,7 @@
-from typing import Optional, List
+from typing import List, Optional
+
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, desc
 
 from app.models.user import User
 from app.repositories.base import BaseRepository
@@ -20,8 +21,11 @@ class UserRepository(BaseRepository[User]):
 
     def count_active_sessions(self, user_id: str) -> int:
         from app.models.user import ActiveSession
-        stmt = select(func.count()).select_from(ActiveSession).where(
-            ActiveSession.user_id == user_id
+
+        stmt = (
+            select(func.count())
+            .select_from(ActiveSession)
+            .where(ActiveSession.user_id == user_id)
         )
         return self.session.execute(stmt).scalar() or 0
 

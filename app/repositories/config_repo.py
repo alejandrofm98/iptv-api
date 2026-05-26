@@ -1,6 +1,7 @@
-from typing import Optional, Dict
-from sqlalchemy.orm import Session
+from typing import Dict, Optional
+
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.models.config import Config, SyncMetadata
 from app.repositories.base import BaseRepository

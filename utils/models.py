@@ -1,15 +1,17 @@
 """
 Modelos Pydantic para IPTV API
 """
-from datetime import datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
-from enum import Enum
 
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 # ============================================
 # Enums
 # ============================================
+
 
 class DeviceType(str, Enum):
     MOBILE = "mobile"
@@ -23,8 +25,10 @@ class DeviceType(str, Enum):
 # User Models
 # ============================================
 
+
 class UserCreate(BaseModel):
     """Modelo para crear usuario"""
+
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6)
     max_connections: int = Field(default=5, ge=1, le=10)
@@ -34,6 +38,7 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     """Modelo para actualizar usuario"""
+
     password: Optional[str] = Field(None, min_length=6)
     max_connections: Optional[int] = Field(None, ge=1, le=10)
     is_active: Optional[bool] = None
@@ -43,6 +48,7 @@ class UserUpdate(BaseModel):
 
 class UserResponse(BaseModel):
     """Respuesta de usuario"""
+
     id: str
     username: str
     max_connections: int
@@ -50,7 +56,7 @@ class UserResponse(BaseModel):
     expires_at: Optional[datetime]
     created_at: datetime
     active_devices: int = 0
-    role: str # <--- NUEVO
+    role: str  # <--- NUEVO
 
     class Config:
         from_attributes = True
@@ -58,6 +64,7 @@ class UserResponse(BaseModel):
 
 class UserWithDevices(UserResponse):
     """Usuario con lista de dispositivos"""
+
     devices: List["DeviceResponse"] = []
 
 
@@ -65,8 +72,10 @@ class UserWithDevices(UserResponse):
 # Device/Session Models
 # ============================================
 
+
 class DeviceResponse(BaseModel):
     """Respuesta de dispositivo"""
+
     id: str
     device_id: str
     device_name: Optional[str]
@@ -81,6 +90,7 @@ class DeviceResponse(BaseModel):
 
 class SessionInfo(BaseModel):
     """Información de sesión activa"""
+
     user_id: str
     username: str
     device_id: str
@@ -95,13 +105,17 @@ class SessionInfo(BaseModel):
 # Auth Models
 # ============================================
 
+
 class ValidateCredentials(BaseModel):
     """Modelo para validar credenciales"""
+
     username: str
     password: str
 
-class Token(BaseModel): # <--- NUEVO MODELO
+
+class Token(BaseModel):  # <--- NUEVO MODELO
     """Modelo de respuesta para Token JWT"""
+
     access_token: str
     token_type: str
     role: str
@@ -109,6 +123,7 @@ class Token(BaseModel): # <--- NUEVO MODELO
 
 class AuthResult(BaseModel):
     """Resultado de autenticación"""
+
     valid: bool
     user_id: Optional[str] = None
     username: Optional[str] = None
@@ -122,8 +137,10 @@ class AuthResult(BaseModel):
 # Playlist Models
 # ============================================
 
+
 class PlaylistInfo(BaseModel):
     """Información de playlist generada"""
+
     username: str
     total_channels: int
     total_movies: int
@@ -136,14 +153,17 @@ class PlaylistInfo(BaseModel):
 # Pagination Models
 # ============================================
 
+
 class PaginationParams(BaseModel):
     """Parámetros de paginación estándar"""
+
     page: int = Field(1, ge=1, description="Número de página")
     page_size: int = Field(50, ge=1, le=100, description="Items por página")
 
 
 class PaginatedResponse(BaseModel):
     """Respuesta paginada estándar"""
+
     items: List[dict]
     total: int
     page: int
@@ -157,8 +177,10 @@ class PaginatedResponse(BaseModel):
 # Stats Models
 # ============================================
 
+
 class SystemStats(BaseModel):
     """Estadísticas del sistema"""
+
     total_users: int
     active_users: int
     total_sessions: int
@@ -169,6 +191,7 @@ class SystemStats(BaseModel):
 
 class UserStats(BaseModel):
     """Estadísticas de usuario"""
+
     user_id: str
     username: str
     active_devices: int
@@ -186,8 +209,10 @@ UserWithDevices.model_rebuild()
 # Calendar Models
 # ============================================
 
+
 class ChannelResolved(BaseModel):
     """Canal resuelto con su información"""
+
     channel_id: str
     display_name: str
     quality: str
@@ -201,6 +226,7 @@ class ChannelResolved(BaseModel):
 
 class CalendarEvent(BaseModel):
     """Evento del calendario con canales resueltos"""
+
     id: str
     fecha: Optional[str]
     hora: Optional[str]
@@ -215,6 +241,7 @@ class CalendarEvent(BaseModel):
 
 class CalendarDayResponse(BaseModel):
     """Respuesta de eventos por día"""
+
     fecha: str
     total_eventos: int
     eventos: List[CalendarEvent]
@@ -224,8 +251,10 @@ class CalendarDayResponse(BaseModel):
 # Replay Models
 # ============================================
 
+
 class ReplaySource(BaseModel):
     """Fuente individual disponible para un replay"""
+
     label: str
     token: Optional[str] = None
     token_enc: Optional[str] = None
@@ -245,12 +274,14 @@ class ReplaySource(BaseModel):
 
 class ReplaySourceGroup(BaseModel):
     """Grupo de fuentes de un replay"""
+
     group: str
     sources: List[ReplaySource]
 
 
 class ReplayItem(BaseModel):
     """Replay UFC normalizado para la web"""
+
     slug: str
     source_site: str
     title: str
@@ -266,6 +297,7 @@ class ReplayItem(BaseModel):
 
 class ReplayStats(BaseModel):
     """Estadisticas de replays"""
+
     total_replays: int
 
 
@@ -273,8 +305,10 @@ class ReplayStats(BaseModel):
 # Watch Progress Models
 # ============================================
 
+
 class WatchProgressUpsert(BaseModel):
     """Modelo para crear/actualizar progreso de visualización"""
+
     content_type: str = Field(..., pattern="^(movie|series)$")
     position_ms: int = Field(..., ge=0)
     duration_ms: int = Field(..., ge=0)
@@ -287,6 +321,7 @@ class WatchProgressUpsert(BaseModel):
 
 class WatchProgressResponse(BaseModel):
     """Respuesta de progreso de visualización"""
+
     content_id: str
     content_type: str
     position_ms: int
@@ -301,11 +336,13 @@ class WatchProgressResponse(BaseModel):
 
 class ChannelFavoriteCreate(BaseModel):
     """Modelo para agregar un canal a favoritos."""
+
     channel_provider_id: str = Field(..., min_length=1, max_length=100)
 
 
 class ChannelFavoriteResponse(BaseModel):
     """Respuesta de favorito de canal."""
+
     user_id: str
     channel_provider_id: str
     provider_id: str
