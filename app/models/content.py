@@ -2,7 +2,6 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean,
     Column,
     Date,
     DateTime,
@@ -23,7 +22,6 @@ class MovieMetadata(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tmdb_id = Column(String(20), unique=True, nullable=True)
-    provider_id = Column(String(50), nullable=True)
     title = Column(String(255), nullable=True)
     original_title = Column(String(255), nullable=True)
     overview_es = Column(Text, nullable=True)
@@ -40,13 +38,8 @@ class MovieMetadata(Base):
     popularity = Column(Float, nullable=True)
     status = Column(String(50), nullable=True)
     tmdb_data = Column(JSONB, nullable=True)
-    not_found = Column(Boolean, default=False)
-    last_error = Column(Text, nullable=True)
-    retry_count = Column(Integer, default=0)
-    scraped_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
-    )
+    scraped_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class MovieCatalog(Base):

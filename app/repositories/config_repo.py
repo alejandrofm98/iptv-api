@@ -26,6 +26,8 @@ class SyncMetadataRepository(BaseRepository[SyncMetadata]):
         super().__init__(SyncMetadata, session)
 
     def get_field(self, field_id: str) -> Optional[str]:
-        stmt = select(SyncMetadata.value).where(SyncMetadata.id == field_id)
-        row = self.session.execute(stmt).one_or_none()
-        return row[0] if row else None
+        stmt = select(SyncMetadata).where(SyncMetadata.id == field_id).limit(1)
+        row = self.session.execute(stmt).scalar_one_or_none()
+        if not row:
+            return None
+        return str(getattr(row, field_id)) if hasattr(row, field_id) else None

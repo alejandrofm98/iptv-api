@@ -1397,8 +1397,6 @@ class ContentServiceV2:
                     "url": r.url or "",
                     "numero": r.numero,
                     "tvg_id": r.tvg_id or "",
-                    "tvg_name": r.tvg_name or "",
-                    "tvg_logo": r.tvg_logo or "",
                 }
             )
         return {"items": items, "total": len(items)}
@@ -1606,8 +1604,6 @@ class ContentServiceV2:
                         "url": c.url,
                         "numero": c.numero,
                         "tvg_id": c.tvg_id,
-                        "tvg_name": c.tvg_name,
-                        "tvg_logo": c.tvg_logo,
                     }
                     for c in channels
                 ]
@@ -1776,8 +1772,6 @@ class ContentServiceV2:
                 "url": c.url,
                 "numero": c.numero,
                 "tvg_id": c.tvg_id,
-                "tvg_name": c.tvg_name,
-                "tvg_logo": c.tvg_logo,
             }
             for c in channels
         ], total

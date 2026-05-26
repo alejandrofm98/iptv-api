@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime
 
 from sqlalchemy import (
@@ -8,6 +7,7 @@ from sqlalchemy import (
     Integer,
     PrimaryKeyConstraint,
     String,
+    Text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -17,20 +17,18 @@ from app.database import Base
 class Channel(Base):
     __tablename__ = "channels"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(50), primary_key=True)
     provider_id = Column(String(50), nullable=True)
-    nombre = Column(String, nullable=True)
-    nombre_normalizado = Column(String, nullable=True)
-    logo = Column(String, nullable=True)
-    grupo = Column(String, nullable=True)
-    grupo_normalizado = Column(String, nullable=True)
+    nombre = Column(String(255), nullable=False)
+    nombre_normalizado = Column(String(255), nullable=True)
+    logo = Column(Text, nullable=True)
+    grupo = Column(String(255), nullable=True)
+    grupo_normalizado = Column(String(255), nullable=True)
     country = Column(String(10), nullable=True)
-    url = Column(String, nullable=True)
+    url = Column(Text, nullable=False)
     numero = Column(Integer, nullable=True)
-    tvg_id = Column(String, nullable=True)
-    tvg_name = Column(String, nullable=True)
-    tvg_logo = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    tvg_id = Column(String(100), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class ChannelFavorite(Base):
