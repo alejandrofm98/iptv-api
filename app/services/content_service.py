@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.repositories.channel_repo import ChannelRepository
@@ -779,71 +779,15 @@ class ContentServiceV2:
         search: Optional[str] = None,
         year: Optional[int] = None,
     ) -> Tuple[List[dict], int]:
-        filters: List[str] = []
-        params: Dict[str, Any] = {}
-        if group:
-            filters.append(
-                "(mc.group_normalizado ILIKE :group OR mc.title ILIKE :group)"
-            )
-            params["group"] = f"%{group}%"
-        if upper_group:
-            filters.append("UPPER(mc.group_normalizado) LIKE :upper_group")
-            params["upper_group"] = f"%{upper_group}%"
-        if country:
-            filters.append("mc.country = :country")
-            params["country"] = country
-        if search:
-            filters.append("(mc.title ILIKE :search OR mc.tmdb_id::text ILIKE :search)")
-            params["search"] = f"%{search}%"
-        if year:
-            filters.append("mc.year = :year")
-            params["year"] = year
-        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
-        order_col = "year"
-        offset = (page - 1) * page_size
-        count_sql = f"SELECT COUNT(DISTINCT mc.id) as total FROM movies_catalog mc {where_clause}"
-        count_result = self.session.execute(text(count_sql), params).mappings().all()
-        total = count_result[0]["total"] if count_result else 0
-        data_sql = f"""
-            WITH movie_options AS (
-                SELECT mc.id, mc.title, mc.tmdb_id, mc.year, mc.country,
-                    mc.group_normalizado, mc.logo, mc.provider_id,
-                    mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
-                    mm.genres, mm.backdrop_path, mm.poster_path,
-                    mm.title AS tmdb_title, mm.release_date, mm.runtime_minutes,
-                    mm.popularity, mm.status, mm.tagline,
-                    jsonb_agg(
-                        jsonb_build_object(
-                            'url', ms.stream_url,
-                            'label', COALESCE(ms.label, ms.country, 'Ver'),
-                            'country', ms.country,
-                            'provider_id', ms.provider_id,
-                            'numero', ms.numero
-                        ) ORDER BY
-                            CASE WHEN ms.country = 'ES' THEN 0
-                                 WHEN ms.country = 'EN' THEN 1
-                                 WHEN ms.country = 'LATAM' THEN 2
-                                 ELSE 3 END,
-                            ms.numero ASC
-                    ) AS stream_options,
-                    COUNT(ms.id) AS stream_count
-                FROM movies_catalog mc
-                LEFT JOIN movie_streams ms ON ms.movie_id = mc.id
-                LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
-                {where_clause}
-                GROUP BY mc.id, mc.title, mc.tmdb_id, mc.year, mc.country,
-                    mc.group_normalizado, mc.logo, mc.provider_id, mm.id
-            )
-            SELECT * FROM movie_options
-            ORDER BY {order_col} DESC NULLS LAST
-            LIMIT :limit OFFSET :offset
-        """
-        data_params = {**params, "limit": page_size, "offset": offset}
-        items = [
-            dict(r)
-            for r in self.session.execute(text(data_sql), data_params).mappings().all()
-        ]
-        return items, total
+        return self.content_repo.get_movies_catalog_page(
+            page=page,
+            page_size=page_size,
+            group=group,
+            upper_group=upper_group,
+            country=country,
+            search=search,
+            year=year,
+        )
 
     def _get_distinct_series_groups_catalog_raw(
         self,
@@ -855,53 +799,15 @@ class ContentServiceV2:
         search: Optional[str] = None,
         year: Optional[int] = None,
     ) -> dict:
-        filters: List[str] = []
-        params: Dict[str, Any] = {}
-        if group:
-            filters.append(
-                "(sc.group_normalizado ILIKE :group OR sc.title ILIKE :group)"
-            )
-            params["group"] = f"%{group}%"
-        if upper_group:
-            filters.append("UPPER(sc.group_normalizado) LIKE :upper_group")
-            params["upper_group"] = f"%{upper_group}%"
-        if country:
-            filters.append("sc.country = :country")
-            params["country"] = country
-        if search:
-            filters.append("(sc.title ILIKE :search OR sc.title ILIKE :search)")
-            params["search"] = f"%{search}%"
-        if year:
-            filters.append("sc.year = :year")
-            params["year"] = year
-        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
-        offset = (page - 1) * page_size
-        count_sql = f"SELECT COUNT(DISTINCT sc.id) as total FROM series_catalog sc {where_clause}"
-        count_result = self.session.execute(text(count_sql), params).mappings().all()
-        total = count_result[0]["total"] if count_result else 0
-        data_sql = f"""
-            SELECT sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.country,
-                sc.group_normalizado, sc.logo, sc.provider_id,
-                sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
-                sm.genres, sm.backdrop_path, sm.poster_path,
-                sm.title AS tmdb_title, sm.release_date, sm.popularity, sm.status,
-                COUNT(DISTINCT se.id) AS total_episodes,
-                COUNT(DISTINCT se.season_number) AS total_seasons
-            FROM series_catalog sc
-            LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
-            LEFT JOIN series_episodes se ON se.catalog_id = sc.id
-            {where_clause}
-            GROUP BY sc.id, sc.title, sc.series_key, sc.tmdb_id,
-                sc.year, sc.country, sc.group_normalizado, sc.logo, sc.provider_id, sm.id
-            ORDER BY sc.title ASC
-            LIMIT :limit OFFSET :offset
-        """
-        data_params = {**params, "limit": page_size, "offset": offset}
-        items = [
-            dict(r)
-            for r in self.session.execute(text(data_sql), data_params).mappings().all()
-        ]
-        return {"items": items, "total": total, "page": page, "page_size": page_size}
+        return self.series_repo.get_distinct_series_groups_catalog(
+            page=page,
+            page_size=page_size,
+            group=group,
+            upper_group=upper_group,
+            country=country,
+            search=search,
+            year=year,
+        )
 
     def _fetch_section_page(
         self,

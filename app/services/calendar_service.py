@@ -1,10 +1,12 @@
-"""Calendar Service v2 — uses SQLAlchemy session for raw SQL."""
+"""Calendar Service v2 — uses SQLAlchemy session for stored procedures and ORM."""
 
 from datetime import date
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
+
+from app.models.channel import Channel
 
 
 class CalendarServiceV2:
@@ -29,15 +31,13 @@ class CalendarServiceV2:
             return {}
         missing = [cid for cid in channel_ids if cid not in self._provider_id_cache]
         if missing:
-            placeholders = ",".join([f":cid{i}" for i in range(len(missing))])
-            params = {f"cid{i}": cid for i, cid in enumerate(missing)}
-            sql = text(
-                f"SELECT id::text, provider_id::text FROM channels WHERE id::text IN ({placeholders})"
+            stmt = select(Channel.id, Channel.provider_id).where(
+                Channel.id.in_(missing)
             )
             try:
-                rows = self.session.execute(sql, params).mappings().all()
+                rows = self.session.execute(stmt).all()
                 for row in rows:
-                    self._provider_id_cache[str(row["id"])] = row.get("provider_id")
+                    self._provider_id_cache[str(row.id)] = row.provider_id
                 for cid in missing:
                     if cid not in self._provider_id_cache:
                         self._provider_id_cache[cid] = None

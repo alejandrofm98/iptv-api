@@ -7,14 +7,14 @@ from alembic import context
 from app.database import Base, DATABASE_URL
 
 # Import all models so they register with Base.metadata
-import app.models.user
-import app.models.content
-import app.models.series
-import app.models.watch_progress
-import app.models.channel
-import app.models.replay
-import app.models.config as config_model
-import app.models.scraper
+import app.models.user  # noqa: F401
+import app.models.content  # noqa: F401
+import app.models.series  # noqa: F401
+import app.models.watch_progress  # noqa: F401
+import app.models.channel  # noqa: F401
+import app.models.replay  # noqa: F401
+import app.models.config as config_model  # noqa: F401
+import app.models.scraper  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", DATABASE_URL)

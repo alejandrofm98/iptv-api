@@ -12,23 +12,24 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger("iptv-api")
 
-from app.database import SessionLocal
-from app.services.calendar_service import CalendarServiceV2
-from app.services.channel_favorites_service import ChannelFavoritesServiceV2
-from app.services.content_service import ContentServiceV2
-from app.services.device_service import DeviceServiceV2
-from app.services.playlist_service import PlaylistServiceV2
-from app.services.stream_service import StreamProxyServiceV2
-from app.services.user_service import UserServiceV2
-from app.services.watch_progress_service import WatchProgressServiceV2
-from services.transcode_service import TranscodeService
-from utils.config import get_settings
-from utils.exceptions import (
+# Imports de app/services deben ir después del logger para configuración temprana
+from app.database import SessionLocal  # noqa: E402
+from app.services.calendar_service import CalendarServiceV2  # noqa: E402
+from app.services.channel_favorites_service import ChannelFavoritesServiceV2  # noqa: E402
+from app.services.content_service import ContentServiceV2  # noqa: E402
+from app.services.device_service import DeviceServiceV2  # noqa: E402
+from app.services.playlist_service import PlaylistServiceV2  # noqa: E402
+from app.services.stream_service import StreamProxyServiceV2  # noqa: E402
+from app.services.user_service import UserServiceV2  # noqa: E402
+from app.services.watch_progress_service import WatchProgressServiceV2  # noqa: E402
+from services.transcode_service import TranscodeService  # noqa: E402
+from utils.config import get_settings  # noqa: E402
+from utils.exceptions import (  # noqa: E402
     ForbiddenException,
     ServiceUnavailableException,
     UnauthorizedException,
 )
-from utils.models import AuthResult
+from utils.models import AuthResult  # noqa: E402
 
 # Configuración JWT
 settings = get_settings()

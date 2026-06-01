@@ -1,6 +1,6 @@
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import and_, case, desc, func, or_, select
+from sqlalchemy import and_, case, desc, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.models.content import MovieCatalog, MovieMetadata, MovieStream
@@ -172,3 +172,77 @@ class ContentRepository(BaseRepository[MovieCatalog]):
     def search_by_provider_id(self, provider_id: str) -> Optional[MovieCatalog]:
         stmt = select(MovieCatalog).where(MovieCatalog.provider_id == provider_id)
         return self.session.execute(stmt).scalar_one_or_none()
+
+    def get_movies_catalog_page(
+        self,
+        page: int,
+        page_size: int,
+        group: Optional[str] = None,
+        upper_group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+        year: Optional[int] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        filters: List[str] = []
+        params: Dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+        if group:
+            filters.append(
+                "(mc.group_normalizado ILIKE :group OR mc.title ILIKE :group)"
+            )
+            params["group"] = f"%{group}%"
+        if upper_group:
+            filters.append("UPPER(mc.group_normalizado) LIKE :upper_group")
+            params["upper_group"] = f"%{upper_group}%"
+        if country:
+            filters.append("mc.country = :country")
+            params["country"] = country
+        if search:
+            filters.append("(mc.title ILIKE :search OR mc.tmdb_id::text ILIKE :search)")
+            params["search"] = f"%{search}%"
+        if year:
+            filters.append("mc.year = :year")
+            params["year"] = year
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+        count_sql = f"SELECT COUNT(DISTINCT mc.id) AS total FROM movies_catalog mc {where_clause}"
+        total = self.session.execute(text(count_sql), params).scalar() or 0
+
+        data_sql = f"""
+            SELECT mc.id, mc.title, mc.tmdb_id, mc.year, mc.country,
+                mc.group_normalizado, mc.logo, mc.provider_id,
+                mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
+                mm.genres, mm.backdrop_path, mm.poster_path,
+                mm.title AS tmdb_title, mm.release_date, mm.runtime_minutes,
+                mm.popularity, mm.status, mm.tagline,
+                COALESCE(
+                    (
+                        SELECT jsonb_agg(
+                            jsonb_build_object(
+                                'url', ms.stream_url,
+                                'label', COALESCE(ms.label, ms.country, 'Ver'),
+                                'country', ms.country,
+                                'provider_id', ms.provider_id,
+                                'numero', ms.numero
+                            ) ORDER BY
+                                CASE WHEN ms.country = 'ES' THEN 0
+                                     WHEN ms.country = 'EN' THEN 1
+                                     WHEN ms.country = 'LATAM' THEN 2
+                                     ELSE 3 END,
+                                ms.numero ASC
+                        )
+                        FROM movie_streams ms
+                        WHERE ms.movie_id = mc.id
+                    ),
+                    '[]'::jsonb
+                ) AS stream_options,
+                (
+                    SELECT COUNT(ms.id) FROM movie_streams ms WHERE ms.movie_id = mc.id
+                ) AS stream_count
+            FROM movies_catalog mc
+            LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
+            {where_clause}
+            ORDER BY mc.year DESC NULLS LAST
+            LIMIT :limit OFFSET :offset
+        """
+        rows = self.session.execute(text(data_sql), params).mappings().all()
+        return [dict(r) for r in rows], total

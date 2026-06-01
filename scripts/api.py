@@ -13,26 +13,10 @@ import asyncio
 import gzip
 import logging
 from contextlib import asynccontextmanager
-from urllib.parse import quote, urljoin
-
-from starlette.responses import RedirectResponse
-
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("hpack").setLevel(logging.WARNING)
-
-logger = logging.getLogger("iptv-api")
-
 from datetime import datetime, timedelta
-from typing import Optional
-
-logging.getLogger("httpx").setLevel(logging.DEBUG)
-
-from typing import List
+from pathlib import Path
+from typing import List, Optional
+from urllib.parse import quote, urljoin
 
 import requests
 import uvicorn
@@ -48,6 +32,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 from pydantic import BaseModel
+from starlette.responses import RedirectResponse
 
 from app.services.calendar_service import CalendarServiceV2
 from app.services.channel_favorites_service import ChannelFavoritesServiceV2
@@ -92,6 +77,16 @@ from utils.models import (
     UserUpdate,
     WatchProgressUpsert,
 )
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("hpack").setLevel(logging.WARNING)
+
+logger = logging.getLogger("iptv-api")
 
 # Configuración
 settings = get_settings()
@@ -203,8 +198,6 @@ app.add_middleware(
 )
 
 # Servir imágenes placeholder estáticas
-from pathlib import Path
-
 IMAGES_DIR = Path(__file__).parent.parent / "resources" / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/assets/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")

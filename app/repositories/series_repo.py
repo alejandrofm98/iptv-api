@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
@@ -70,16 +70,21 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         self, catalog_id: str, page: int = 1, page_size: int = 100
     ) -> Tuple[List[dict], int, List[int]]:
         offset = (page - 1) * page_size
-        count_sql = text("SELECT COUNT(*) FROM series_episodes WHERE catalog_id = :cid")
-        total = self.session.execute(count_sql, {"cid": catalog_id}).scalar() or 0
 
-        seasons_sql = text(
-            "SELECT DISTINCT season_number FROM series_episodes "
-            "WHERE catalog_id = :cid ORDER BY season_number"
+        count_stmt = (
+            select(func.count())
+            .select_from(SeriesEpisode)
+            .where(SeriesEpisode.catalog_id == catalog_id)
         )
-        seasons = [
-            r[0] for r in self.session.execute(seasons_sql, {"cid": catalog_id}).all()
-        ]
+        total = self.session.execute(count_stmt).scalar() or 0
+
+        seasons_stmt = (
+            select(SeriesEpisode.season_number)
+            .distinct()
+            .where(SeriesEpisode.catalog_id == catalog_id)
+            .order_by(SeriesEpisode.season_number)
+        )
+        seasons = [r[0] for r in self.session.execute(seasons_stmt).all()]
 
         data_sql = text("""
             WITH episode_streams AS (
@@ -174,3 +179,65 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             .order_by(SeriesCatalog.group_normalizado)
         )
         return [r[0] for r in self.session.execute(stmt).all()]
+
+    def get_distinct_series_groups_catalog(
+        self,
+        page: int,
+        page_size: int,
+        group: Optional[str] = None,
+        upper_group: Optional[str] = None,
+        country: Optional[str] = None,
+        search: Optional[str] = None,
+        year: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        filters: List[str] = []
+        params: Dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+        if group:
+            filters.append(
+                "(sc.group_normalizado ILIKE :group OR sc.title ILIKE :group)"
+            )
+            params["group"] = f"%{group}%"
+        if upper_group:
+            filters.append("UPPER(sc.group_normalizado) LIKE :upper_group")
+            params["upper_group"] = f"%{upper_group}%"
+        if country:
+            filters.append("sc.country = :country")
+            params["country"] = country
+        if search:
+            filters.append("(sc.title ILIKE :search OR sc.title ILIKE :search)")
+            params["search"] = f"%{search}%"
+        if year:
+            filters.append("sc.year = :year")
+            params["year"] = year
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+        count_sql = f"SELECT COUNT(DISTINCT sc.id) AS total FROM series_catalog sc {where_clause}"
+        total = self.session.execute(text(count_sql), params).scalar() or 0
+
+        data_sql = f"""
+            SELECT sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.country,
+                sc.group_normalizado, sc.logo, sc.provider_id,
+                sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
+                sm.genres, sm.backdrop_path, sm.poster_path,
+                sm.title AS tmdb_title, sm.release_date, sm.popularity, sm.status,
+                COALESCE(
+                    (SELECT COUNT(DISTINCT se.id) FROM series_episodes se WHERE se.catalog_id = sc.id),
+                    0
+                ) AS total_episodes,
+                COALESCE(
+                    (SELECT COUNT(DISTINCT se.season_number) FROM series_episodes se WHERE se.catalog_id = sc.id),
+                    0
+                ) AS total_seasons
+            FROM series_catalog sc
+            LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
+            {where_clause}
+            ORDER BY sc.title ASC
+            LIMIT :limit OFFSET :offset
+        """
+        rows = self.session.execute(text(data_sql), params).mappings().all()
+        return {
+            "items": [dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }

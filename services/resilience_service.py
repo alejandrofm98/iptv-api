@@ -5,9 +5,9 @@ import asyncio
 import random
 import time
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, TypeVar
+from typing import Any, Callable, Dict, Optional, TypeVar
 from urllib.parse import urlparse
 import httpx
 
@@ -60,7 +60,7 @@ class CircuitBreakerService:
         """Extrae el hostname de una URL"""
         try:
             return urlparse(url).hostname or "unknown"
-        except:
+        except Exception:
             return "unknown"
     
     async def can_execute(self, url: str) -> bool:
@@ -375,7 +375,7 @@ class ResilienceService:
             await self.circuit_breaker.record_success(url)
             return result
             
-        except Exception as e:
+        except Exception:
             # Registrar fallo
             await self.circuit_breaker.record_failure(url)
             raise

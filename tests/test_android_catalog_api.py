@@ -5,6 +5,10 @@ from fastapi.testclient import TestClient
 
 
 psycopg2_module = types.ModuleType("psycopg2")
+psycopg2_module.paramstyle = "pyformat"
+psycopg2_module.apilevel = "2.0"
+psycopg2_module.threadsafety = 2
+psycopg2_module.__version__ = "2.9.0"
 psycopg2_pool_module = types.ModuleType("psycopg2.pool")
 psycopg2_pool_module.SimpleConnectionPool = object
 psycopg2_extras_module = types.ModuleType("psycopg2.extras")
@@ -16,9 +20,9 @@ sys.modules.setdefault("psycopg2", psycopg2_module)
 sys.modules.setdefault("psycopg2.pool", psycopg2_pool_module)
 sys.modules.setdefault("psycopg2.extras", psycopg2_extras_module)
 
-from scripts.api import app
-from utils.dependencies import get_calendar_service, get_channel_favorites_service, get_content_service, require_auth_with_jwt
-from utils.models import AuthResult
+from scripts.api import app  # noqa: E402
+from utils.dependencies import get_calendar_service_v2, get_channel_favorites_service_v2, get_content_service_v2, require_auth_with_jwt  # noqa: E402
+from utils.models import AuthResult  # noqa: E402
 
 
 class StubContentService:
@@ -264,9 +268,9 @@ def create_client() -> TestClient:
     stub_content_service = StubContentService()
     stub_favorites_service = StubChannelFavoritesService()
     app.dependency_overrides[require_auth_with_jwt] = override_auth
-    app.dependency_overrides[get_content_service] = lambda: stub_content_service
-    app.dependency_overrides[get_calendar_service] = lambda: StubCalendarService()
-    app.dependency_overrides[get_channel_favorites_service] = lambda: stub_favorites_service
+    app.dependency_overrides[get_content_service_v2] = lambda: stub_content_service
+    app.dependency_overrides[get_calendar_service_v2] = lambda: StubCalendarService()
+    app.dependency_overrides[get_channel_favorites_service_v2] = lambda: stub_favorites_service
     client = TestClient(app)
     client.stub_content_service = stub_content_service
     client.stub_favorites_service = stub_favorites_service
