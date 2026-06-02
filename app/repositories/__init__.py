@@ -10,8 +10,14 @@ from app.repositories.user_repo import UserRepository
 from app.repositories.watch_progress_repo import WatchProgressRepository
 
 __all__ = [
-    "BaseRepository", "ChannelFavoriteRepository", "ChannelRepository",
-    "ConfigRepository", "ContentRepository", "ReplayRepository",
-    "SeriesRepository", "SessionRepository", "UserRepository",
+    "BaseRepository",
+    "ChannelFavoriteRepository",
+    "ChannelRepository",
+    "ConfigRepository",
+    "ContentRepository",
+    "ReplayRepository",
+    "SeriesRepository",
+    "SessionRepository",
+    "UserRepository",
     "WatchProgressRepository",
 ]

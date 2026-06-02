@@ -1,7 +1,6 @@
 """User Service v2 — uses SQLAlchemy repository."""
 
 from datetime import datetime
-from typing import List, Optional, Tuple
 
 import bcrypt
 from sqlalchemy.orm import Session
@@ -28,7 +27,7 @@ class UserServiceV2:
         except Exception:
             return False
 
-    def get_user(self, user_id: str) -> Optional[dict]:
+    def get_user(self, user_id: str) -> dict | None:
         user = self.user_repo.get_by_id(user_id)
         if not user:
             return None
@@ -44,7 +43,7 @@ class UserServiceV2:
         }
         return result
 
-    def get_by_username(self, username: str) -> Optional[dict]:
+    def get_by_username(self, username: str) -> dict | None:
         user = self.user_repo.get_by_username(username)
         if not user:
             return None
@@ -105,12 +104,10 @@ class UserServiceV2:
             max_connections=user_data.max_connections,
             is_active=True,
             role=getattr(user_data, "role", "user"),
-            expires_at=(
-                user_data.expires_at.isoformat() if user_data.expires_at else None
-            ),
+            expires_at=(user_data.expires_at.isoformat() if user_data.expires_at else None),
         )
 
-    def update_user(self, user_id: str, user_data) -> Optional[dict]:
+    def update_user(self, user_id: str, user_data) -> dict | None:
         user = self.user_repo.get_by_id(user_id)
         if not user:
             return None
@@ -139,7 +136,7 @@ class UserServiceV2:
         self.session.flush()
         return True
 
-    def list_users(self, page: int = 1, page_size: int = 20) -> Tuple[List[dict], int]:
+    def list_users(self, page: int = 1, page_size: int = 20) -> tuple[list[dict], int]:
         users, total = self.user_repo.list_paginated(page, page_size)
         result = []
         for u in users:

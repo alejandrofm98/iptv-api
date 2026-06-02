@@ -1,7 +1,5 @@
 """Channel Favorites Service v2 — uses SQLAlchemy repositories."""
 
-from typing import List, Optional
-
 from sqlalchemy.orm import Session
 
 from app.repositories.channel_favorite_repo import ChannelFavoriteRepository
@@ -14,7 +12,7 @@ class ChannelFavoritesServiceV2:
         self.repo = ChannelFavoriteRepository(session)
         self.channel_repo = ChannelRepository(session)
 
-    def list_favorites(self, user_id: str) -> List[dict]:
+    def list_favorites(self, user_id: str) -> list[dict]:
         items = self.repo.list_by_user(user_id)
         return [
             {
@@ -44,16 +42,14 @@ class ChannelFavoritesServiceV2:
         content_svc,
         page: int = 1,
         page_size: int = 50,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
+        country: str | None = None,
+        search: str | None = None,
         username: str = "",
         password: str = "",
     ) -> dict:
         favorites = self.list_favorites(user_id)
         provider_ids = [
-            item["channel_provider_id"]
-            for item in favorites
-            if item.get("channel_provider_id")
+            item["channel_provider_id"] for item in favorites if item.get("channel_provider_id")
         ]
         if not provider_ids:
             return content_svc.build_paginated_payload([], 0, page, page_size)
@@ -66,9 +62,7 @@ class ChannelFavoritesServiceV2:
         )
         filtered = [c for c in channels if str(c.provider_id) in provider_ids]
         favorite_order = {pid: i for i, pid in enumerate(provider_ids)}
-        filtered.sort(
-            key=lambda c: favorite_order.get(str(c.provider_id), len(provider_ids))
-        )
+        filtered.sort(key=lambda c: favorite_order.get(str(c.provider_id), len(provider_ids)))
 
         total = len(filtered)
         offset = (page - 1) * page_size

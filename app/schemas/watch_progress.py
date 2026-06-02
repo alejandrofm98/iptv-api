@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -8,11 +7,11 @@ class WatchProgressUpsert(BaseModel):
     content_type: str
     position_ms: int
     duration_ms: int
-    series_name: Optional[str] = None
-    season_number: Optional[int] = None
-    episode_number: Optional[int] = None
-    title: Optional[str] = ""
-    image_url: Optional[str] = ""
+    series_name: str | None = None
+    season_number: int | None = None
+    episode_number: int | None = None
+    title: str | None = ""
+    image_url: str | None = ""
 
 
 class WatchProgressResponse(BaseModel):
@@ -22,9 +21,9 @@ class WatchProgressResponse(BaseModel):
     content_type: str
     position_ms: int
     duration_ms: int
-    series_name: Optional[str] = None
-    season_number: Optional[int] = None
-    episode_number: Optional[int] = None
+    series_name: str | None = None
+    season_number: int | None = None
+    episode_number: int | None = None
     title: str
     image_url: str
     last_watched_at: datetime
@@ -35,22 +34,22 @@ class WatchProgressResponse(BaseModel):
 
 
 class ContinueWatchingItem(WatchProgressResponse):
-    normalized_title: Optional[str] = None
-    overview: Optional[str] = None
-    overview_es: Optional[str] = None
-    overview_en: Optional[str] = None
-    rating: Optional[float] = None
-    vote_average: Optional[float] = None
-    vote_count: Optional[int] = None
-    genres: Optional[List[str]] = None
-    poster_path: Optional[str] = None
-    backdrop_path: Optional[str] = None
-    runtime_minutes: Optional[int] = None
-    tagline: Optional[str] = None
-    release_date: Optional[str] = None
-    year: Optional[int] = None
-    tmdb_id: Optional[str] = None
-    tmdb_title: Optional[str] = None
-    popularity: Optional[float] = None
-    status: Optional[str] = None
-    total_seasons: Optional[int] = None
+    normalized_title: str | None = None
+    overview: str | None = None
+    overview_es: str | None = None
+    overview_en: str | None = None
+    rating: float | None = None
+    vote_average: float | None = None
+    vote_count: int | None = None
+    genres: list[str] | None = None
+    poster_path: str | None = None
+    backdrop_path: str | None = None
+    runtime_minutes: int | None = None
+    tagline: str | None = None
+    release_date: str | None = None
+    year: int | None = None
+    tmdb_id: str | None = None
+    tmdb_title: str | None = None
+    popularity: float | None = None
+    status: str | None = None
+    total_seasons: int | None = None

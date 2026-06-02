@@ -34,12 +34,8 @@ class Channel(Base):
 class ChannelFavorite(Base):
     __tablename__ = "channel_favorites"
 
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     channel_provider_id = Column(String(100), nullable=False)
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, default=datetime.utcnow
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
 
     __table_args__ = (PrimaryKeyConstraint("user_id", "channel_provider_id"),)

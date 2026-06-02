@@ -8,8 +8,20 @@ from app.models.user import ActiveSession, User
 from app.models.watch_progress import WatchProgress
 
 __all__ = [
-    "ActiveSession", "Channel", "ChannelFavorite", "Config",
-    "MovieCatalog", "MovieMetadata", "MovieStream", "Replay",
-    "ScraperFailure", "SeriesCatalog", "SeriesEpisode", "SeriesMetadata",
-    "SeriesStream", "SyncMetadata", "User", "WatchProgress",
+    "ActiveSession",
+    "Channel",
+    "ChannelFavorite",
+    "Config",
+    "MovieCatalog",
+    "MovieMetadata",
+    "MovieStream",
+    "Replay",
+    "ScraperFailure",
+    "SeriesCatalog",
+    "SeriesEpisode",
+    "SeriesMetadata",
+    "SeriesStream",
+    "SyncMetadata",
+    "User",
+    "WatchProgress",
 ]

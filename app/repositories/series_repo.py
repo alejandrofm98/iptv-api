@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
     def __init__(self, session: Session):
         super().__init__(SeriesCatalog, session)
 
-    def get_with_metadata(self, series_id: str) -> Optional[dict]:
+    def get_with_metadata(self, series_id: str) -> dict | None:
         stmt = (
             select(
                 SeriesCatalog,
@@ -56,7 +56,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         row = self.session.execute(stmt).mappings().first()
         return dict(row) if row else {"total_episodes": 0, "total_seasons": 0}
 
-    def get_by_key(self, series_key: str) -> Optional[dict]:
+    def get_by_key(self, series_key: str) -> dict | None:
         stmt = (
             select(SeriesCatalog, SeriesMetadata)
             .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
@@ -68,7 +68,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
 
     def get_episodes_with_streams(
         self, catalog_id: str, page: int = 1, page_size: int = 100
-    ) -> Tuple[List[dict], int, List[int]]:
+    ) -> tuple[list[dict], int, list[int]]:
         offset = (page - 1) * page_size
 
         count_stmt = (
@@ -125,16 +125,14 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         ]
         return items, total, seasons
 
-    def search_by_provider_id(self, provider_id: str) -> Optional[SeriesCatalog]:
+    def search_by_provider_id(self, provider_id: str) -> SeriesCatalog | None:
         stmt = select(SeriesCatalog).where(SeriesCatalog.provider_id == provider_id)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_by_title(self, title: str) -> Optional[dict]:
+    def get_by_title(self, title: str) -> dict | None:
         import re
 
-        stripped = re.sub(
-            r"^[a-z]{2,5}\s*[-–]\s*", "", title, flags=re.IGNORECASE
-        ).strip()
+        stripped = re.sub(r"^[a-z]{2,5}\s*[-–]\s*", "", title, flags=re.IGNORECASE).strip()
         stmt = (
             select(
                 SeriesCatalog,
@@ -166,7 +164,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         row = self.session.execute(stmt).mappings().first()
         return dict(row) if row else None
 
-    def get_distinct_groups(self) -> List[str]:
+    def get_distinct_groups(self) -> list[str]:
         stmt = (
             select(SeriesCatalog.group_normalizado)
             .where(
@@ -184,18 +182,16 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         self,
         page: int,
         page_size: int,
-        group: Optional[str] = None,
-        upper_group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        year: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        filters: List[str] = []
-        params: Dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+        group: str | None = None,
+        upper_group: str | None = None,
+        country: str | None = None,
+        search: str | None = None,
+        year: int | None = None,
+    ) -> dict[str, Any]:
+        filters: list[str] = []
+        params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
         if group:
-            filters.append(
-                "(sc.group_normalizado ILIKE :group OR sc.title ILIKE :group)"
-            )
+            filters.append("(sc.group_normalizado ILIKE :group OR sc.title ILIKE :group)")
             params["group"] = f"%{group}%"
         if upper_group:
             filters.append("UPPER(sc.group_normalizado) LIKE :upper_group")

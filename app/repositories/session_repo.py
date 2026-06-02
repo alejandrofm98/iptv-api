@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-from typing import List, Optional
 
 from sqlalchemy import and_, delete, desc, func, select
 from sqlalchemy.orm import Session
@@ -12,7 +11,7 @@ class SessionRepository(BaseRepository[ActiveSession]):
     def __init__(self, session: Session):
         super().__init__(ActiveSession, session)
 
-    def get_by_user(self, user_id: str) -> List[ActiveSession]:
+    def get_by_user(self, user_id: str) -> list[ActiveSession]:
         stmt = (
             select(ActiveSession)
             .where(ActiveSession.user_id == user_id)
@@ -20,9 +19,7 @@ class SessionRepository(BaseRepository[ActiveSession]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_user_and_device(
-        self, user_id: str, device_id: str
-    ) -> Optional[ActiveSession]:
+    def get_by_user_and_device(self, user_id: str, device_id: str) -> ActiveSession | None:
         stmt = select(ActiveSession).where(
             and_(
                 ActiveSession.user_id == user_id,
@@ -44,9 +41,7 @@ class SessionRepository(BaseRepository[ActiveSession]):
 
     def count_by_user(self, user_id: str) -> int:
         stmt = (
-            select(func.count())
-            .select_from(ActiveSession)
-            .where(ActiveSession.user_id == user_id)
+            select(func.count()).select_from(ActiveSession).where(ActiveSession.user_id == user_id)
         )
         return self.session.execute(stmt).scalar() or 0
 
@@ -74,7 +69,7 @@ class SessionRepository(BaseRepository[ActiveSession]):
         self.session.flush()
         return result.rowcount  # type: ignore[attr-defined]
 
-    def list_all_with_users(self, limit: int = 100) -> List[dict]:
+    def list_all_with_users(self, limit: int = 100) -> list[dict]:
         stmt = (
             select(ActiveSession, User.username)
             .join(User, User.id == ActiveSession.user_id)

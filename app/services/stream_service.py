@@ -5,7 +5,8 @@ import hashlib
 import logging
 import re
 import time
-from typing import Any, AsyncIterator, Dict, Optional, Tuple, Union
+from collections.abc import AsyncIterator
+from typing import Any
 from urllib.parse import quote, urljoin, urlparse
 
 import httpx
@@ -22,10 +23,10 @@ logger = logging.getLogger("stream_service_v2")
 
 
 class StreamProxyServiceV2:
-    _redirect_cache: Dict[str, Tuple[str, float]] = {}
+    _redirect_cache: dict[str, tuple[str, float]] = {}
     _REDIRECT_CACHE_TTL: float = 300.0
     _DNS_ERROR_CACHE_TTL: float = 60.0
-    _proxy_bootstrap_cache: Optional[Tuple[Optional[str], float]] = None
+    _proxy_bootstrap_cache: tuple[str | None, float] | None = None
     _PROXY_BOOTSTRAP_CACHE_TTL: float = 60.0
 
     def __init__(
@@ -39,11 +40,11 @@ class StreamProxyServiceV2:
         self.channel_repo = channel_repo
         self.content_repo = content_repo
         self.series_repo = series_repo
-        self._url_cache: Dict[str, str] = {}
+        self._url_cache: dict[str, str] = {}
         self._resilience = ResilienceService()
 
     @staticmethod
-    def _mask_proxy_url(proxy_url: Optional[str]) -> str:
+    def _mask_proxy_url(proxy_url: str | None) -> str:
         if not proxy_url:
             return "none"
         try:
@@ -56,7 +57,7 @@ class StreamProxyServiceV2:
         except Exception:
             return "invalid-proxy-url"
 
-    def _get_bootstrap_proxy_url(self, use_cache: bool = True) -> Optional[str]:
+    def _get_bootstrap_proxy_url(self, use_cache: bool = True) -> str | None:
         cached = StreamProxyServiceV2._proxy_bootstrap_cache
         if use_cache and cached:
             cached_value, cached_at = cached
@@ -114,9 +115,7 @@ class StreamProxyServiceV2:
         )
         try:
             if not await self._resilience.circuit_breaker.can_execute(url):
-                logger.warning(
-                    f"Circuit breaker OPEN para {hostname}, usando URL original"
-                )
+                logger.warning(f"Circuit breaker OPEN para {hostname}, usando URL original")
                 return url
             async with httpx.AsyncClient(
                 follow_redirects=False,
@@ -136,9 +135,7 @@ class StreamProxyServiceV2:
                                 f"Redirect check #{redirect_count + 1}: status={status}, has_location={bool(location)}"
                             )
                     except Exception as e:
-                        logger.warning(
-                            f"Error evaluando redirect en {current_url[:100]}...: {e}"
-                        )
+                        logger.warning(f"Error evaluando redirect en {current_url[:100]}...: {e}")
                         break
                     if status in (301, 302, 307, 308):
                         if not location:
@@ -177,9 +174,7 @@ class StreamProxyServiceV2:
         except Exception as e:
             elapsed = time.time() - start_time
             await self._resilience.circuit_breaker.record_failure(url)
-            logger.error(
-                f"Error resolviendo redirects para {hostname} ({elapsed:.2f}s): {e}"
-            )
+            logger.error(f"Error resolviendo redirects para {hostname} ({elapsed:.2f}s): {e}")
             if use_cache:
                 self._redirect_cache[url] = (url, time.time())
             return url
@@ -187,7 +182,7 @@ class StreamProxyServiceV2:
     def _hash_url(self, url: str) -> str:
         return hashlib.md5(url.encode()).hexdigest()[:16]
 
-    def _get_content_item(self, table: str, provider_id: str) -> Optional[dict]:
+    def _get_content_item(self, table: str, provider_id: str) -> dict | None:
         if table == "channels":
             c = self.channel_repo.get_by_provider_id(provider_id)
             if c:
@@ -216,9 +211,7 @@ class StreamProxyServiceV2:
                     return {"stream_url": row, "url": row}
         return None
 
-    def get_original_url(
-        self, provider_id: str, content_type: str = "live"
-    ) -> Optional[str]:
+    def get_original_url(self, provider_id: str, content_type: str = "live") -> str | None:
         cache_key = f"{content_type}:{provider_id}"
         if cache_key in self._url_cache:
             return self._url_cache[cache_key]
@@ -239,7 +232,7 @@ class StreamProxyServiceV2:
     async def proxy_stream(
         self,
         original_url: str,
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
         use_buffer: bool = True,
     ) -> AsyncIterator[bytes]:
         default_headers = {"User-Agent": CONSTANTS.DEFAULT_USER_AGENT}
@@ -251,47 +244,43 @@ class StreamProxyServiceV2:
         last_error = None
         for attempt in range(self._resilience.retry_service.config.max_attempts):
             try:
-                async with httpx.AsyncClient(
-                    timeout=30.0,
-                    follow_redirects=True,
-                    limits=httpx.Limits(
-                        max_keepalive_connections=20,
-                        max_connections=50,
-                        keepalive_expiry=30.0,
-                    ),
-                ) as client:
-                    async with client.stream(
-                        "GET", original_url, headers=default_headers
-                    ) as response:
-                        response.raise_for_status()
-                        await self._resilience.circuit_breaker.record_success(
-                            original_url
-                        )
-                        if buffer:
+                async with (
+                    httpx.AsyncClient(
+                        timeout=30.0,
+                        follow_redirects=True,
+                        limits=httpx.Limits(
+                            max_keepalive_connections=20,
+                            max_connections=50,
+                            keepalive_expiry=30.0,
+                        ),
+                    ) as client,
+                    client.stream("GET", original_url, headers=default_headers) as response,
+                ):
+                    response.raise_for_status()
+                    await self._resilience.circuit_breaker.record_success(original_url)
+                    if buffer:
 
-                            async def _buffer_task():
-                                async for chunk in response.aiter_bytes(
-                                    chunk_size=8192
-                                ):
-                                    await buffer.feed(chunk)
-                                buffer.mark_complete()
-
-                            buffer_task = asyncio.create_task(_buffer_task())
-                            start_wait = time.time()
-                            while not await buffer.should_start_streaming():
-                                await asyncio.sleep(0.1)
-                                if time.time() - start_wait > 10.0:
-                                    break
-                            while True:
-                                chunk = await buffer.get_chunk()
-                                if chunk is None:
-                                    break
-                                yield chunk
-                            await buffer_task
-                        else:
+                        async def _buffer_task():
                             async for chunk in response.aiter_bytes(chunk_size=8192):
-                                yield chunk
-                        return
+                                await buffer.feed(chunk)
+                            buffer.mark_complete()
+
+                        buffer_task = asyncio.create_task(_buffer_task())
+                        start_wait = time.time()
+                        while not await buffer.should_start_streaming():
+                            await asyncio.sleep(0.1)
+                            if time.time() - start_wait > 10.0:
+                                break
+                        while True:
+                            chunk = await buffer.get_chunk()
+                            if chunk is None:
+                                break
+                            yield chunk
+                        await buffer_task
+                    else:
+                        async for chunk in response.aiter_bytes(chunk_size=8192):
+                            yield chunk
+                    return
             except Exception as e:
                 last_error = e
                 await self._resilience.circuit_breaker.record_failure(original_url)
@@ -325,28 +314,22 @@ class StreamProxyServiceV2:
     async def get_stream_response(
         self,
         original_url: str,
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
         use_resilience: bool = True,
-    ) -> Tuple[int, Dict[str, str], Union[AsyncIterator[bytes], str]]:
+    ) -> tuple[int, dict[str, str], AsyncIterator[bytes] | str]:
         default_headers = {"User-Agent": CONSTANTS.DEFAULT_USER_AGENT}
         if headers:
             default_headers.update(headers)
-        if use_resilience and not await self._resilience.circuit_breaker.can_execute(
-            original_url
-        ):
+        if use_resilience and not await self._resilience.circuit_breaker.can_execute(original_url):
             logger.warning(f"Circuit breaker OPEN para {original_url[:80]}")
             raise Exception("Servicio no disponible - circuit breaker abierto")
         last_error = None
-        max_attempts = (
-            self._resilience.retry_service.config.max_attempts if use_resilience else 1
-        )
+        max_attempts = self._resilience.retry_service.config.max_attempts if use_resilience else 1
         for attempt in range(max_attempts):
             client = None
             try:
                 client = httpx.AsyncClient(
-                    timeout=httpx.Timeout(
-                        connect=10.0, read=300.0, write=10.0, pool=10.0
-                    ),
+                    timeout=httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0),
                     follow_redirects=True,
                     limits=httpx.Limits(
                         max_keepalive_connections=20,
@@ -375,19 +358,12 @@ class StreamProxyServiceV2:
                     523,
                     524,
                 }
-                if (
-                    response.status_code >= 500
-                    or response.status_code in retryable_codes
-                ):
+                if response.status_code >= 500 or response.status_code in retryable_codes:
                     await client.aclose()
                     error_msg = f"HTTP {response.status_code} from provider"
-                    logger.warning(
-                        f"Server error {response.status_code}, will retry..."
-                    )
+                    logger.warning(f"Server error {response.status_code}, will retry...")
                     if use_resilience:
-                        await self._resilience.circuit_breaker.record_failure(
-                            original_url
-                        )
+                        await self._resilience.circuit_breaker.record_failure(original_url)
                     if attempt < max_attempts - 1:
                         delay = self._resilience.retry_service._calculate_delay(attempt)
                         logger.warning(
@@ -502,5 +478,5 @@ class StreamProxyServiceV2:
                 self._url_cache[f"live:{stream_id}"] = c.url
         logger.info(f"Cache precargado: {len(self._url_cache)} URLs")
 
-    def get_resilience_status(self) -> Dict[str, Any]:
+    def get_resilience_status(self) -> dict[str, Any]:
         return self._resilience.get_status()

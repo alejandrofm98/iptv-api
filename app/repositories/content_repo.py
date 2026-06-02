@@ -1,6 +1,6 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from sqlalchemy import and_, case, desc, func, or_, select, text
+from sqlalchemy import String, and_, case, desc, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.models.content import MovieCatalog, MovieMetadata, MovieStream
@@ -11,7 +11,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
     def __init__(self, session: Session):
         super().__init__(MovieCatalog, session)
 
-    def get_movie_with_metadata(self, movie_id: str) -> Optional[dict]:
+    def get_movie_with_metadata(self, movie_id: str) -> dict | None:
         stmt = (
             select(
                 MovieCatalog,
@@ -32,7 +32,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
             .where(
                 or_(
-                    MovieCatalog.id.cast(str) == movie_id,
+                    MovieCatalog.id.cast(String) == movie_id,
                     MovieCatalog.tmdb_id == movie_id,
                     MovieCatalog.provider_id == movie_id,
                 )
@@ -48,7 +48,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             result["stream_options"] = streams
         return result
 
-    def _get_movie_streams(self, movie_uuid: Any) -> List[dict]:
+    def _get_movie_streams(self, movie_uuid: Any) -> list[dict]:
         stmt = (
             select(MovieStream)
             .where(MovieStream.movie_id == movie_uuid)
@@ -78,10 +78,10 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         self,
         page: int,
         page_size: int,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        year: Optional[int] = None,
-    ) -> Tuple[List[dict], int]:
+        country: str | None = None,
+        search: str | None = None,
+        year: int | None = None,
+    ) -> tuple[list[dict], int]:
         filters = []
         if country:
             filters.append(MovieCatalog.country == country)
@@ -119,8 +119,8 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         return [dict(r) for r in rows], total
 
     def get_distinct_groups(
-        self, content_type: str, countries: Optional[List[str]] = None
-    ) -> List[str]:
+        self, content_type: str, countries: list[str] | None = None
+    ) -> list[str]:
         if content_type == "movies":
             table = MovieCatalog
             col = MovieCatalog.nombre_dedup_key
@@ -150,7 +150,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         rows = self.session.execute(q).scalars().all()
         return [r for r in rows if r]
 
-    def get_distinct_countries(self, content_type: str) -> List[str]:
+    def get_distinct_countries(self, content_type: str) -> list[str]:
         if content_type == "movies":
             table = MovieCatalog
         elif content_type == "channels":
@@ -169,7 +169,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         rows = self.session.execute(q).scalars().all()
         return [r for r in rows if r]
 
-    def search_by_provider_id(self, provider_id: str) -> Optional[MovieCatalog]:
+    def search_by_provider_id(self, provider_id: str) -> MovieCatalog | None:
         stmt = select(MovieCatalog).where(MovieCatalog.provider_id == provider_id)
         return self.session.execute(stmt).scalar_one_or_none()
 
@@ -177,18 +177,16 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         self,
         page: int,
         page_size: int,
-        group: Optional[str] = None,
-        upper_group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        year: Optional[int] = None,
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        filters: List[str] = []
-        params: Dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+        group: str | None = None,
+        upper_group: str | None = None,
+        country: str | None = None,
+        search: str | None = None,
+        year: int | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        filters: list[str] = []
+        params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
         if group:
-            filters.append(
-                "(mc.group_normalizado ILIKE :group OR mc.title ILIKE :group)"
-            )
+            filters.append("(mc.group_normalizado ILIKE :group OR mc.title ILIKE :group)")
             params["group"] = f"%{group}%"
         if upper_group:
             filters.append("UPPER(mc.group_normalizado) LIKE :upper_group")

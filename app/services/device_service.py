@@ -1,7 +1,6 @@
 """Device/Session Service v2 — uses SQLAlchemy repository."""
 
 from datetime import datetime
-from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -19,7 +18,7 @@ class DeviceServiceV2:
         user_agent: str,
         ip_address: str,
         max_connections: int,
-    ) -> Tuple[bool, str, Optional[dict]]:
+    ) -> tuple[bool, str, dict | None]:
         device_id = self._device_id_from_ua(user_agent, ip_address)
         active = self.session_repo.count_by_user(user_id)
         if active >= max_connections:
@@ -48,11 +47,11 @@ class DeviceServiceV2:
             },
         )
 
-    def get_user_devices(self, user_id: str) -> List[dict]:
+    def get_user_devices(self, user_id: str) -> list[dict]:
         """Alias for compatibility with old DeviceService interface."""
         return self.get_active_sessions(user_id)
 
-    def get_active_sessions(self, user_id: str) -> List[dict]:
+    def get_active_sessions(self, user_id: str) -> list[dict]:
         sessions = self.session_repo.get_by_user(user_id)
         return [
             {
@@ -61,9 +60,7 @@ class DeviceServiceV2:
                 "device_name": s.device_name,
                 "device_type": s.device_type,
                 "ip_address": s.ip_address,
-                "last_activity": (
-                    s.last_activity.isoformat() if s.last_activity else None
-                ),
+                "last_activity": (s.last_activity.isoformat() if s.last_activity else None),
                 "created_at": s.created_at.isoformat() if s.created_at else None,
             }
             for s in sessions
@@ -89,7 +86,7 @@ class DeviceServiceV2:
     def count_user_sessions(self, user_id: str) -> int:
         return self.session_repo.count_by_user(user_id)
 
-    def get_all_sessions(self, limit: int = 100) -> List[dict]:
+    def get_all_sessions(self, limit: int = 100) -> list[dict]:
         return self.session_repo.list_all_with_users(limit)
 
     @staticmethod

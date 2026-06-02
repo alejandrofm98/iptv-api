@@ -3,7 +3,6 @@ Dependencias reutilizables para la API
 """
 
 import logging
-from typing import Optional
 
 from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -40,7 +39,7 @@ ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 # Cliente singleton para transcode (no usa BD)
-transcode_service: Optional[TranscodeService] = None
+transcode_service: TranscodeService | None = None
 
 
 # ============================================
@@ -59,7 +58,7 @@ def get_transcode_service() -> TranscodeService:
 # ============================================
 
 
-def get_db() -> Session:
+def get_db():
     """Crea una sesión de SQLAlchemy por request."""
     session = SessionLocal()
     try:
@@ -98,7 +97,7 @@ def get_calendar_service_v2(
     return CalendarServiceV2(session)
 
 
-_playlist_service_v2: Optional[PlaylistServiceV2] = None
+_playlist_service_v2: PlaylistServiceV2 | None = None
 
 
 def get_stream_service_v2(
@@ -151,7 +150,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         return {"id": user_id, "role": role}
 
     except JWTError:
-        raise UnauthorizedException("Token inválido o expirado")
+        raise UnauthorizedException("Token inválido o expirado") from None
 
 
 async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
@@ -181,9 +180,7 @@ async def require_auth_with_jwt(
             raise UnauthorizedException("Token inválido")
 
         user = user_svc.get_user(user_id)
-        logger.info(
-            f"[DIAG] JWT auth: user_id={user_id}, user_found={user is not None}"
-        )
+        logger.info(f"[DIAG] JWT auth: user_id={user_id}, user_found={user is not None}")
 
         if user is None:
             raise UnauthorizedException("Usuario no encontrado")
@@ -202,7 +199,7 @@ async def require_auth_with_jwt(
         )
 
     except JWTError:
-        raise UnauthorizedException("Token inválido o expirado")
+        raise UnauthorizedException("Token inválido o expirado") from None
 
 
 async def require_auth_with_credentials(
@@ -260,9 +257,7 @@ async def require_auth_with_session(
     )
 
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message
-        )
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
 
     return AuthResult(
         valid=auth.valid,

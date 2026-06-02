@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -7,88 +6,88 @@ from pydantic import BaseModel, Field
 class StreamOption(BaseModel):
     url: str
     label: str
-    country: Optional[str] = None
-    provider_id: Optional[str] = None
-    numero: Optional[int] = None
+    country: str | None = None
+    provider_id: str | None = None
+    numero: int | None = None
 
 
 class MovieCatalogItem(BaseModel):
     id: str
     title: str
-    provider_id: Optional[str] = None
-    tmdb_id: Optional[str] = None
-    year: Optional[int] = None
-    country: Optional[str] = None
-    group_normalizado: Optional[str] = None
-    logo: Optional[str] = None
-    poster_path: Optional[str] = Field(None, alias="tmdb_poster_path")
-    backdrop_path: Optional[str] = None
-    vote_average: Optional[float] = None
-    created_at: Optional[datetime] = None
+    provider_id: str | None = None
+    tmdb_id: str | None = None
+    year: int | None = None
+    country: str | None = None
+    group_normalizado: str | None = None
+    logo: str | None = None
+    poster_path: str | None = Field(None, alias="tmdb_poster_path")
+    backdrop_path: str | None = None
+    vote_average: float | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class MovieWithMetadata(MovieCatalogItem):
-    overview: Optional[str] = None
-    overview_es: Optional[str] = None
-    overview_en: Optional[str] = None
-    vote_count: Optional[int] = None
-    genres: Optional[List[str]] = None
-    tmdb_title: Optional[str] = None
-    release_date: Optional[str] = None
-    runtime_minutes: Optional[int] = None
-    popularity: Optional[float] = None
-    status: Optional[str] = None
-    tagline: Optional[str] = None
-    stream_options: Optional[List[StreamOption]] = None
+    overview: str | None = None
+    overview_es: str | None = None
+    overview_en: str | None = None
+    vote_count: int | None = None
+    genres: list[str] | None = None
+    tmdb_title: str | None = None
+    release_date: str | None = None
+    runtime_minutes: int | None = None
+    popularity: float | None = None
+    status: str | None = None
+    tagline: str | None = None
+    stream_options: list[StreamOption] | None = None
 
 
 class SeriesCatalogItem(BaseModel):
     id: str
     title: str
-    series_key: Optional[str] = None
-    provider_id: Optional[str] = None
-    tmdb_id: Optional[str] = None
-    year: Optional[int] = None
-    country: Optional[str] = None
-    group_normalizado: Optional[str] = None
-    logo: Optional[str] = None
-    poster_path: Optional[str] = Field(None, alias="tmdb_poster_path")
-    backdrop_path: Optional[str] = None
-    vote_average: Optional[float] = None
-    total_episodes: Optional[int] = None
-    total_seasons: Optional[int] = None
-    created_at: Optional[datetime] = None
+    series_key: str | None = None
+    provider_id: str | None = None
+    tmdb_id: str | None = None
+    year: int | None = None
+    country: str | None = None
+    group_normalizado: str | None = None
+    logo: str | None = None
+    poster_path: str | None = Field(None, alias="tmdb_poster_path")
+    backdrop_path: str | None = None
+    vote_average: float | None = None
+    total_episodes: int | None = None
+    total_seasons: int | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class SeriesWithMetadata(SeriesCatalogItem):
-    overview: Optional[str] = None
-    overview_es: Optional[str] = None
-    overview_en: Optional[str] = None
-    vote_count: Optional[int] = None
-    genres: Optional[List[str]] = None
-    tmdb_title: Optional[str] = None
-    release_date: Optional[str] = None
-    popularity: Optional[float] = None
-    status: Optional[str] = None
-    tagline: Optional[str] = None
-    metadata_tmdb_id: Optional[str] = None
+    overview: str | None = None
+    overview_es: str | None = None
+    overview_en: str | None = None
+    vote_count: int | None = None
+    genres: list[str] | None = None
+    tmdb_title: str | None = None
+    release_date: str | None = None
+    popularity: float | None = None
+    status: str | None = None
+    tagline: str | None = None
+    metadata_tmdb_id: str | None = None
 
 
 class SeriesEpisodeItem(BaseModel):
     id: str
-    catalog_id: Optional[str] = None
+    catalog_id: str | None = None
     season_number: int
     episode_number: int
-    title: Optional[str] = None
-    overview: Optional[str] = None
-    still_path: Optional[str] = None
-    stream_url: Optional[str] = None
-    url: Optional[str] = None
-    country: Optional[str] = None
-    quality: Optional[str] = None
-    provider_id: Optional[str] = None
-    numero: Optional[int] = None
+    title: str | None = None
+    overview: str | None = None
+    still_path: str | None = None
+    stream_url: str | None = None
+    url: str | None = None
+    country: str | None = None
+    quality: str | None = None
+    provider_id: str | None = None
+    numero: int | None = None

@@ -2,12 +2,15 @@
 Módulo optimizado para inserciones masivas en PostgreSQL
 Usa SQLAlchemy core engine directamente.
 """
+
 import time
-from typing import List, Dict, Any, Optional, Callable, Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import text
+
 from app.database import engine as default_engine
 
 
@@ -47,16 +50,16 @@ class InsertStats:
         if seconds < 60:
             return f"{seconds:.0f}s"
         elif seconds < 3600:
-            return f"{seconds/60:.1f}min"
+            return f"{seconds / 60:.1f}min"
         else:
-            return f"{seconds/3600:.1f}h"
+            return f"{seconds / 3600:.1f}h"
 
 
-def _bulk_insert(engine, table_name: str, columns: List[str], rows: Sequence[tuple]) -> int:
+def _bulk_insert(engine, table_name: str, columns: list[str], rows: Sequence[tuple]) -> int:
     col_names = ", ".join(columns)
     placeholders = ", ".join([f":{c}" for c in columns])
     sql = f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
-    params_list = [dict(zip(columns, row)) for row in rows]
+    params_list = [dict(zip(columns, row, strict=True)) for row in rows]
     with engine.begin() as conn:
         conn.execute(text(sql), params_list)
     return len(rows)
@@ -66,10 +69,10 @@ class BulkInserter:
     def __init__(
         self,
         table_name: str,
-        columns: List[str],
+        columns: list[str],
         batch_size: int = 1000,
         max_workers: int = 4,
-        progress_callback: Optional[Callable[[InsertStats], None]] = None,
+        progress_callback: Callable[[InsertStats], None] | None = None,
         engine=None,
     ):
         self.engine = engine or default_engine
@@ -81,18 +84,15 @@ class BulkInserter:
         self.stats = InsertStats()
         self._lock_lock = None
 
-    def _create_batches(self, data: List[Dict[str, Any]]) -> List[List[tuple]]:
+    def _create_batches(self, data: list[dict[str, Any]]) -> list[list[tuple]]:
         batches = []
         for i in range(0, len(data), self.batch_size):
-            batch = data[i:i + self.batch_size]
+            batch = data[i : i + self.batch_size]
             batches.append(batch)
         return batches
 
     def _insert_batch(
-        self,
-        batch: List[Dict[str, Any]],
-        batch_num: int,
-        total_batches: int
+        self, batch: list[dict[str, Any]], batch_num: int, total_batches: int
     ) -> tuple[bool, int]:
         for attempt in range(3):
             try:
@@ -108,7 +108,9 @@ class BulkInserter:
             except Exception as e:
                 if attempt < 2:
                     wait_time = (attempt + 1) * 2
-                    print(f"Batch {batch_num}/{total_batches} fallo (intento {attempt + 1}/3), reintentando en {wait_time}s...")
+                    print(
+                        f"Batch {batch_num}/{total_batches} fallo (intento {attempt + 1}/3), reintentando en {wait_time}s..."
+                    )
                     time.sleep(wait_time)
                 else:
                     print(f"Batch {batch_num}/{total_batches} fallo tras 3 intentos: {e}")
@@ -117,13 +119,13 @@ class BulkInserter:
                     return False, 0
         return False, 0
 
-    def _row_to_tuple(self, row: Dict[str, Any]) -> tuple:
+    def _row_to_tuple(self, row: dict[str, Any]) -> tuple:
         return tuple(row.get(col) for col in self.columns)
 
     def _lock(self):
         return self._lock_lock
 
-    def insert_bulk(self, data: List[Dict[str, Any]]) -> InsertStats:
+    def insert_bulk(self, data: list[dict[str, Any]]) -> InsertStats:
         if not data:
             print("No hay datos para insertar")
             return self.stats
@@ -142,6 +144,7 @@ class BulkInserter:
         print()
 
         import threading
+
         self._lock_lock = threading.Lock()
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -152,7 +155,7 @@ class BulkInserter:
             for future in as_completed(futures):
                 batch_idx = futures[future]
                 try:
-                    success, records = future.result()
+                    _success, _records = future.result()
                 except Exception as e:
                     print(f"Error inesperado en batch {batch_idx + 1}: {e}")
 
@@ -162,21 +165,21 @@ class BulkInserter:
     def _print_summary(self):
         elapsed = self.stats.get_elapsed_time()
         rate = self.stats.get_rate()
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Insercion completada en tabla '{self.table_name}'")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Total:     {self.stats.total_records:,}")
         print(f"OK:        {self.stats.inserted_records:,} ({self.stats.get_progress_pct():.1f}%)")
         print(f"Fallidos:  {self.stats.failed_records:,}")
         print(f"Tiempo:    {self.stats.format_time(elapsed)}")
         print(f"Velocidad: {rate:.0f} reg/s")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
 
 def insert_bulk_optimized(
-    table_name: str = None,
-    columns: List[str] = None,
-    data: List[Dict[str, Any]] = None,
+    table_name: str | None = None,
+    columns: list[str] | None = None,
+    data: list[dict[str, Any]] | None = None,
     batch_size: int = 1000,
     max_workers: int = 4,
     engine=None,

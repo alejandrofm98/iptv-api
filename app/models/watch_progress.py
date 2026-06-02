@@ -20,9 +20,7 @@ class WatchProgress(Base):
     __tablename__ = "watch_progress"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     content_id = Column(String(100), nullable=False)
     content_type = Column(String(20), nullable=False)
     position_ms = Column(BigInteger, default=0, nullable=False)

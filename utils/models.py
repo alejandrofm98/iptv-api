@@ -4,7 +4,6 @@ Modelos Pydantic para IPTV API
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -33,17 +32,17 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=6)
     max_connections: int = Field(default=5, ge=1, le=10)
     role: str = Field(default="user")  # <--- NUEVO
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
 
 
 class UserUpdate(BaseModel):
     """Modelo para actualizar usuario"""
 
-    password: Optional[str] = Field(None, min_length=6)
-    max_connections: Optional[int] = Field(None, ge=1, le=10)
-    is_active: Optional[bool] = None
-    expires_at: Optional[datetime] = None
-    role: Optional[str] = None  # <--- NUEVO
+    password: str | None = Field(None, min_length=6)
+    max_connections: int | None = Field(None, ge=1, le=10)
+    is_active: bool | None = None
+    expires_at: datetime | None = None
+    role: str | None = None  # <--- NUEVO
 
 
 class UserResponse(BaseModel):
@@ -53,7 +52,7 @@ class UserResponse(BaseModel):
     username: str
     max_connections: int
     is_active: bool
-    expires_at: Optional[datetime]
+    expires_at: datetime | None
     created_at: datetime
     active_devices: int = 0
     role: str  # <--- NUEVO
@@ -65,7 +64,7 @@ class UserResponse(BaseModel):
 class UserWithDevices(UserResponse):
     """Usuario con lista de dispositivos"""
 
-    devices: List["DeviceResponse"] = []
+    devices: list["DeviceResponse"] = []
 
 
 # ============================================
@@ -78,9 +77,9 @@ class DeviceResponse(BaseModel):
 
     id: str
     device_id: str
-    device_name: Optional[str]
+    device_name: str | None
     device_type: DeviceType
-    ip_address: Optional[str]
+    ip_address: str | None
     last_activity: datetime
     created_at: datetime
 
@@ -125,8 +124,8 @@ class AuthResult(BaseModel):
     """Resultado de autenticación"""
 
     valid: bool
-    user_id: Optional[str] = None
-    username: Optional[str] = None
+    user_id: str | None = None
+    username: str | None = None
     message: str
     can_connect: bool = False
     current_devices: int = 0
@@ -146,7 +145,7 @@ class PlaylistInfo(BaseModel):
     total_movies: int
     total_series: int
     generated_at: datetime
-    expires_at: Optional[datetime]
+    expires_at: datetime | None
 
 
 # ============================================
@@ -164,7 +163,7 @@ class PaginationParams(BaseModel):
 class PaginatedResponse(BaseModel):
     """Respuesta paginada estándar"""
 
-    items: List[dict]
+    items: list[dict]
     total: int
     page: int
     page_size: int
@@ -198,7 +197,7 @@ class UserStats(BaseModel):
     max_connections: int
     total_streams_today: int
     is_active: bool
-    expires_at: Optional[datetime]
+    expires_at: datetime | None
 
 
 # Actualizar forward references
@@ -218,25 +217,25 @@ class ChannelResolved(BaseModel):
     quality: str
     priority: int
     source_name: str
-    logo: Optional[str] = None
-    stream_url: Optional[str] = None
-    content_type: Optional[str] = None
-    provider_id: Optional[str] = None
+    logo: str | None = None
+    stream_url: str | None = None
+    content_type: str | None = None
+    provider_id: str | None = None
 
 
 class CalendarEvent(BaseModel):
     """Evento del calendario con canales resueltos"""
 
     id: str
-    fecha: Optional[str]
-    hora: Optional[str]
-    competicion: Optional[str]
-    subtitulo_competicion: Optional[str] = None
-    categoria: Optional[str]
-    equipos: Optional[str]
-    imagen_evento: Optional[str] = None
-    canales_original: List[str]
-    canales_resueltos: List[ChannelResolved]
+    fecha: str | None
+    hora: str | None
+    competicion: str | None
+    subtitulo_competicion: str | None = None
+    categoria: str | None
+    equipos: str | None
+    imagen_evento: str | None = None
+    canales_original: list[str]
+    canales_resueltos: list[ChannelResolved]
 
 
 class CalendarDayResponse(BaseModel):
@@ -244,7 +243,7 @@ class CalendarDayResponse(BaseModel):
 
     fecha: str
     total_eventos: int
-    eventos: List[CalendarEvent]
+    eventos: list[CalendarEvent]
 
 
 # ============================================
@@ -256,27 +255,27 @@ class ReplaySource(BaseModel):
     """Fuente individual disponible para un replay"""
 
     label: str
-    token: Optional[str] = None
-    token_enc: Optional[str] = None
-    source_index: Optional[int] = None
-    button_index: Optional[int] = None
-    embed_url: Optional[str] = None
-    web_embed_url: Optional[str] = None
-    provider: Optional[str] = None
-    provider_url: Optional[str] = None
-    provider_access_id: Optional[str] = None
-    provider_video_id: Optional[str] = None
-    provider_playlist_id: Optional[str] = None
-    stream_url: Optional[str] = None
-    stream_format: Optional[str] = None
-    stream_resolved_at: Optional[datetime] = None
+    token: str | None = None
+    token_enc: str | None = None
+    source_index: int | None = None
+    button_index: int | None = None
+    embed_url: str | None = None
+    web_embed_url: str | None = None
+    provider: str | None = None
+    provider_url: str | None = None
+    provider_access_id: str | None = None
+    provider_video_id: str | None = None
+    provider_playlist_id: str | None = None
+    stream_url: str | None = None
+    stream_format: str | None = None
+    stream_resolved_at: datetime | None = None
 
 
 class ReplaySourceGroup(BaseModel):
     """Grupo de fuentes de un replay"""
 
     group: str
-    sources: List[ReplaySource]
+    sources: list[ReplaySource]
 
 
 class ReplayItem(BaseModel):
@@ -285,14 +284,14 @@ class ReplayItem(BaseModel):
     slug: str
     source_site: str
     title: str
-    event_name: Optional[str] = None
-    event_type: Optional[str] = None
-    event_date: Optional[str] = None
+    event_name: str | None = None
+    event_type: str | None = None
+    event_date: str | None = None
     post_url: str
-    featured_image_url: Optional[str] = None
-    description: Optional[str] = None
-    video_sources: List[ReplaySourceGroup] = []
-    match_card: List[str] = []
+    featured_image_url: str | None = None
+    description: str | None = None
+    video_sources: list[ReplaySourceGroup] = []
+    match_card: list[str] = []
 
 
 class ReplayStats(BaseModel):
@@ -312,9 +311,9 @@ class WatchProgressUpsert(BaseModel):
     content_type: str = Field(..., pattern="^(movie|series)$")
     position_ms: int = Field(..., ge=0)
     duration_ms: int = Field(..., ge=0)
-    series_name: Optional[str] = None
-    season_number: Optional[int] = None
-    episode_number: Optional[int] = None
+    series_name: str | None = None
+    season_number: int | None = None
+    episode_number: int | None = None
     title: str = Field("", max_length=255)
     image_url: str = ""
 
@@ -326,9 +325,9 @@ class WatchProgressResponse(BaseModel):
     content_type: str
     position_ms: int
     duration_ms: int
-    series_name: Optional[str] = None
-    season_number: Optional[int] = None
-    episode_number: Optional[int] = None
+    series_name: str | None = None
+    season_number: int | None = None
+    episode_number: int | None = None
     title: str
     image_url: str
     last_watched_at: str
@@ -346,4 +345,4 @@ class ChannelFavoriteResponse(BaseModel):
     user_id: str
     channel_provider_id: str
     provider_id: str
-    created_at: Optional[str] = None
+    created_at: str | None = None

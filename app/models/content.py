@@ -60,18 +60,14 @@ class MovieCatalog(Base):
     group_normalizado = Column(Text, nullable=True)
     logo = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
-    )
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     metadata_row = relationship(
         "MovieMetadata",
         primaryjoin="MovieCatalog.tmdb_id == MovieMetadata.tmdb_id",
         uselist=False,
     )
-    streams = relationship(
-        "MovieStream", back_populates="movie", cascade="all, delete-orphan"
-    )
+    streams = relationship("MovieStream", back_populates="movie", cascade="all, delete-orphan")
 
 
 class MovieStream(Base):

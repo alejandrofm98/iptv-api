@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Dict, Literal, Optional
+from typing import Literal
 
 import utils.constants as CONSTANTS
 from utils.config import get_settings
@@ -13,7 +13,7 @@ ContentType = Literal["full", "live", "movie", "series"]
 class PlaylistServiceV2:
     def __init__(self):
         self.settings = get_settings()
-        self._templates: Dict[str, Optional[str]] = {
+        self._templates: dict[str, str | None] = {
             "full": None,
             "live": None,
             "movie": None,
@@ -28,7 +28,7 @@ class PlaylistServiceV2:
             or os.getenv(CONSTANTS.DOCKER_ENV_FLAG) == CONSTANTS.DOCKER_ENV_VALUE
         )
         if os.getenv(CONSTANTS.M3U_DIR_ENV):
-            return os.getenv(CONSTANTS.M3U_DIR_ENV)
+            return os.getenv(CONSTANTS.M3U_DIR_ENV) or ""
         elif is_docker:
             return CONSTANTS.M3U_DIR_DOCKER
         else:
@@ -54,16 +54,14 @@ class PlaylistServiceV2:
     def reload_template(self):
         self._load_templates()
 
-    def get_playlist_stats(self) -> Dict[str, int]:
+    def get_playlist_stats(self) -> dict[str, int]:
         return {
             "total_channels": 0,
             "total_movies": 0,
             "total_series": 0,
         }
 
-    def generate_m3u(
-        self, username: str, password: str, content_type: ContentType = "full"
-    ) -> str:
+    def generate_m3u(self, username: str, password: str, content_type: ContentType = "full") -> str:
         public_domain = self.settings.public_domain.rstrip("/")
         template = self._templates.get(content_type) or self._templates.get("full")
         if template is None:

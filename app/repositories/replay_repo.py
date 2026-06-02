@@ -1,5 +1,3 @@
-from typing import List, Optional, Tuple
-
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -11,7 +9,7 @@ class ReplayRepository(BaseRepository[Replay]):
     def __init__(self, session: Session):
         super().__init__(Replay, session)
 
-    def get_by_slug(self, slug: str) -> Optional[Replay]:
+    def get_by_slug(self, slug: str) -> Replay | None:
         stmt = select(Replay).where(Replay.slug == slug)
         return self.session.execute(stmt).scalar_one_or_none()
 
@@ -19,8 +17,8 @@ class ReplayRepository(BaseRepository[Replay]):
         self,
         page: int,
         page_size: int,
-        search: Optional[str] = None,
-    ) -> Tuple[List[Replay], int]:
+        search: str | None = None,
+    ) -> tuple[list[Replay], int]:
         filters = []
         if search:
             filters.append(

@@ -61,18 +61,14 @@ class SeriesCatalog(Base):
     group_normalizado = Column(Text, nullable=True)
     logo = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
-    )
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     metadata_row = relationship(
         "SeriesMetadata",
         primaryjoin="SeriesCatalog.tmdb_id == SeriesMetadata.tmdb_id",
         uselist=False,
     )
-    episodes = relationship(
-        "SeriesEpisode", back_populates="catalog", cascade="all, delete-orphan"
-    )
+    episodes = relationship("SeriesEpisode", back_populates="catalog", cascade="all, delete-orphan")
 
 
 class SeriesEpisode(Base):
@@ -92,14 +88,10 @@ class SeriesEpisode(Base):
     still_path = Column(String(255), nullable=True)
     numero = Column(Integer, nullable=True)
 
-    __table_args__ = (
-        UniqueConstraint("catalog_id", "season_number", "episode_number"),
-    )
+    __table_args__ = (UniqueConstraint("catalog_id", "season_number", "episode_number"),)
 
     catalog = relationship("SeriesCatalog", back_populates="episodes")
-    streams = relationship(
-        "SeriesStream", back_populates="episode", cascade="all, delete-orphan"
-    )
+    streams = relationship("SeriesStream", back_populates="episode", cascade="all, delete-orphan")
 
 
 class SeriesStream(Base):

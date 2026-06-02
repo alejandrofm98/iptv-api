@@ -6,7 +6,6 @@ Carga configuración IPTV desde PostgreSQL y variables de entorno locales
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -45,9 +44,7 @@ class Settings:
         )
 
         # ===== JWT Authentication =====
-        self.jwt_secret: str = os.getenv(
-            CONSTANTS.JWT_SECRET_ENV_KEY, CONSTANTS.JWT_SECRET_DEFAULT
-        )
+        self.jwt_secret: str = os.getenv(CONSTANTS.JWT_SECRET_ENV_KEY, CONSTANTS.JWT_SECRET_DEFAULT)
 
         # ===== Servidor =====
         self.session_timeout_minutes: int = CONSTANTS.DEFAULT_SESSION_TIMEOUT_MINUTES
@@ -66,10 +63,10 @@ class Settings:
         self.pg_password = os.getenv("PG_PASSWORD", "")
 
         # ===== IPTV =====
-        self.iptv_user: Optional[str] = None
-        self.iptv_pass: Optional[str] = None
-        self.iptv_base_url: Optional[str] = None
-        self.iptv_source_url: Optional[str] = None
+        self.iptv_user: str | None = None
+        self.iptv_pass: str | None = None
+        self.iptv_base_url: str | None = None
+        self.iptv_source_url: str | None = None
 
         # ===== Estado interno =====
         self._config_loaded: bool = False
@@ -90,9 +87,7 @@ class Settings:
             try:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute("SELECT key, value FROM config")
-                    config = {
-                        r["key"]: r["value"] for r in cur.fetchall() if r.get("key")
-                    }
+                    config = {r["key"]: r["value"] for r in cur.fetchall() if r.get("key")}
             finally:
                 conn.close()
 
@@ -101,14 +96,10 @@ class Settings:
             self.iptv_base_url = config.get(CONSTANTS.IPTV_BASE_URL_KEY)
 
             if CONSTANTS.SESSION_TIMEOUT_KEY in config:
-                self.session_timeout_minutes = int(
-                    config[CONSTANTS.SESSION_TIMEOUT_KEY]
-                )
+                self.session_timeout_minutes = int(config[CONSTANTS.SESSION_TIMEOUT_KEY])
 
             if CONSTANTS.CLEANUP_INTERVAL_KEY in config:
-                self.cleanup_interval_minutes = int(
-                    config[CONSTANTS.CLEANUP_INTERVAL_KEY]
-                )
+                self.cleanup_interval_minutes = int(config[CONSTANTS.CLEANUP_INTERVAL_KEY])
 
             if self.iptv_user and self.iptv_pass and self.iptv_base_url:
                 self.iptv_source_url = (
@@ -156,9 +147,7 @@ class Settings:
         if not self.pg_user:
             errors.append("PG_USER no configurado")
         if not self.pg_password:
-            warnings_list.append(
-                "PG_PASSWORD no configurado (puede estar vacío en local)"
-            )
+            warnings_list.append("PG_PASSWORD no configurado (puede estar vacío en local)")
 
         # IPTV
         if not self.iptv_user:
@@ -170,15 +159,11 @@ class Settings:
 
         # API
         if self.api_secret_key == CONSTANTS.API_SECRET_DEFAULT:
-            warnings_list.append(
-                "API_SECRET_KEY usando valor por defecto (cámbialo en producción)"
-            )
+            warnings_list.append("API_SECRET_KEY usando valor por defecto (cámbialo en producción)")
 
         # JWT
         if self.jwt_secret == CONSTANTS.JWT_SECRET_DEFAULT:
-            warnings_list.append(
-                "JWT_SECRET usando valor por defecto (cámbialo en producción)"
-            )
+            warnings_list.append("JWT_SECRET usando valor por defecto (cámbialo en producción)")
 
         if verbose:
             if errors:
@@ -216,7 +201,7 @@ class Settings:
         )
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Obtiene configuración cacheada (singleton)"""
     return Settings()

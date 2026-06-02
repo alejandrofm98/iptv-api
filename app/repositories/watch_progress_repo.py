@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import and_, delete, desc, select
 from sqlalchemy.orm import Session
@@ -11,9 +11,7 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
     def __init__(self, session: Session):
         super().__init__(WatchProgress, session)
 
-    def get_by_user_and_content(
-        self, user_id: str, content_id: str
-    ) -> Optional[WatchProgress]:
+    def get_by_user_and_content(self, user_id: str, content_id: str) -> WatchProgress | None:
         stmt = select(WatchProgress).where(
             and_(
                 WatchProgress.user_id == user_id,
@@ -22,9 +20,7 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         )
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_continue_watching(
-        self, user_id: str, limit: int = 60
-    ) -> List[WatchProgress]:
+    def get_continue_watching(self, user_id: str, limit: int = 60) -> list[WatchProgress]:
         stmt = (
             select(WatchProgress)
             .where(
@@ -38,7 +34,7 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_watched_items(self, user_id: str, limit: int = 100) -> List[WatchProgress]:
+    def get_watched_items(self, user_id: str, limit: int = 100) -> list[WatchProgress]:
         stmt = (
             select(WatchProgress)
             .where(
@@ -52,9 +48,7 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def upsert(
-        self, user_id: str, content_id: str, data: Dict[str, Any]
-    ) -> WatchProgress:
+    def upsert(self, user_id: str, content_id: str, data: dict[str, Any]) -> WatchProgress:
         existing = self.get_by_user_and_content(user_id, content_id)
         if existing:
             for key, value in data.items():
@@ -66,9 +60,7 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         self.session.flush()
         return wp
 
-    def mark_watched(
-        self, user_id: str, content_id: str, is_watched: bool
-    ) -> Optional[WatchProgress]:
+    def mark_watched(self, user_id: str, content_id: str, is_watched: bool) -> WatchProgress | None:
         wp = self.get_by_user_and_content(user_id, content_id)
         if wp:
             wp.is_watched = is_watched  # type: ignore[assignment]
@@ -86,9 +78,7 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         self.session.flush()
         return result.rowcount > 0  # type: ignore[attr-defined]
 
-    def get_series_last_episode(
-        self, user_id: str, series_name: str
-    ) -> Optional[WatchProgress]:
+    def get_series_last_episode(self, user_id: str, series_name: str) -> WatchProgress | None:
         stmt = (
             select(WatchProgress)
             .where(

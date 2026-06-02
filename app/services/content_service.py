@@ -6,7 +6,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 import requests
@@ -34,7 +34,7 @@ def map_android_type(content_type: str) -> str:
 class ContentServiceV2:
     TABLE_MAP = {"channels": "channels", "replays": "replays"}
 
-    _cache: Dict[str, Tuple[Any, float]] = {}
+    _cache: dict[str, tuple[Any, float]] = {}
     _CACHE_TTL_SECONDS = 300
 
     DEDUP_BUFFER_MULTIPLIER = 2.5
@@ -49,7 +49,7 @@ class ContentServiceV2:
 
     HOME_PAGE_SIZE = 24
 
-    SECTION_PATTERNS: Dict[str, List[Dict[str, Any]]] = {
+    SECTION_PATTERNS: dict[str, list[dict[str, Any]]] = {
         "movies": [
             {"title": "2026 ESTRENOS", "year": 2026},
             {"title": "2025 ESTRENOS", "year": 2025},
@@ -325,7 +325,7 @@ class ContentServiceV2:
         self.settings = get_settings()
 
     @classmethod
-    def _get_cached(cls, key: str) -> Optional[Any]:
+    def _get_cached(cls, key: str) -> Any | None:
         if key in cls._cache:
             value, cached_at = cls._cache[key]
             if time.time() - cached_at < cls._CACHE_TTL_SECONDS:
@@ -380,9 +380,7 @@ class ContentServiceV2:
         return f"{base_url}/{content_type}/{username}/{password}/{stream_id}"
 
     @staticmethod
-    def _interpolate_stream_url_template(
-        stream_url: str, username: str, password: str
-    ) -> str:
+    def _interpolate_stream_url_template(stream_url: str, username: str, password: str) -> str:
         if not stream_url:
             return stream_url
         if username:
@@ -394,37 +392,35 @@ class ContentServiceV2:
     def _build_stream_url(
         self,
         original_url: str,
-        persisted_stream_url: Optional[str],
+        persisted_stream_url: str | None,
         username: str,
         password: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         if persisted_stream_url:
-            return self._interpolate_stream_url_template(
-                persisted_stream_url, username, password
-            )
+            return self._interpolate_stream_url_template(persisted_stream_url, username, password)
         if not original_url or not username or not password:
             return None
-        stream_id, extension, content_type_detected = self._extract_stream_id(
-            original_url
-        )
+        stream_id, extension, content_type_detected = self._extract_stream_id(original_url)
         if not stream_id:
             return None
         base_url = self._https_base_url
         if content_type_detected == "live":
             return f"{base_url}/{username}/{password}/{stream_id}"
         if extension:
-            return f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}.{extension}"
+            return (
+                f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}.{extension}"
+            )
         return f"{base_url}/{content_type_detected}/{username}/{password}/{stream_id}"
 
     @staticmethod
-    def _is_placeholder_logo(url: Optional[str]) -> bool:
+    def _is_placeholder_logo(url: str | None) -> bool:
         if not url:
             return True
         lower_url = url.lower()
         return "placeholder" in lower_url or "via.placeholder.com" in lower_url
 
     @classmethod
-    def _build_tmdb_image_url(cls, path: Optional[str], size: str = "w500") -> str:
+    def _build_tmdb_image_url(cls, path: str | None, size: str = "w500") -> str:
         if not path:
             return ""
         if path.startswith("http://") or path.startswith("https://"):
@@ -433,7 +429,7 @@ class ContentServiceV2:
             path = f"/{path}"
         return f"{cls.TMDB_IMAGE_BASE_URL}/{size}{path}"
 
-    def _select_catalog_image_url(self, item: Dict[str, Any], content_type: str) -> str:
+    def _select_catalog_image_url(self, item: dict[str, Any], content_type: str) -> str:
         if content_type in ("movies", "series"):
             tmdb_url = self._build_tmdb_image_url(item.get("poster_path"))
             if tmdb_url:
@@ -450,11 +446,11 @@ class ContentServiceV2:
 
     def _parse_content_item(
         self,
-        row: Dict[str, Any],
+        row: dict[str, Any],
         content_type: str,
         username: str = "",
         password: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         original_url = row.get("url") or ""
         persisted_stream_url = row.get("stream_url") or None
         if persisted_stream_url == "":
@@ -462,9 +458,7 @@ class ContentServiceV2:
         provider_id = row.get("provider_id") or None
         if provider_id:
             stream_id = str(provider_id)
-            url_content_type = (
-                "live" if content_type == "channels" else content_type.rstrip("s")
-            )
+            url_content_type = "live" if content_type == "channels" else content_type.rstrip("s")
         else:
             extracted_id, _ext, url_content_type = self._extract_stream_id(original_url)
             stream_id = extracted_id or ""
@@ -482,16 +476,16 @@ class ContentServiceV2:
                     ext = original_url.split("/")[-1].rsplit(".", 1)[-1]
                 else:
                     ext = "ts"
-                stream_url = f"{base_url}/{url_content_type}/{username}/{password}/{stream_id}.{ext}"
+                stream_url = (
+                    f"{base_url}/{url_content_type}/{username}/{password}/{stream_id}.{ext}"
+                )
         else:
             stream_url = None
         base_item = {
             "id": internal_id,
             "num": row.get("numero"),
             "nombre": row.get("nombre") or "",
-            "nombre_normalizado": row.get("nombre_normalizado")
-            or row.get("nombre")
-            or "",
+            "nombre_normalizado": row.get("nombre_normalizado") or row.get("nombre") or "",
             "logo": row.get("logo") or "",
             "grupo": row.get("grupo") or "",
             "grupo_normalizado": row.get("grupo_normalizado") or row.get("grupo") or "",
@@ -516,9 +510,7 @@ class ContentServiceV2:
             base_item["rating"] = row.get("vote_average")
             base_item["vote_count"] = row.get("vote_count")
             base_item["genres"] = row.get("genres")
-            base_item["poster_path"] = row.get("tmdb_poster_path") or row.get(
-                "poster_path"
-            )
+            base_item["poster_path"] = row.get("tmdb_poster_path") or row.get("poster_path")
             base_item["backdrop_path"] = row.get("backdrop_path")
             base_item["runtime_minutes"] = row.get("runtime_minutes")
             base_item["tagline"] = row.get("tagline")
@@ -534,11 +526,11 @@ class ContentServiceV2:
 
     def _to_android_catalog_item(
         self,
-        row: Dict[str, Any],
+        row: dict[str, Any],
         content_type: str,
         username: str = "",
         password: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         parsed = self._parse_content_item(row, content_type, username, password)
         original_title = parsed.get("nombre") or ""
         original_group = parsed.get("grupo") or ""
@@ -565,20 +557,12 @@ class ContentServiceV2:
             "channel_number": parsed.get("num") if content_type == "channels" else None,
             "language_label": parsed.get("country"),
             "series_name": (
-                (
-                    parsed.get("serie_name")
-                    or parsed.get("nombre_normalizado")
-                    or original_title
-                )
+                (parsed.get("serie_name") or parsed.get("nombre_normalizado") or original_title)
                 if content_type == "series"
                 else None
             ),
-            "season_number": (
-                parsed.get("temporada") if content_type == "series" else None
-            ),
-            "episode_number": (
-                parsed.get("episodio") if content_type == "series" else None
-            ),
+            "season_number": (parsed.get("temporada") if content_type == "series" else None),
+            "episode_number": (parsed.get("episodio") if content_type == "series" else None),
             "stream_url": parsed.get("stream_url") or "",
         }
         if content_type in ("movies", "series"):
@@ -604,8 +588,8 @@ class ContentServiceV2:
         return result
 
     def _to_android_series_from_catalog(
-        self, row: Dict[str, Any], username: str = "", password: str = ""
-    ) -> Dict[str, Any]:
+        self, row: dict[str, Any], username: str = "", password: str = ""
+    ) -> dict[str, Any]:
         serie_name = row.get("title", "")
         normalized_title = serie_name.lower().strip() if serie_name else ""
         original_group = row.get("group_normalizado") or ""
@@ -654,8 +638,8 @@ class ContentServiceV2:
         }
 
     def _to_android_movie_from_catalog(
-        self, row: Dict[str, Any], username: str = "", password: str = ""
-    ) -> Dict[str, Any]:
+        self, row: dict[str, Any], username: str = "", password: str = ""
+    ) -> dict[str, Any]:
         stream_options = row.get("stream_options") or []
         first_stream = stream_options[0] if stream_options else {}
         overview = row.get("overview_es") or row.get("overview_en") or ""
@@ -680,9 +664,7 @@ class ContentServiceV2:
             "series_name": None,
             "season_number": None,
             "episode_number": None,
-            "stream_url": ContentServiceV2._resolve_stream_url(
-                stream_options, username, password
-            ),
+            "stream_url": ContentServiceV2._resolve_stream_url(stream_options, username, password),
             "stream_options": ContentServiceV2._resolve_stream_options(
                 stream_options, username, password
             ),
@@ -707,8 +689,8 @@ class ContentServiceV2:
         }
 
     def _to_android_series_group_item(
-        self, row: Dict[str, Any], username: str = "", password: str = ""
-    ) -> Dict[str, Any]:
+        self, row: dict[str, Any], username: str = "", password: str = ""
+    ) -> dict[str, Any]:
         catalog_title = row.get("title", "")
         tmdb_title = row.get("tmdb_title") or ""
         serie_name = tmdb_title or catalog_title
@@ -736,8 +718,7 @@ class ContentServiceV2:
             "image_url": self._select_catalog_image_url(
                 {
                     "logo": row.get("logo") or "",
-                    "poster_path": row.get("tmdb_poster_path")
-                    or row.get("poster_path"),
+                    "poster_path": row.get("tmdb_poster_path") or row.get("poster_path"),
                 },
                 "series",
             ),
@@ -773,12 +754,12 @@ class ContentServiceV2:
         self,
         page: int,
         page_size: int,
-        group: Optional[str] = None,
-        upper_group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        year: Optional[int] = None,
-    ) -> Tuple[List[dict], int]:
+        group: str | None = None,
+        upper_group: str | None = None,
+        country: str | None = None,
+        search: str | None = None,
+        year: int | None = None,
+    ) -> tuple[list[dict], int]:
         return self.content_repo.get_movies_catalog_page(
             page=page,
             page_size=page_size,
@@ -793,11 +774,11 @@ class ContentServiceV2:
         self,
         page: int,
         page_size: int,
-        group: Optional[str] = None,
-        upper_group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        year: Optional[int] = None,
+        group: str | None = None,
+        upper_group: str | None = None,
+        country: str | None = None,
+        search: str | None = None,
+        year: int | None = None,
     ) -> dict:
         return self.series_repo.get_distinct_series_groups_catalog(
             page=page,
@@ -817,8 +798,8 @@ class ContentServiceV2:
         page_size: int,
         username: str,
         password: str,
-        country: Optional[str],
-    ) -> Tuple[List[dict], int]:
+        country: str | None,
+    ) -> tuple[list[dict], int]:
         use_upper_group = "group" in gp
         group_filter = gp.get("pattern") if not use_upper_group else None
         upper_group = gp.get("group") if use_upper_group else None
@@ -837,8 +818,7 @@ class ContentServiceV2:
             raw_items = result.get("items") or []
             total = result.get("total", 0)
             items = [
-                self._to_android_series_group_item(row, username, password)
-                for row in raw_items
+                self._to_android_series_group_item(row, username, password) for row in raw_items
             ]
             return items, total
         elif content_type == "movies":
@@ -866,8 +846,8 @@ class ContentServiceV2:
         page_size: int,
         username: str,
         password: str,
-        country: Optional[str],
-    ) -> List[dict]:
+        country: str | None,
+    ) -> list[dict]:
         sections = []
         for gp in self.SECTION_PATTERNS.get(content_type, []):
             items, total = self._fetch_section_page(
@@ -895,10 +875,8 @@ class ContentServiceV2:
                 )
         return sections
 
-    def _resolve_dailymotion_stream(self, provider_access_id: str) -> Optional[dict]:
-        metadata_url = (
-            f"https://www.dailymotion.com/player/metadata/video/{provider_access_id}"
-        )
+    def _resolve_dailymotion_stream(self, provider_access_id: str) -> dict | None:
+        metadata_url = f"https://www.dailymotion.com/player/metadata/video/{provider_access_id}"
         try:
             response = requests.get(
                 metadata_url,
@@ -922,8 +900,8 @@ class ContentServiceV2:
 
     @staticmethod
     def _pick_best_dailymotion_quality(
-        quality_sources: Dict[str, List[dict]],
-    ) -> Optional[dict]:
+        quality_sources: dict[str, list[dict]],
+    ) -> dict | None:
         numeric_sources = []
         for label, sources in quality_sources.items():
             if str(label).isdigit() and sources:
@@ -956,7 +934,7 @@ class ContentServiceV2:
         return parsed.netloc or "unknown"
 
     @staticmethod
-    def _extract_dailymotion_access_id(url: str) -> Optional[str]:
+    def _extract_dailymotion_access_id(url: str) -> str | None:
         if not url:
             return None
         patterns = [
@@ -970,13 +948,13 @@ class ContentServiceV2:
                 return match.group(1)
         return None
 
-    def get_movie(self, movie_id: str) -> Optional[dict]:
+    def get_movie(self, movie_id: str) -> dict | None:
         return self.content_repo.get_movie_with_metadata(movie_id)
 
-    def get_series(self, series_id: str) -> Optional[dict]:
+    def get_series(self, series_id: str) -> dict | None:
         return self.series_repo.get_with_metadata(series_id)
 
-    def get_content_item(self, content_type: str, item_id: str) -> Optional[dict]:
+    def get_content_item(self, content_type: str, item_id: str) -> dict | None:
         if content_type == "movie":
             return self.get_movie(item_id)
         elif content_type == "series":
@@ -997,40 +975,30 @@ class ContentServiceV2:
         self,
         page: int,
         page_size: int,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        year: Optional[int] = None,
-    ) -> Tuple[List[dict], int]:
-        return self.content_repo.get_movies_paginated(
-            page, page_size, country, search, year
-        )
+        country: str | None = None,
+        search: str | None = None,
+        year: int | None = None,
+    ) -> tuple[list[dict], int]:
+        return self.content_repo.get_movies_paginated(page, page_size, country, search, year)
 
     @staticmethod
-    def _resolve_stream_url(
-        stream_options: List[dict], username: str, password: str
-    ) -> str:
+    def _resolve_stream_url(stream_options: list[dict], username: str, password: str) -> str:
         if not stream_options:
             return ""
         url = stream_options[0].get("url", "")
         if username and password:
-            url = url.replace("{{USERNAME}}", username).replace(
-                "{{PASSWORD}}", password
-            )
+            url = url.replace("{{USERNAME}}", username).replace("{{PASSWORD}}", password)
         return url
 
     @staticmethod
-    def _resolve_stream_options(
-        stream_options: list, username: str, password: str
-    ) -> list:
+    def _resolve_stream_options(stream_options: list, username: str, password: str) -> list:
         if not stream_options:
             return []
         resolved = []
         for opt in stream_options:
             url = opt.get("url", "")
             if username and password:
-                url = url.replace("{{USERNAME}}", username).replace(
-                    "{{PASSWORD}}", password
-                )
+                url = url.replace("{{USERNAME}}", username).replace("{{PASSWORD}}", password)
             resolved.append(
                 {
                     "url": url,
@@ -1068,9 +1036,7 @@ class ContentServiceV2:
             "series_key": series_catalog_id,
             "season_number": row.get("season_number"),
             "episode_number": row.get("episode_number"),
-            "stream_url": ContentServiceV2._resolve_stream_url(
-                stream_options, username, password
-            ),
+            "stream_url": ContentServiceV2._resolve_stream_url(stream_options, username, password),
             "stream_options": ContentServiceV2._resolve_stream_options(
                 stream_options, username, password
             ),
@@ -1083,8 +1049,8 @@ class ContentServiceV2:
         self,
         page: int = 1,
         page_size: int = 24,
-        event_type: Optional[str] = None,
-        search: Optional[str] = None,
+        event_type: str | None = None,
+        search: str | None = None,
     ) -> dict:
         from sqlalchemy import and_, desc, func, or_, select
 
@@ -1117,7 +1083,7 @@ class ContentServiceV2:
         items = [self._serialize_replay(r) for r in rows]
         return self._build_paginated_payload(items, total, page, page_size)
 
-    def get_replay(self, slug: str) -> Optional[dict]:
+    def get_replay(self, slug: str) -> dict | None:
         replay = self.replay_repo.get_by_slug(slug)
         if not replay:
             return None
@@ -1151,7 +1117,7 @@ class ContentServiceV2:
         total: int,
         page: int,
         page_size: int,
-        extra: Optional[dict] = None,
+        extra: dict | None = None,
     ) -> dict:
         pages = (total + page_size - 1) // page_size if total else 0
         payload = {
@@ -1172,13 +1138,13 @@ class ContentServiceV2:
         serie_name: str,
         username: str = "",
         password: str = "",
-    ) -> List[dict]:
+    ) -> list[dict]:
         catalog = self.series_repo.get_by_title(serie_name)
         if not catalog:
             return []
         catalog_id = str(catalog["id"])
         series_title = catalog.get("title") or catalog.get("tmdb_title") or serie_name
-        items, total, seasons = self.series_repo.get_episodes_with_streams(
+        items, _total, _seasons = self.series_repo.get_episodes_with_streams(
             catalog_id, page=1, page_size=1000
         )
         return [
@@ -1204,9 +1170,7 @@ class ContentServiceV2:
         )
         return self._build_paginated_payload(
             [
-                self._to_android_episode(
-                    row, series_title, catalog_id, username, password
-                )
+                self._to_android_episode(row, series_title, catalog_id, username, password)
                 for row in (items or [])
             ],
             total or 0,
@@ -1242,7 +1206,7 @@ class ContentServiceV2:
         return self._get_all_channels_from_db()
 
     @staticmethod
-    def _get_static_json_path(content_type: str) -> Optional[str]:
+    def _get_static_json_path(content_type: str) -> str | None:
         base_dirs = [
             "/app/data/json",
             os.path.join(
@@ -1268,7 +1232,7 @@ class ContentServiceV2:
                 return path
         return None
 
-    def _load_static_json(self, content_type: str) -> Optional[dict]:
+    def _load_static_json(self, content_type: str) -> dict | None:
         json_path = self._get_static_json_path(content_type)
         if not json_path or not os.path.exists(json_path):
             return None
@@ -1355,10 +1319,10 @@ class ContentServiceV2:
         content_type: str,
         page: int,
         page_size: int,
-        group: Optional[str] = None,
-        country: Optional[str] = None,
-        search: Optional[str] = None,
-        year: Optional[int] = None,
+        group: str | None = None,
+        country: str | None = None,
+        search: str | None = None,
+        year: int | None = None,
         username: str = "",
         password: str = "",
     ) -> dict:
@@ -1374,23 +1338,19 @@ class ContentServiceV2:
             items = result.get("items") or []
             total = result.get("total", 0)
             parsed_items = [
-                self._to_android_series_from_catalog(row, username, password)
-                for row in items
+                self._to_android_series_from_catalog(row, username, password) for row in items
             ]
             return self._build_paginated_payload(parsed_items, total, page, page_size)
         if content_type in ("movies", "channels"):
             if content_type == "movies":
-                rows, total = self.get_movies_paginated(
-                    page, page_size, country, search, year
-                )
+                rows, total = self.get_movies_paginated(page, page_size, country, search, year)
             else:
                 channels, total = self.get_channels_paginated(
                     page, page_size, country, group, search
                 )
                 rows = [dict(c) for c in channels]
             android_items = [
-                self._to_android_catalog_item(row, content_type, username, password)
-                for row in rows
+                self._to_android_catalog_item(row, content_type, username, password) for row in rows
             ]
             return self._build_paginated_payload(android_items, total, page, page_size)
         return self._build_paginated_payload([], 0, page, page_size)
@@ -1403,12 +1363,10 @@ class ContentServiceV2:
         page_size: int = 24,
         username: str = "",
         password: str = "",
-        country: Optional[str] = None,
-    ) -> Optional[dict]:
+        country: str | None = None,
+    ) -> dict | None:
         patterns = self.SECTION_PATTERNS.get(content_type, [])
-        gp = next(
-            (p for p in patterns if p["title"].upper() == section_title.upper()), None
-        )
+        gp = next((p for p in patterns if p["title"].upper() == section_title.upper()), None)
         if not gp:
             return None
         items, total = self._fetch_section_page(
@@ -1436,7 +1394,7 @@ class ContentServiceV2:
     def get_home_catalog_new(
         self,
         username: str = "",
-        country: Optional[str] = None,
+        country: str | None = None,
         password: str = "",
         page_size: int = 24,
     ) -> dict:
@@ -1479,13 +1437,12 @@ class ContentServiceV2:
         requested_types = [ct for ct in types if ct in ("channels", "movies", "series")]
         if not requested_types:
             requested_types = ["channels", "movies", "series"]
-        merged_items: List[dict] = []
+        merged_items: list[dict] = []
         for content_type in requested_types:
             if content_type == "movies":
                 rows, _ = self._get_movies_catalog_page_raw(1, 1000, search=query)
                 merged_items.extend(
-                    self._to_android_movie_from_catalog(row, username, password)
-                    for row in rows
+                    self._to_android_movie_from_catalog(row, username, password) for row in rows
                 )
             elif content_type == "series":
                 result = self._get_distinct_series_groups_catalog_raw(
@@ -1538,7 +1495,7 @@ class ContentServiceV2:
         slug: str,
         source_index: int,
         button_index: int,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         replay = self.get_replay(slug)
         if not replay:
             return None
@@ -1562,9 +1519,7 @@ class ContentServiceV2:
                     if (
                         provider == "dailymotion" or dailymotion_access_id
                     ) and dailymotion_access_id:
-                        refreshed = self._resolve_dailymotion_stream(
-                            str(dailymotion_access_id)
-                        )
+                        refreshed = self._resolve_dailymotion_stream(str(dailymotion_access_id))
                         if refreshed:
                             return refreshed
                     direct_url = provider_url or stream_url
@@ -1573,8 +1528,7 @@ class ContentServiceV2:
                             "stream_url": direct_url,
                             "stream_format": stream_format
                             or self._guess_stream_format(str(direct_url)),
-                            "provider": provider
-                            or self._provider_from_url(str(direct_url)),
+                            "provider": provider or self._provider_from_url(str(direct_url)),
                         }
                     return None
         return None
@@ -1593,12 +1547,10 @@ class ContentServiceV2:
         extra = kwargs.get("extra")
         return self._build_paginated_payload(items, total, page, page_size, extra)
 
-    def get_groups(
-        self, content_type: str, country_list: Optional[List[str]] = None
-    ) -> List[str]:
+    def get_groups(self, content_type: str, country_list: list[str] | None = None) -> list[str]:
         return self.content_repo.get_distinct_groups(content_type, country_list)
 
-    def get_countries(self, content_type: str) -> List[str]:
+    def get_countries(self, content_type: str) -> list[str]:
         return self.content_repo.get_distinct_countries(content_type)
 
     def get_content_stats(self, content_type: str) -> dict:
@@ -1609,8 +1561,8 @@ class ContentServiceV2:
             "movies": ("total_movies", "movies_generated_at"),
             "series": ("total_series", "series_generated_at"),
         }
-        total_key, gen_key = metadata_map.get(content_type, (None, None))
-        if total_key:
+        total_key, gen_key = metadata_map.get(content_type or "", (None, None))
+        if total_key and gen_key:
             total_val = self.sync_meta_repo.get_field(total_key)
             gen_val = self.sync_meta_repo.get_field(gen_key)
             if total_val is not None:
@@ -1635,21 +1587,12 @@ class ContentServiceV2:
         if model:
             from sqlalchemy import select
 
-            total = (
-                self.session.execute(
-                    select(sa_func.count()).select_from(model)
-                ).scalar()
-                or 0
-            )
+            total = self.session.execute(select(sa_func.count()).select_from(model)).scalar() or 0
         from datetime import datetime
 
-        return {
-            content_type: {"total": total, "generatedAt": datetime.utcnow().isoformat()}
-        }
+        return {content_type: {"total": total, "generatedAt": datetime.utcnow().isoformat()}}
 
-    def get_catalog_filters(
-        self, content_type: str, country: Optional[str] = None
-    ) -> dict:
+    def get_catalog_filters(self, content_type: str, country: str | None = None) -> dict:
         countries = self.get_countries(content_type)
         groups = self.get_groups(content_type, [country] if country else None)
         return {"countries": countries, "groups": groups}
@@ -1658,13 +1601,11 @@ class ContentServiceV2:
         self,
         page: int,
         page_size: int,
-        country: Optional[str] = None,
-        group: Optional[str] = None,
-        search: Optional[str] = None,
-    ) -> Tuple[List[dict], int]:
-        channels, total = self.channel_repo.get_paginated(
-            page, page_size, country, group, search
-        )
+        country: str | None = None,
+        group: str | None = None,
+        search: str | None = None,
+    ) -> tuple[list[dict], int]:
+        channels, total = self.channel_repo.get_paginated(page, page_size, country, group, search)
         return [
             {
                 "id": str(c.id),

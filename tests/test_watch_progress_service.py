@@ -1,25 +1,6 @@
-import sys
-import types
 from unittest.mock import MagicMock
 
-
-psycopg2_module = types.ModuleType("psycopg2")
-psycopg2_module.paramstyle = "pyformat"
-psycopg2_module.apilevel = "2.0"
-psycopg2_module.threadsafety = 2
-psycopg2_module.__version__ = "2.9.0"
-psycopg2_pool_module = types.ModuleType("psycopg2.pool")
-psycopg2_pool_module.SimpleConnectionPool = object
-psycopg2_extras_module = types.ModuleType("psycopg2.extras")
-psycopg2_extras_module.RealDictCursor = object
-psycopg2_extras_module.execute_batch = lambda *args, **kwargs: None
-psycopg2_module.pool = psycopg2_pool_module
-
-sys.modules.setdefault("psycopg2", psycopg2_module)
-sys.modules.setdefault("psycopg2.pool", psycopg2_pool_module)
-sys.modules.setdefault("psycopg2.extras", psycopg2_extras_module)
-
-from app.services.watch_progress_service import WatchProgressServiceV2  # noqa: E402
+from app.services.watch_progress_service import WatchProgressServiceV2
 
 
 def make_progress_row(
@@ -52,7 +33,9 @@ def make_progress_row(
     return row
 
 
-def make_service_with_mocks(progress_row, movie_meta=None, series_meta=None) -> WatchProgressServiceV2:
+def make_service_with_mocks(
+    progress_row, movie_meta=None, series_meta=None
+) -> WatchProgressServiceV2:
     service = WatchProgressServiceV2(MagicMock())
     service.wp_repo.get_continue_watching = MagicMock(return_value=[progress_row])
     service.content_repo.get_movie_with_metadata = MagicMock(return_value=movie_meta)

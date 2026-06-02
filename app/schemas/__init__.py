@@ -15,9 +15,19 @@ from app.schemas.watch_progress import (
 )
 
 __all__ = [
-    "ChannelFavoriteResponse", "ChannelItem", "ContinueWatchingItem",
-    "MovieCatalogItem", "MovieWithMetadata", "PaginatedResponse",
-    "PaginationParams", "SeriesCatalogItem", "SeriesEpisodeItem",
-    "SeriesWithMetadata", "UserCreate", "UserResponse", "UserUpdate",
-    "WatchProgressResponse", "WatchProgressUpsert",
+    "ChannelFavoriteResponse",
+    "ChannelItem",
+    "ContinueWatchingItem",
+    "MovieCatalogItem",
+    "MovieWithMetadata",
+    "PaginatedResponse",
+    "PaginationParams",
+    "SeriesCatalogItem",
+    "SeriesEpisodeItem",
+    "SeriesWithMetadata",
+    "UserCreate",
+    "UserResponse",
+    "UserUpdate",
+    "WatchProgressResponse",
+    "WatchProgressUpsert",
 ]

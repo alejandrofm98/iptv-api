@@ -1,5 +1,3 @@
-from typing import List, Optional, Tuple
-
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
@@ -11,24 +9,26 @@ class ChannelRepository(BaseRepository[Channel]):
     def __init__(self, session: Session):
         super().__init__(Channel, session)
 
-    def get_by_provider_id(self, provider_id: str) -> Optional[Channel]:
+    def get_by_provider_id(self, provider_id: str) -> Channel | None:
         stmt = select(Channel).where(Channel.provider_id == provider_id).limit(1)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def get_all(self) -> List[Channel]:
+    def get_all(self) -> list[Channel]:
         stmt = select(Channel).order_by(Channel.nombre)
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_by_provider_ids(self, provider_ids: List[str]) -> List[Channel]:
-        stmt = select(Channel).where(Channel.provider_id.cast(str).in_(provider_ids))
+    def get_by_provider_ids(self, provider_ids: list[str]) -> list[Channel]:
+        from sqlalchemy import String
+
+        stmt = select(Channel).where(Channel.provider_id.cast(String).in_(provider_ids))
         return list(self.session.execute(stmt).scalars().all())
 
-    def get_distinct_groups(self) -> List[str]:
+    def get_distinct_groups(self) -> list[str]:
         stmt = (
             select(
-                func.distinct(
-                    func.coalesce(Channel.grupo_normalizado, Channel.grupo)
-                ).label("grupo")
+                func.distinct(func.coalesce(Channel.grupo_normalizado, Channel.grupo)).label(
+                    "grupo"
+                )
             )
             .where(
                 and_(
@@ -40,7 +40,7 @@ class ChannelRepository(BaseRepository[Channel]):
         )
         return [r[0] for r in self.session.execute(stmt).all()]
 
-    def get_distinct_countries(self) -> List[str]:
+    def get_distinct_countries(self) -> list[str]:
         stmt = (
             select(Channel.country)
             .where(
@@ -58,10 +58,10 @@ class ChannelRepository(BaseRepository[Channel]):
         self,
         page: int,
         page_size: int,
-        country: Optional[str] = None,
-        group: Optional[str] = None,
-        search: Optional[str] = None,
-    ) -> Tuple[List[Channel], int]:
+        country: str | None = None,
+        group: str | None = None,
+        search: str | None = None,
+    ) -> tuple[list[Channel], int]:
         filters = []
         if country:
             filters.append(Channel.country == country)
@@ -89,9 +89,7 @@ class ChannelRepository(BaseRepository[Channel]):
         if filters:
             data_stmt = data_stmt.where(and_(*filters))
         data_stmt = (
-            data_stmt.order_by(Channel.numero)
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+            data_stmt.order_by(Channel.numero).offset((page - 1) * page_size).limit(page_size)
         )
 
         channels = list(self.session.execute(data_stmt).scalars().all())

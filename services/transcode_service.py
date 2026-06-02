@@ -7,20 +7,20 @@ Arquitectura:
 - hls.js los consume directamente
 - Limpieza automática de sesiones inactivas cada 2 minutos
 """
+
 import asyncio
-import shutil
-import os
-import time
 import logging
-from typing import Optional, Dict
+import os
+import shutil
+import time
 
 logger = logging.getLogger(__name__)
 
 HLS_BASE_DIR = "/tmp/hls"
-SEGMENT_DURATION = 4        # segundos por segmento
-HLS_LIST_SIZE = 6           # segmentos en ventana deslizante
-SESSION_TIMEOUT = 120       # segundos sin actividad para limpiar sesión
-PLAYLIST_READY_TIMEOUT = 15 # segundos esperando el primer playlist
+SEGMENT_DURATION = 4  # segundos por segmento
+HLS_LIST_SIZE = 6  # segmentos en ventana deslizante
+SESSION_TIMEOUT = 120  # segundos sin actividad para limpiar sesión
+PLAYLIST_READY_TIMEOUT = 15  # segundos esperando el primer playlist
 FFMPEG_START_MAX_ATTEMPTS = 3
 FFMPEG_RETRY_DELAY = 1.0
 CHROMECAST_MIN_SEGMENTS = 3
@@ -36,7 +36,7 @@ class HlsSession:
         url: str,
         output_dir: str,
         profile: str = "default",
-        cache_key: Optional[str] = None
+        cache_key: str | None = None,
     ):
         self.session_id = session_id
         self.url = url
@@ -44,7 +44,7 @@ class HlsSession:
         self.profile = profile
         self.cache_key = cache_key or session_id
         self.playlist_path = os.path.join(output_dir, "playlist.m3u8")
-        self.process: Optional[asyncio.subprocess.Process] = None
+        self.process: asyncio.subprocess.Process | None = None
         self.created_at = time.time()
         self.last_accessed = time.time()
 
@@ -88,13 +88,14 @@ class TranscodeService:
     """
 
     # Mantenidos por compatibilidad con código anterior
-    _codec_cache: Dict = {}
+    _codec_cache: dict = {}
     _CODEC_CACHE_TTL: float = 3600.0
-    UNSUPPORTED_CODECS = {'eac3', 'ac3', 'truehd', 'dts', 'flac'}
+    UNSUPPORTED_CODECS = {"eac3", "ac3", "truehd", "dts", "flac"}
     _known_transcode_urls: set = set()
+    _background_tasks: set[asyncio.Task] = set()  # type: ignore[type-arg]
 
     def __init__(self):
-        self._sessions: Dict[str, HlsSession] = {}
+        self._sessions: dict[str, HlsSession] = {}
         os.makedirs(HLS_BASE_DIR, exist_ok=True)
 
     @staticmethod
@@ -110,11 +111,7 @@ class TranscodeService:
         return 1
 
     async def get_or_create_session(
-        self,
-        username: str,
-        stream_id: str,
-        original_url: str,
-        profile: str = "default"
+        self, username: str, stream_id: str, original_url: str, profile: str = "default"
     ) -> HlsSession:
         """
         Devuelve sesión activa existente para este usuario+stream, o crea una nueva.
@@ -123,7 +120,11 @@ class TranscodeService:
         session_cache_key = f"{username}:{stream_id}:{profile}"
         for sid, session in list(self._sessions.items()):
             if session.cache_key == session_cache_key:
-                if not session.is_expired() and session.process and session.process.returncode is None:
+                if (
+                    not session.is_expired()
+                    and session.process
+                    and session.process.returncode is None
+                ):
                     session.touch()
                     return session
                 else:
@@ -141,7 +142,7 @@ class TranscodeService:
             url=original_url,
             output_dir=output_dir,
             profile=profile,
-            cache_key=session_cache_key
+            cache_key=session_cache_key,
         )
         self._sessions[session_id] = session
 
@@ -154,90 +155,139 @@ class TranscodeService:
 
         cmd = [
             "ffmpeg",
-            "-loglevel", "warning",
-            "-fflags", "+genpts",
-            "-avoid_negative_ts", "make_zero",
+            "-loglevel",
+            "warning",
+            "-fflags",
+            "+genpts",
+            "-avoid_negative_ts",
+            "make_zero",
             "-re",
-            "-i", session.url
+            "-i",
+            session.url,
         ]
 
         if session.profile == "chromecast":
-            cmd.extend([
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-tune", "zerolatency",
-                "-vf",
-                "scale=w=1280:h=720:force_original_aspect_ratio=decrease",
-                "-r", "25",
-                "-profile:v", "main",
-                "-level", "4.1",
-                "-pix_fmt", "yuv420p",
-                "-b:v", "3000k",
-                "-maxrate", "3000k",
-                "-bufsize", "6000k",
-                "-g", "100",
-                "-keyint_min", "100",
-                "-sc_threshold", "0",
-                "-force_key_frames", f"expr:gte(t,n_forced*{SEGMENT_DURATION})",
-                "-c:a", "aac",
-                "-ar", "48000",
-                "-ac", "2",
-                "-b:a", "128k"
-            ])
+            cmd.extend(
+                [
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-tune",
+                    "zerolatency",
+                    "-vf",
+                    "scale=w=1280:h=720:force_original_aspect_ratio=decrease",
+                    "-r",
+                    "25",
+                    "-profile:v",
+                    "main",
+                    "-level",
+                    "4.1",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-b:v",
+                    "3000k",
+                    "-maxrate",
+                    "3000k",
+                    "-bufsize",
+                    "6000k",
+                    "-g",
+                    "100",
+                    "-keyint_min",
+                    "100",
+                    "-sc_threshold",
+                    "0",
+                    "-force_key_frames",
+                    f"expr:gte(t,n_forced*{SEGMENT_DURATION})",
+                    "-c:a",
+                    "aac",
+                    "-ar",
+                    "48000",
+                    "-ac",
+                    "2",
+                    "-b:a",
+                    "128k",
+                ]
+            )
         elif session.profile == "web":
-            cmd.extend([
-                "-map", "0:v:0",
-                "-map", "0:a:0?",
-                "-sn",
-                "-dn",
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-tune", "zerolatency",
-                "-vf",
-                "scale=w=1280:h=720:force_original_aspect_ratio=decrease",
-                "-r", "25",
-                "-profile:v", "main",
-                "-pix_fmt", "yuv420p",
-                "-crf", "21",
-                "-maxrate", "8000k",
-                "-bufsize", "16000k",
-                "-g", "100",
-                "-keyint_min", "100",
-                "-sc_threshold", "0",
-                "-force_key_frames", f"expr:gte(t,n_forced*{SEGMENT_DURATION})",
-                "-c:a", "aac",
-                "-ar", "48000",
-                "-ac", "2",
-                "-b:a", "128k"
-            ])
+            cmd.extend(
+                [
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0?",
+                    "-sn",
+                    "-dn",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-tune",
+                    "zerolatency",
+                    "-vf",
+                    "scale=w=1280:h=720:force_original_aspect_ratio=decrease",
+                    "-r",
+                    "25",
+                    "-profile:v",
+                    "main",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-crf",
+                    "21",
+                    "-maxrate",
+                    "8000k",
+                    "-bufsize",
+                    "16000k",
+                    "-g",
+                    "100",
+                    "-keyint_min",
+                    "100",
+                    "-sc_threshold",
+                    "0",
+                    "-force_key_frames",
+                    f"expr:gte(t,n_forced*{SEGMENT_DURATION})",
+                    "-c:a",
+                    "aac",
+                    "-ar",
+                    "48000",
+                    "-ac",
+                    "2",
+                    "-b:a",
+                    "128k",
+                ]
+            )
         else:
-            cmd.extend([
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-b:a", "128k"
-            ])
+            cmd.extend(["-c:v", "copy", "-c:a", "aac", "-b:a", "128k"])
 
-        cmd.extend([
-            "-f", "hls",
-            "-hls_time", str(SEGMENT_DURATION),
-            "-hls_list_size", str(HLS_LIST_SIZE),
-            "-hls_flags", "delete_segments+append_list",
-            "-hls_segment_type", "mpegts",
-            "-hls_segment_filename", segment_pattern,
-            session.playlist_path
-        ])
+        cmd.extend(
+            [
+                "-f",
+                "hls",
+                "-hls_time",
+                str(SEGMENT_DURATION),
+                "-hls_list_size",
+                str(HLS_LIST_SIZE),
+                "-hls_flags",
+                "delete_segments+append_list",
+                "-hls_segment_type",
+                "mpegts",
+                "-hls_segment_filename",
+                segment_pattern,
+                session.playlist_path,
+            ]
+        )
 
         try:
             session.process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE
+                *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
             )
             logger.info(
                 f"🎬 HLS session started: {session.session_id}, "
                 f"profile={session.profile}, pid={session.process.pid}"
             )
-            asyncio.create_task(self._log_ffmpeg_stderr(session))
+            task = asyncio.create_task(self._log_ffmpeg_stderr(session))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
         except Exception as e:
             logger.error(f"❌ Error arrancando ffmpeg: {e}")
 
@@ -260,7 +310,7 @@ class TranscodeService:
             return
         try:
             async for line in session.process.stderr:
-                text = line.decode('utf-8', errors='ignore').strip()
+                text = line.decode("utf-8", errors="ignore").strip()
                 if text:
                     logger.debug(f"[ffmpeg:{session.session_id}] {text}")
         except Exception:
@@ -276,7 +326,9 @@ class TranscodeService:
                 if not self._requires_stable_startup(session.profile):
                     return True
 
-                if session.playlist_segment_count() >= self._min_segments_for_profile(session.profile):
+                if session.playlist_segment_count() >= self._min_segments_for_profile(
+                    session.profile
+                ):
                     return True
 
             if not session.process:
@@ -305,13 +357,13 @@ class TranscodeService:
             await asyncio.sleep(0.3)
         return False
 
-    def get_session(self, session_id: str) -> Optional[HlsSession]:
+    def get_session(self, session_id: str) -> HlsSession | None:
         session = self._sessions.get(session_id)
         if session:
             session.touch()
         return session
 
-    def get_file_path(self, session_id: str, filename: str) -> Optional[str]:
+    def get_file_path(self, session_id: str, filename: str) -> str | None:
         """Devuelve ruta de un fichero HLS si existe"""
         session = self.get_session(session_id)
         if not session:
@@ -334,7 +386,7 @@ class TranscodeService:
 
     # ── Compatibilidad con código anterior ──────────────────────────
 
-    def needs_transcode(self, codec: Optional[str]) -> bool:
+    def needs_transcode(self, _codec: str | None) -> bool:
         return True
 
     def clear_cache(self):
