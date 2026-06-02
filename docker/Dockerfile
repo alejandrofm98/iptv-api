@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copiar código fuente
 # Copiamos desde el contexto raíz del proyecto
+COPY app/ /app/app/
 COPY services/ /app/services/
 COPY utils/ /app/utils/
 COPY scripts/ /app/scripts/
