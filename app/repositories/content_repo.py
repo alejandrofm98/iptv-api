@@ -11,6 +11,17 @@ class ContentRepository(BaseRepository[MovieCatalog]):
     def __init__(self, session: Session):
         super().__init__(MovieCatalog, session)
 
+    def _flatten_row(self, row: dict) -> dict:
+        """Extrae atributos de la entidad ORM y los mezcla con columnas individuales."""
+        result = {}
+        for key, value in row.items():
+            if hasattr(value, "__table__"):
+                for col in value.__table__.columns.keys():
+                    result[col] = getattr(value, col)
+            else:
+                result[key] = value
+        return result
+
     def get_movie_with_metadata(self, movie_id: str) -> dict | None:
         stmt = (
             select(
@@ -42,7 +53,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         row = self.session.execute(stmt).mappings().first()
         if not row:
             return None
-        result = dict(row)
+        result = self._flatten_row(dict(row))
         streams = self._get_movie_streams(result["id"])
         if streams:
             result["stream_options"] = streams

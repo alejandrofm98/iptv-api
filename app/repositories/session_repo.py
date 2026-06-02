@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, delete, desc, func, select
 from sqlalchemy.orm import Session
@@ -63,7 +63,7 @@ class SessionRepository(BaseRepository[ActiveSession]):
         return result.rowcount  # type: ignore[attr-defined]
 
     def cleanup_inactive(self, timeout_minutes: int = 30) -> int:
-        cutoff = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
         stmt = delete(ActiveSession).where(ActiveSession.last_activity < cutoff)
         result = self.session.execute(stmt)
         self.session.flush()

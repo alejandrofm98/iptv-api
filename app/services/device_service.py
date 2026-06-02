@@ -1,6 +1,6 @@
 """Device/Session Service v2 — uses SQLAlchemy repository."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -32,7 +32,7 @@ class DeviceServiceV2:
                 "device_type": self._device_type_from_ua(user_agent),
                 "ip_address": ip_address,
                 "user_agent": user_agent,
-                "last_activity": datetime.utcnow(),
+                "last_activity": datetime.now(timezone.utc),
             },
         )
         return (

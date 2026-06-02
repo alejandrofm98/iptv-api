@@ -1,7 +1,7 @@
 """Watch Progress Service v2 — uses SQLAlchemy repositories."""
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -63,7 +63,7 @@ class WatchProgressServiceV2:
             "episode_number": data.get("episode_number"),
             "title": data.get("title", ""),
             "image_url": data.get("image_url", ""),
-            "last_watched_at": datetime.utcnow(),
+            "last_watched_at": datetime.now(timezone.utc),
         }
         row = self.wp_repo.upsert(user_id, canonical, payload)
         return self._normalize(row)

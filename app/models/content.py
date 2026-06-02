@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column,
@@ -59,8 +59,8 @@ class MovieCatalog(Base):
     country = Column(String(10), nullable=True)
     group_normalizado = Column(Text, nullable=True)
     logo = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     metadata_row = relationship(
         "MovieMetadata",
@@ -86,6 +86,6 @@ class MovieStream(Base):
     url = Column(Text, nullable=True)
     label = Column(Text, nullable=True)
     numero = Column(Integer, default=0)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     movie = relationship("MovieCatalog", back_populates="streams")

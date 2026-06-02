@@ -1,6 +1,6 @@
 """User Service v2 — uses SQLAlchemy repository."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import bcrypt
 from sqlalchemy.orm import Session
@@ -65,7 +65,7 @@ class UserServiceV2:
             return AuthResult(valid=False, user_id="", message="Usuario no encontrado")
         if not user.get("is_active", True):
             return AuthResult(valid=False, user_id="", message="Usuario desactivado")
-        if user.get("expires_at") and user["expires_at"] < datetime.utcnow():
+        if user.get("expires_at") and user["expires_at"] < datetime.now(timezone.utc):
             return AuthResult(valid=False, user_id="", message="Usuario expirado")
         if not self._verify_password(password, user.get("password_hash", "")):
             return AuthResult(valid=False, user_id="", message="Contraseña incorrecta")

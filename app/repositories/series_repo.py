@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import String, and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.models.series import SeriesCatalog, SeriesEpisode, SeriesMetadata
@@ -10,6 +10,17 @@ from app.repositories.base import BaseRepository
 class SeriesRepository(BaseRepository[SeriesCatalog]):
     def __init__(self, session: Session):
         super().__init__(SeriesCatalog, session)
+
+    def _flatten_row(self, row: dict) -> dict:
+        """Extrae atributos de la entidad ORM y los mezcla con columnas individuales."""
+        result = {}
+        for key, value in row.items():
+            if hasattr(value, "__table__"):
+                for col in value.__table__.columns.keys():
+                    result[col] = getattr(value, col)
+            else:
+                result[key] = value
+        return result
 
     def get_with_metadata(self, series_id: str) -> dict | None:
         stmt = (
@@ -32,7 +43,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
             .where(
                 or_(
-                    SeriesCatalog.id.cast(str) == series_id,  # type: ignore[arg-type]
+                    SeriesCatalog.id.cast(String) == series_id,
                     SeriesCatalog.tmdb_id == series_id,
                     SeriesCatalog.provider_id == series_id,
                 )
@@ -42,7 +53,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         row = self.session.execute(stmt).mappings().first()
         if not row:
             return None
-        result = dict(row)
+        result = self._flatten_row(dict(row))
         # total_episodes and total_seasons
         episode_counts = self._get_episode_counts(result["id"])
         result.update(episode_counts)
@@ -64,7 +75,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             .limit(1)
         )
         row = self.session.execute(stmt).mappings().first()
-        return dict(row) if row else None
+        return self._flatten_row(dict(row)) if row else None
 
     def get_episodes_with_streams(
         self, catalog_id: str, page: int = 1, page_size: int = 100
@@ -162,7 +173,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             .limit(1)
         )
         row = self.session.execute(stmt).mappings().first()
-        return dict(row) if row else None
+        return self._flatten_row(dict(row)) if row else None
 
     def get_distinct_groups(self) -> list[str]:
         stmt = (

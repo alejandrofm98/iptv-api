@@ -1286,8 +1286,8 @@ class ContentServiceV2:
                     "nombre_dedup_key": r.nombre_dedup_key or "",
                     "country": r.country or "",
                     "year": r.year,
-                    "poster_path": r.poster_path or "",
-                    "backdrop_path": r.backdrop_path or "",
+                    "poster_path": getattr(r, 'poster_path', None) or "",
+                    "backdrop_path": getattr(r, 'backdrop_path', None) or "",
                 }
             )
         return {"items": items, "total": len(items)}
@@ -1304,11 +1304,11 @@ class ContentServiceV2:
                     "id": str(r.id) if r.id else "",
                     "provider_id": r.provider_id or "",
                     "title": r.title or "",
-                    "nombre_normalizado": r.nombre_normalizado or "",
+                    "nombre_normalizado": getattr(r, 'nombre_normalizado', None) or "",
                     "country": r.country or "",
                     "year": r.year,
-                    "poster_path": r.poster_path or "",
-                    "backdrop_path": r.backdrop_path or "",
+                    "poster_path": getattr(r, 'poster_path', None) or "",
+                    "backdrop_path": getattr(r, 'backdrop_path', None) or "",
                     "group_normalizado": r.group_normalizado or "",
                 }
             )
@@ -1588,9 +1588,9 @@ class ContentServiceV2:
             from sqlalchemy import select
 
             total = self.session.execute(select(sa_func.count()).select_from(model)).scalar() or 0
-        from datetime import datetime
+        from datetime import datetime, timezone
 
-        return {content_type: {"total": total, "generatedAt": datetime.utcnow().isoformat()}}
+        return {content_type: {"total": total, "generatedAt": datetime.now(timezone.utc).isoformat()}}
 
     def get_catalog_filters(self, content_type: str, country: str | None = None) -> dict:
         countries = self.get_countries(content_type)

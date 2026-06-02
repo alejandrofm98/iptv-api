@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -16,6 +16,6 @@ class ScraperFailure(Base):
     title = Column(Text, nullable=False)
     year = Column(Integer, nullable=True)
     error_message = Column(Text, nullable=True)
-    failed_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    failed_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     retry_count = Column(Integer, default=1)
-    last_retry_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    last_retry_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

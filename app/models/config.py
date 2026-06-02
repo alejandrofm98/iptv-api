@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -12,7 +12,7 @@ class Config(Base):
     key = Column(String, primary_key=True)
     value = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class SyncMetadata(Base):

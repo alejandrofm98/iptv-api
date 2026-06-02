@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -26,8 +26,8 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     role = Column(String(20), default="user")
     expires_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     sessions = relationship("ActiveSession", back_populates="user", cascade="all, delete-orphan")
 
@@ -42,8 +42,8 @@ class ActiveSession(Base):
     device_type = Column(String(20), default="unknown")
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(String, nullable=True)
-    last_activity = Column(DateTime(timezone=True), default=datetime.utcnow)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    last_activity = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (UniqueConstraint("user_id", "device_id"),)
 
