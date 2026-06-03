@@ -190,23 +190,32 @@ class StreamProxyServiceV2:
         elif table == "movie_streams":
             m = self.content_repo.search_by_provider_id(provider_id)
             if m:
-                streams = self.content_repo._get_movie_streams(m.id)
-                if streams:
+                from sqlalchemy import select as sa_select
+
+                from app.models.content import MovieStream
+
+                stmt = (
+                    sa_select(MovieStream.url, MovieStream.stream_url)
+                    .where(MovieStream.movie_id == m.id)
+                    .limit(1)
+                )
+                row_ms = self.content_repo.session.execute(stmt).mappings().first()
+                if row_ms:
                     return {
-                        "stream_url": streams[0].get("url"),
-                        "url": streams[0].get("url"),
+                        "stream_url": row_ms.get("stream_url"),
+                        "url": row_ms.get("url") or row_ms.get("stream_url"),
                     }
         elif table == "series_streams":
             s = self.series_repo.search_by_provider_id(provider_id)
             if s:
                 from app.models.series import SeriesStream
 
-                stmt = (
+                stmt_series = (
                     select(SeriesStream.stream_url)
                     .where(SeriesStream.provider_id == provider_id)
                     .limit(1)
                 )
-                row = self.series_repo.session.execute(stmt).scalar()
+                row = self.series_repo.session.execute(stmt_series).scalar()
                 if row:
                     return {"stream_url": row, "url": row}
         return None
@@ -223,7 +232,7 @@ class StreamProxyServiceV2:
         table = table_map.get(content_type, "channels")
         row = self._get_content_item(table, provider_id)
         if row:
-            url_value = row.get("stream_url") or row.get("url")
+            url_value = row.get("url") or row.get("stream_url")
             if url_value:
                 self._url_cache[cache_key] = url_value
                 return url_value

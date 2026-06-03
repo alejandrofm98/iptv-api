@@ -13,7 +13,7 @@ import asyncio
 import gzip
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, urljoin
 
@@ -160,6 +160,9 @@ async def lifespan(app: FastAPI):
             stream_svc.preload_cache()
         finally:
             session.close()
+        import utils.dependencies as deps
+
+        deps.transcode_service = TranscodeService()
         background_tasks = []
         background_tasks.append(asyncio.create_task(cleanup_sessions_task()))
         background_tasks.append(asyncio.create_task(cleanup_hls_task()))
@@ -238,9 +241,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     """Crea un token JWT de acceso"""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+        expire = datetime.now(UTC) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
