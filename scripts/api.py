@@ -110,15 +110,20 @@ async def cleanup_sessions_task():
     while True:
         try:
             await asyncio.sleep(settings.cleanup_interval_minutes * 60)
-            session = SessionLocal()
-            try:
-                repo = SessionRepository(session)
-                cleaned = repo.cleanup_inactive(settings.cleanup_inactive_minutes)
-                session.commit()
-                if cleaned > 0:
-                    print(f"🧹 Limpiadas {cleaned} sesiones inactivas")
-            finally:
-                session.close()
+
+            def _do_cleanup():
+                session = SessionLocal()
+                try:
+                    repo = SessionRepository(session)
+                    cleaned = repo.cleanup_inactive(settings.session_timeout_minutes)
+                    session.commit()
+                    return cleaned
+                finally:
+                    session.close()
+
+            cleaned = await asyncio.to_thread(_do_cleanup)
+            if cleaned > 0:
+                print(f"🧹 Limpiadas {cleaned} sesiones inactivas")
         except Exception as e:
             print(f"❌ Error en limpieza de sesiones: {e}")
 
@@ -1011,10 +1016,8 @@ async def proxy_replay_stream(
 
     try:
         if lowered_url.endswith(".m3u8"):
-            upstream = requests.get(
-                url,
-                timeout=30,
-                headers=upstream_headers,
+            upstream = await asyncio.to_thread(
+                lambda: requests.get(url, timeout=30, headers=upstream_headers)
             )
             upstream.raise_for_status()
             rewritten = rewrite_m3u8_content(upstream.text, url, token)
@@ -1026,11 +1029,8 @@ async def proxy_replay_stream(
                 },
             )
 
-        upstream = requests.get(
-            url,
-            stream=True,
-            timeout=60,
-            headers=upstream_headers,
+        upstream = await asyncio.to_thread(
+            lambda: requests.get(url, stream=True, timeout=60, headers=upstream_headers)
         )
         upstream.raise_for_status()
         media_type = upstream.headers.get("content-type", "application/octet-stream").split(";")[0]
