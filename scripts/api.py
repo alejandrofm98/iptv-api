@@ -162,7 +162,13 @@ async def lifespan(app: FastAPI):
                 content_repo=ContentRepository(session),
                 series_repo=SeriesRepository(session),
             )
-            stream_svc.preload_cache()
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(stream_svc.preload_cache),
+                    timeout=15.0,
+                )
+            except Exception as e:
+                print(f"⚠️ Warning: preload_cache failed ({e}), continuing without cache")
         finally:
             session.close()
         import utils.dependencies as deps

@@ -37,6 +37,7 @@ services:
     networks:
       - iptv-network
       - dokploy-network
+      - iptv-ecosystem
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
       interval: 30s
@@ -77,6 +78,7 @@ services:
     networks:
       - iptv-network
       - dokploy-network
+      - iptv-ecosystem
     labels:
       - "traefik.enable=true"
 
@@ -136,6 +138,7 @@ services:
       - "8001:8001"
     networks:
       - iptv-network
+      - iptv-ecosystem
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
@@ -151,6 +154,8 @@ networks:
     external: true
   iptv-network:
     driver: bridge
+  iptv-ecosystem:
+    external: true
 
 # ============================================
 # Volumes
