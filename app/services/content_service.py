@@ -648,8 +648,8 @@ class ContentServiceV2:
         backdrop = row.get("backdrop_path") or ""
         tmdb_title = row.get("tmdb_title") or row.get("title") or ""
         return {
-            "id": first_stream.get("provider_id") or row.get("id", ""),
-            "provider_id": first_stream.get("provider_id", ""),
+            "id": row.get("provider_id") or str(row.get("id", "")),
+            "provider_id": row.get("provider_id") or "",
             "type": "movie",
             "title": row.get("title", ""),
             "normalized_title": row.get("title", ""),
@@ -955,12 +955,14 @@ class ContentServiceV2:
         return self.series_repo.get_with_metadata(series_id)
 
     def get_content_item(self, content_type: str, item_id: str) -> dict | None:
-        if content_type == "movie":
+        if content_type in ("movie", "movies"):
             return self.get_movie(item_id)
         elif content_type == "series":
             return self.get_series(item_id)
         elif content_type == "channels":
             channel = self.channel_repo.get_by_id(item_id)
+            if not channel:
+                channel = self.channel_repo.get_by_provider_id(item_id)
             if channel:
                 return {
                     "id": str(channel.id),
@@ -1020,9 +1022,10 @@ class ContentServiceV2:
         stream_options = row.get("stream_options") or []
         first_stream = stream_options[0] if stream_options else {}
         provider_id = first_stream.get("provider_id", "")
+        episode_id = row.get("episode_id", "")
         return {
-            "id": provider_id or row.get("episode_id", ""),
-            "provider_id": provider_id,
+            "id": episode_id or provider_id,
+            "provider_id": episode_id or provider_id,
             "type": "series",
             "title": series_title,
             "normalized_title": series_title,
@@ -1280,7 +1283,7 @@ class ContentServiceV2:
         for r in rows:
             items.append(
                 {
-                    "id": str(r.id) if r.id else "",
+                    "id": r.provider_id or str(r.id) if r.id else "",
                     "provider_id": r.provider_id or "",
                     "title": r.title or "",
                     "nombre_dedup_key": r.nombre_dedup_key or "",
@@ -1301,7 +1304,7 @@ class ContentServiceV2:
         for r in rows:
             items.append(
                 {
-                    "id": str(r.id) if r.id else "",
+                    "id": r.provider_id or str(r.id) if r.id else "",
                     "provider_id": r.provider_id or "",
                     "title": r.title or "",
                     "nombre_normalizado": getattr(r, 'nombre_normalizado', None) or "",
