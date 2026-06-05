@@ -320,3 +320,40 @@ ruff format scripts services utils app tests && \
 6. Probaste el endpoint afectado con `curl` o Postman (minimo: 200/401/403/404 segun aplique).
 7. Sin secretos en el diff (`git diff --staged | grep -iE 'key|secret|token|password'`).
 8. Sin emojis en codigo, comentarios ni docs.
+
+## 11. Acceso a base de datos
+
+Para verificar datos en Postgres, usar `pgcli` (instalado en el sistema).
+
+Las credenciales estan en `.env` en la raiz del proyecto (nunca commiteado).
+Si no existe, crear uno con las variables `PG_HOST`, `PG_PORT`, `PG_DATABASE`,
+`PG_USER`, `PG_PASSWORD` que aparecen en `utils/config.py`.
+
+```bash
+source .env 2>/dev/null || true
+PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DATABASE" -c "SELECT ...;"
+```
+
+O connectarse directamente con pgcli:
+```bash
+pgcli -h $PG_HOST -p $PG_PORT -U $PG_USER -d $PG_DATABASE
+```
+
+### Tablas principales
+
+| Tabla | Descripcion |
+|-------|-------------|
+| `movies_catalog` | Catalogo de peliculas (UUID PK, provider_id, tmdb_id) |
+| `movie_streams` | Streams de peliculas (FK a movies_catalog) |
+| `series_catalog` | Catalogo de series (UUID PK, provider_id, tmdb_id) |
+| `series_episodes` | Episodios de series (FK a series_catalog) |
+| `series_streams` | Streams de episodios (FK a series_episodes, tiene provider_id) |
+| `channels` | Canales en vivo |
+| `watch_progress` | Progreso de visionado por usuario |
+| `scraper_failures` | Fallos del scraper |
+
+### Cuidado con IDs
+
+- `movies_catalog.provider_id` y `series_catalog.provider_id` son strings numericos (ej: "1394135")
+- `series_streams.provider_id` es el ID del stream de un **episodio** individual (ej: "1418278"), NO de la serie
+- Para buscar una serie por episode provider_id: JOIN series_streams -> series_episodes -> series_catalog

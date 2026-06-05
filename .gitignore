@@ -1,4 +1,6 @@
 docker/.env
+.env
+utils/.env
 database/insert.sql
 data/m3u/*
 postman/environment.json

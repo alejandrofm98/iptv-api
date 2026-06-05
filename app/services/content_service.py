@@ -964,6 +964,8 @@ class ContentServiceV2:
             return row
         elif content_type in ("series", "serie"):
             row = self.get_series(item_id)
+            if row is None:
+                row = self.series_repo.get_catalog_by_episode_provider_id(item_id)
             if row is not None:
                 self._ensure_stream_url(row, username, password)
             return row
