@@ -954,11 +954,19 @@ class ContentServiceV2:
     def get_series(self, series_id: str) -> dict | None:
         return self.series_repo.get_with_metadata(series_id)
 
-    def get_content_item(self, content_type: str, item_id: str) -> dict | None:
+    def get_content_item(
+        self, content_type: str, item_id: str, username: str = "", password: str = ""
+    ) -> dict | None:
         if content_type in ("movie", "movies"):
-            return self.get_movie(item_id)
-        elif content_type == "series":
-            return self.get_series(item_id)
+            row = self.get_movie(item_id)
+            if row is not None:
+                self._ensure_stream_url(row, username, password)
+            return row
+        elif content_type in ("series", "serie"):
+            row = self.get_series(item_id)
+            if row is not None:
+                self._ensure_stream_url(row, username, password)
+            return row
         elif content_type == "channels":
             channel = self.channel_repo.get_by_id(item_id)
             if not channel:
@@ -972,6 +980,20 @@ class ContentServiceV2:
                     "url": channel.url,
                 }
         return None
+
+    def _ensure_stream_url(self, row: dict, username: str, password: str) -> None:
+        if row.get("stream_url"):
+            return
+        streams = row.get("stream_options") or []
+        if not streams:
+            return
+        raw_url = streams[0].get("url", "")
+        if not raw_url:
+            return
+        if username and password:
+            row["stream_url"] = raw_url.replace("{{USERNAME}}", username).replace("{{PASSWORD}}", password)
+        else:
+            row["stream_url"] = raw_url
 
     def get_movies_paginated(
         self,

@@ -839,6 +839,8 @@ async def get_content_item(
     item = content_svc.get_content_item(
         content_type=content_type,
         item_id=item_id,
+        username=auth.username,
+        password=password or "",
     )
 
     if not item:
