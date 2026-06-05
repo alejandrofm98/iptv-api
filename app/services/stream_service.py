@@ -211,13 +211,16 @@ class StreamProxyServiceV2:
                 from app.models.series import SeriesStream
 
                 stmt_series = (
-                    select(SeriesStream.stream_url)
+                    select(SeriesStream.stream_url, SeriesStream.url)
                     .where(SeriesStream.provider_id == provider_id)
                     .limit(1)
                 )
-                row = self.series_repo.session.execute(stmt_series).scalar()
+                row = self.series_repo.session.execute(stmt_series).mappings().first()
                 if row:
-                    return {"stream_url": row, "url": row}
+                    return {
+                        "stream_url": row.get("stream_url"),
+                        "url": row.get("url") or row.get("stream_url"),
+                    }
         return None
 
     def get_original_url(self, provider_id: str, content_type: str = "live") -> str | None:
