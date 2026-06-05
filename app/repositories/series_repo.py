@@ -212,8 +212,16 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             return None
         import re
 
+        _STOP_WORDS = {
+            "the", "los", "las", "les", "der", "die", "das", "les", "el", "la",
+            "le", "un", "una", "uno", "unos", "unas", "de", "del", "des", "du",
+            "do", "da", "di", "al", "an", "en", "and", "or", "for", "with",
+        }
         stripped = re.sub(r"^[a-z]{2,5}\s*[-–]\s*", "", title, flags=re.IGNORECASE).strip()
-        words = [w for w in re.split(r"\W+", stripped.lower()) if len(w) > 2]
+        words = [
+            w for w in re.split(r"\W+", stripped.lower())
+            if len(w) > 2 and w not in _STOP_WORDS
+        ]
         if not words:
             return None
         like_conditions = [
