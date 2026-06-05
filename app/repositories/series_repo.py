@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import String, and_, func, or_, select, text
+from sqlalchemy import Integer, String, and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.models.series import SeriesCatalog, SeriesEpisode, SeriesMetadata, SeriesStream
@@ -201,6 +201,57 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                     ),
                 )
             )
+            .limit(1)
+        )
+        row = self.session.execute(stmt).mappings().first()
+        return self._flatten_row(dict(row)) if row else None
+
+    def find_canonical_by_title(self, title: str) -> dict | None:
+        """Find a series catalog entry by title that HAS tmdb_id (canonical twin)."""
+        if not title:
+            return None
+        import re
+
+        stripped = re.sub(r"^[a-z]{2,5}\s*[-–]\s*", "", title, flags=re.IGNORECASE).strip()
+        words = [w for w in re.split(r"\W+", stripped.lower()) if len(w) > 2]
+        if not words:
+            return None
+        like_conditions = [
+            func.lower(func.trim(SeriesCatalog.title)).like(f"%{w}%") for w in words
+        ]
+        match_score = sum(
+            func.cast(
+                func.lower(func.trim(SeriesCatalog.title)).like(f"%{w}%"),
+                Integer,
+            )
+            for w in words
+        )
+        stmt = (
+            select(
+                SeriesCatalog,
+                SeriesMetadata.overview_es,
+                SeriesMetadata.overview_en,
+                SeriesMetadata.vote_average,
+                SeriesMetadata.vote_count,
+                SeriesMetadata.genres,
+                SeriesMetadata.backdrop_path,
+                SeriesMetadata.poster_path.label("tmdb_poster_path"),
+                SeriesMetadata.tagline,
+                SeriesMetadata.tmdb_id.label("metadata_tmdb_id"),
+                SeriesMetadata.title.label("tmdb_title"),
+                SeriesMetadata.release_date,
+                SeriesMetadata.popularity,
+                SeriesMetadata.status,
+            )
+            .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
+            .where(
+                and_(
+                    SeriesCatalog.tmdb_id.isnot(None),
+                    SeriesCatalog.tmdb_id != "",
+                    or_(*like_conditions),
+                )
+            )
+            .order_by(match_score.desc(), func.length(SeriesCatalog.title).asc())
             .limit(1)
         )
         row = self.session.execute(stmt).mappings().first()

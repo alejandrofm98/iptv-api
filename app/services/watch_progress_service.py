@@ -134,8 +134,19 @@ class WatchProgressServiceV2:
                 normalized["episode_number"] = (
                     self._safe_int(content_row.get("episodio")) or row.episode_number
                 )
+                if not content_row.get("tmdb_id") and row.series_name:
+                    twin = self.series_repo.find_canonical_by_title(row.series_name)
+                    if twin and twin.get("tmdb_id"):
+                        self._apply_metadata(normalized, content_type, twin)
         else:
             normalized["normalized_title"] = row.title or ""
+            if content_type == "series" and row.series_name:
+                twin = self.series_repo.find_canonical_by_title(row.series_name)
+                if twin:
+                    canonical_id = str(twin.get("provider_id") or canonical_id)
+                    normalized["content_id"] = canonical_id
+                    self._apply_metadata(normalized, content_type, twin)
+                    normalized["series_name"] = twin.get("serie_name") or row.series_name
 
         position = row.position_ms or 0
         duration = row.duration_ms or 0
