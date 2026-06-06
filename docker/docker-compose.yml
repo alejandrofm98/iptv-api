@@ -41,8 +41,8 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
       interval: 30s
-      timeout: 10s
-      retries: 3
+      timeout: 30s
+      retries: 5
       start_period: 40s
     labels:
       # Traefik: API endpoints van directo al contenedor (sin pasar por nginx)

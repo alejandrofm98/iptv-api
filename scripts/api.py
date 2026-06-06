@@ -1380,7 +1380,7 @@ async def get_playlist_standard(
     if content not in valid_content:
         content = "full"
 
-    auth = user_svc.validate_credentials(username, password)
+    auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
 
     if not auth.valid:
         raise UnauthorizedException(auth.message)
@@ -1391,7 +1391,8 @@ async def get_playlist_standard(
     user_agent = request.headers.get("User-Agent", "Unknown")
     ip_address = request.client.host if request.client else "Unknown"
 
-    success, message, _ = device_svc.register_or_update_session(
+    success, message, _ = await asyncio.to_thread(
+        device_svc.register_or_update_session,
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
@@ -1673,7 +1674,7 @@ async def _proxy_stream_handler(
             "Tipo de stream inválido", {"valid_types": ["live", "movie", "series"]}
         )
 
-    auth = user_svc.validate_credentials(username, password)
+    auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
 
     if not auth.valid:
         raise UnauthorizedException(auth.message)
@@ -1684,7 +1685,8 @@ async def _proxy_stream_handler(
     user_agent = request.headers.get("User-Agent", "Unknown")
     ip_address = request.client.host if request.client else "Unknown"
 
-    success, message, _ = device_svc.register_or_update_session(
+    success, message, _ = await asyncio.to_thread(
+        device_svc.register_or_update_session,
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
@@ -1885,7 +1887,7 @@ async def proxy_stream_channel_chromecast(
 ):
     """Genera una playlist HLS compatible con Chromecast para canales en vivo."""
     logger.info(f"📺 Chromecast request: user={username}, stream_id={stream_id}")
-    auth = user_svc.validate_credentials(username, password)
+    auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
 
     if not auth.valid:
         raise UnauthorizedException(auth.message)
@@ -1896,7 +1898,8 @@ async def proxy_stream_channel_chromecast(
     user_agent = request.headers.get("User-Agent", "Unknown")
     ip_address = request.client.host if request.client else "Unknown"
 
-    success, message, _ = device_svc.register_or_update_session(
+    success, message, _ = await asyncio.to_thread(
+        device_svc.register_or_update_session,
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
@@ -2000,7 +2003,7 @@ async def validate_stream(
     stream_svc: StreamProxyServiceV2 = Depends(get_stream_service_v2),
 ):
     """Valida credenciales y devuelve URL original para nginx auth_request."""
-    auth = user_svc.validate_credentials(username, password)
+    auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
 
     if not auth.valid:
         raise UnauthorizedException(auth.message)
@@ -2011,7 +2014,8 @@ async def validate_stream(
     user_agent = request.headers.get("User-Agent", "Unknown")
     ip_address = request.client.host if request.client else "Unknown"
 
-    success, message, _ = device_svc.register_or_update_session(
+    success, message, _ = await asyncio.to_thread(
+        device_svc.register_or_update_session,
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
@@ -2057,7 +2061,7 @@ async def get_stream_url_internal(
     Endpoint interno para obtener URL de stream.
     Devuelve redirect 307 al stream del proveedor para proxy directo via nginx.
     """
-    auth = user_svc.validate_credentials(user, password)
+    auth = await asyncio.to_thread(user_svc.validate_credentials, user, password)
 
     if not auth.valid or not auth.can_connect:
         raise UnauthorizedException("Credenciales inválidas")
@@ -2065,7 +2069,8 @@ async def get_stream_url_internal(
     user_agent = request.headers.get("User-Agent", "Unknown")
     ip_address = request.client.host if request.client else "Unknown"
 
-    success, message, _ = device_svc.register_or_update_session(
+    success, message, _ = await asyncio.to_thread(
+        device_svc.register_or_update_session,
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
