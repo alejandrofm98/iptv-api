@@ -1160,13 +1160,23 @@ class ContentServiceV2:
             payload.update(extra)
         return payload
 
+    def _find_series_catalog(self, identifier: str) -> dict | None:
+        catalog = self.series_repo.get_by_title(identifier)
+        if catalog:
+            return catalog
+        if identifier.isdigit():
+            catalog = self.series_repo.get_catalog_by_provider_id(identifier)
+            if catalog:
+                return catalog
+        return None
+
     def get_episodes_by_serie_name(
         self,
         serie_name: str,
         username: str = "",
         password: str = "",
     ) -> list[dict]:
-        catalog = self.series_repo.get_by_title(serie_name)
+        catalog = self._find_series_catalog(serie_name)
         if not catalog:
             return []
         catalog_id = str(catalog["id"])
@@ -1187,7 +1197,7 @@ class ContentServiceV2:
         page: int = 1,
         page_size: int = 50,
     ) -> dict:
-        catalog = self.series_repo.get_by_title(serie_name)
+        catalog = self._find_series_catalog(serie_name)
         if not catalog:
             return self._build_paginated_payload([], 0, page, page_size)
         catalog_id = str(catalog["id"])

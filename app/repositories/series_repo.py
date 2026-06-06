@@ -171,6 +171,29 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         stmt = select(SeriesCatalog).where(SeriesCatalog.provider_id == provider_id)
         return self.session.execute(stmt).scalar_one_or_none()
 
+    def get_catalog_by_provider_id(self, provider_id: str) -> dict | None:
+        stmt = (
+            select(
+                SeriesCatalog,
+                SeriesMetadata.overview_es,
+                SeriesMetadata.overview_en,
+                SeriesMetadata.vote_average,
+                SeriesMetadata.vote_count,
+                SeriesMetadata.genres,
+                SeriesMetadata.backdrop_path,
+                SeriesMetadata.poster_path.label("tmdb_poster_path"),
+                SeriesMetadata.title.label("tmdb_title"),
+                SeriesMetadata.release_date,
+                SeriesMetadata.popularity,
+                SeriesMetadata.status,
+            )
+            .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
+            .where(SeriesCatalog.provider_id == provider_id)
+            .limit(1)
+        )
+        row = self.session.execute(stmt).mappings().first()
+        return self._flatten_row(dict(row)) if row else None
+
     def get_by_title(self, title: str) -> dict | None:
         import re
 
