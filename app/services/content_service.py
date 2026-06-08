@@ -1051,16 +1051,24 @@ class ContentServiceV2:
 
         stream_url = ContentServiceV2._resolve_stream_url(stream_options, username, password)
         if stream_url and not stream_url.startswith("http") and base_url and provider_id:
-            stream_url = f"{base_url}/series/{username}/{password}/{provider_id}.ts"
+            raw_url = stream_options[0].get("url", "")
+            ext = "ts"
+            if raw_url and "." in raw_url.split("/")[-1]:
+                ext = raw_url.split("/")[-1].rsplit(".", 1)[-1]
+            stream_url = f"{base_url}/series/{username}/{password}/{provider_id}.{ext}"
 
         resolved_options = ContentServiceV2._resolve_stream_options(
             stream_options, username, password
         )
-        for opt in resolved_options:
+        for i, opt in enumerate(resolved_options):
             url = opt.get("url", "")
             opt_pid = opt.get("provider_id", "")
+            raw_url = stream_options[i].get("url", "") if i < len(stream_options) else ""
             if url and not url.startswith("http") and base_url and opt_pid:
-                opt["url"] = f"{base_url}/series/{username}/{password}/{opt_pid}.ts"
+                opt_ext = "ts"
+                if raw_url and "." in raw_url.split("/")[-1]:
+                    opt_ext = raw_url.split("/")[-1].rsplit(".", 1)[-1]
+                opt["url"] = f"{base_url}/series/{username}/{password}/{opt_pid}.{opt_ext}"
 
         return {
             "id": episode_id or provider_id,

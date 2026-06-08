@@ -183,12 +183,13 @@ class StreamProxyServiceV2:
         return hashlib.md5(url.encode()).hexdigest()[:16]
 
     def _get_content_item(self, table: str, provider_id: str) -> dict | None:
+        pid = provider_id.rsplit(".", 1)[0] if "." in provider_id else provider_id
         if table == "channels":
-            c = self.channel_repo.get_by_provider_id(provider_id)
+            c = self.channel_repo.get_by_provider_id(pid)
             if c:
                 return {"stream_url": c.url, "url": c.url}
         elif table == "movie_streams":
-            m = self.content_repo.search_by_provider_id(provider_id)
+            m = self.content_repo.search_by_provider_id(pid)
             if m:
                 from sqlalchemy import select as sa_select
 
@@ -206,13 +207,13 @@ class StreamProxyServiceV2:
                         "url": row_ms.get("url") or row_ms.get("stream_url"),
                     }
         elif table == "series_streams":
-            s = self.series_repo.search_by_provider_id(provider_id)
+            s = self.series_repo.search_by_provider_id(pid)
             if s:
                 from app.models.series import SeriesStream
 
                 stmt_series = (
                     select(SeriesStream.stream_url, SeriesStream.url)
-                    .where(SeriesStream.provider_id == provider_id)
+                    .where(SeriesStream.provider_id == pid)
                     .limit(1)
                 )
                 row = self.series_repo.session.execute(stmt_series).mappings().first()
