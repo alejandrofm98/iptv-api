@@ -207,21 +207,19 @@ class StreamProxyServiceV2:
                         "url": row_ms.get("url") or row_ms.get("stream_url"),
                     }
         elif table == "series_streams":
-            s = self.series_repo.search_by_provider_id(pid)
-            if s:
-                from app.models.series import SeriesStream
+            from app.models.series import SeriesStream
 
-                stmt_series = (
-                    select(SeriesStream.stream_url, SeriesStream.url)
-                    .where(SeriesStream.provider_id == pid)
-                    .limit(1)
-                )
-                row = self.series_repo.session.execute(stmt_series).mappings().first()
-                if row:
-                    return {
-                        "stream_url": row.get("stream_url"),
-                        "url": row.get("url") or row.get("stream_url"),
-                    }
+            stmt_series = (
+                select(SeriesStream.stream_url, SeriesStream.url)
+                .where(SeriesStream.provider_id == pid)
+                .limit(1)
+            )
+            row = self.series_repo.session.execute(stmt_series).mappings().first()
+            if row:
+                return {
+                    "stream_url": row.get("stream_url"),
+                    "url": row.get("url") or row.get("stream_url"),
+                }
         return None
 
     def get_original_url(self, provider_id: str, content_type: str = "live") -> str | None:
