@@ -1042,11 +1042,26 @@ class ContentServiceV2:
         series_catalog_id: str,
         username: str = "",
         password: str = "",
+        base_url: str = "",
     ) -> dict:
         stream_options = row.get("stream_options") or []
         first_stream = stream_options[0] if stream_options else {}
         provider_id = first_stream.get("provider_id", "")
         episode_id = row.get("episode_id", "")
+
+        stream_url = ContentServiceV2._resolve_stream_url(stream_options, username, password)
+        if stream_url and not stream_url.startswith("http") and base_url and provider_id:
+            stream_url = f"{base_url}/series/{username}/{password}/{provider_id}.ts"
+
+        resolved_options = ContentServiceV2._resolve_stream_options(
+            stream_options, username, password
+        )
+        for opt in resolved_options:
+            url = opt.get("url", "")
+            opt_pid = opt.get("provider_id", "")
+            if url and not url.startswith("http") and base_url and opt_pid:
+                opt["url"] = f"{base_url}/series/{username}/{password}/{opt_pid}.ts"
+
         return {
             "id": episode_id or provider_id,
             "provider_id": episode_id or provider_id,
@@ -1063,10 +1078,8 @@ class ContentServiceV2:
             "series_key": series_catalog_id,
             "season_number": row.get("season_number"),
             "episode_number": row.get("episode_number"),
-            "stream_url": ContentServiceV2._resolve_stream_url(stream_options, username, password),
-            "stream_options": ContentServiceV2._resolve_stream_options(
-                stream_options, username, password
-            ),
+            "stream_url": stream_url,
+            "stream_options": resolved_options,
             "stream_label": first_stream.get("label", "Ver"),
             "language_label": first_stream.get("country", ""),
             "total_seasons": None,
@@ -1185,7 +1198,7 @@ class ContentServiceV2:
             catalog_id, page=1, page_size=1000
         )
         return [
-            self._to_android_episode(row, series_title, catalog_id, username, password)
+            self._to_android_episode(row, series_title, catalog_id, username, password, base_url=self._https_base_url)
             for row in (items or [])
         ]
 
@@ -1207,7 +1220,7 @@ class ContentServiceV2:
         )
         return self._build_paginated_payload(
             [
-                self._to_android_episode(row, series_title, catalog_id, username, password)
+                self._to_android_episode(row, series_title, catalog_id, username, password, base_url=self._https_base_url)
                 for row in (items or [])
             ],
             total or 0,
