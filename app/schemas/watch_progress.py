@@ -34,6 +34,7 @@ class WatchProgressResponse(BaseModel):
 
 
 class ContinueWatchingItem(WatchProgressResponse):
+    series_provider_id: str | None = None
     normalized_title: str | None = None
     overview: str | None = None
     overview_es: str | None = None

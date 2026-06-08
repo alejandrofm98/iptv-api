@@ -127,6 +127,7 @@ class WatchProgressServiceV2:
             normalized["image_url"] = self._image_url(content_row, row, content_type)
             self._apply_metadata(normalized, content_type, content_row)
             if content_type == "series":
+                normalized["series_provider_id"] = str(content_row.get("provider_id") or "")
                 normalized["series_name"] = content_row.get("serie_name") or row.series_name
                 normalized["season_number"] = (
                     self._safe_int(content_row.get("temporada")) or row.season_number
@@ -145,6 +146,7 @@ class WatchProgressServiceV2:
                 if twin:
                     canonical_id = str(twin.get("provider_id") or canonical_id)
                     normalized["content_id"] = canonical_id
+                    normalized["series_provider_id"] = canonical_id
                     self._apply_metadata(normalized, content_type, twin)
                     normalized["series_name"] = twin.get("serie_name") or row.series_name
 
