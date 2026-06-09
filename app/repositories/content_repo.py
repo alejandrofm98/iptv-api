@@ -79,6 +79,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 "url": r.stream_url,
                 "label": r.label or r.country or "Ver",
                 "country": r.country,
+                "quality": r.quality,
                 "provider_id": r.provider_id,
                 "numero": r.numero,
             }
@@ -231,6 +232,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                                 'url', ms.stream_url,
                                 'label', COALESCE(ms.label, ms.country, 'Ver'),
                                 'country', ms.country,
+                                'quality', ms.quality,
                                 'provider_id', ms.provider_id,
                                 'numero', ms.numero
                             ) ORDER BY

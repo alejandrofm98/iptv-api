@@ -1030,6 +1030,7 @@ class ContentServiceV2:
                     "url": url,
                     "label": opt.get("label", "Ver"),
                     "country": opt.get("country", ""),
+                    "quality": opt.get("quality"),
                     "provider_id": opt.get("provider_id", ""),
                 }
             )

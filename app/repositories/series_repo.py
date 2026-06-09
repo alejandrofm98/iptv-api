@@ -140,6 +140,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                             'url', ss.stream_url,
                             'label', COALESCE(ss.label, ss.country, 'Ver'),
                             'country', ss.country,
+                            'quality', ss.quality,
                             'provider_id', ss.provider_id,
                             'numero', ss.numero
                         ) ORDER BY

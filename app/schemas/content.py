@@ -7,6 +7,7 @@ class StreamOption(BaseModel):
     url: str
     label: str
     country: str | None = None
+    quality: str | None = None
     provider_id: str | None = None
     numero: int | None = None
 
