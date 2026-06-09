@@ -213,11 +213,12 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             params["year"] = year
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
-        count_sql = f"SELECT COUNT(DISTINCT mc.id) AS total FROM movies_catalog mc {where_clause}"
+        count_sql = f"SELECT COUNT(DISTINCT mc.tmdb_id) AS total FROM movies_catalog mc {where_clause}"
         total = self.session.execute(text(count_sql), params).scalar() or 0
 
         data_sql = f"""
-            SELECT mc.id, mc.title, mc.tmdb_id, mc.year, mc.country,
+            SELECT DISTINCT ON (mc.tmdb_id)
+                mc.id, mc.title, mc.tmdb_id, mc.year, mc.country,
                 mc.group_normalizado, mc.logo, mc.provider_id,
                 mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
                 mm.genres, mm.backdrop_path, mm.poster_path,
@@ -250,7 +251,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             FROM movies_catalog mc
             LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
             {where_clause}
-            ORDER BY mc.year DESC NULLS LAST
+            ORDER BY mc.tmdb_id NULLS LAST, mc.created_at DESC
             LIMIT :limit OFFSET :offset
         """
         rows = self.session.execute(text(data_sql), params).mappings().all()

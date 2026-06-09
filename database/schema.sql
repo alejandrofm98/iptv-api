@@ -258,6 +258,7 @@ CREATE TABLE IF NOT EXISTS movies_catalog (
 );
 
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_tmdb ON movies_catalog(tmdb_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_movies_catalog_tmdb ON movies_catalog(tmdb_id) WHERE tmdb_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_dedup ON movies_catalog(nombre_dedup_key);
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_year ON movies_catalog(year);
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_country ON movies_catalog(country);
