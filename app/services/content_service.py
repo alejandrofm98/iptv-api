@@ -779,6 +779,7 @@ class ContentServiceV2:
         country: str | None = None,
         search: str | None = None,
         year: int | None = None,
+        genre: str | None = None,
     ) -> dict:
         return self.series_repo.get_distinct_series_groups_catalog(
             page=page,
@@ -788,6 +789,7 @@ class ContentServiceV2:
             country=country,
             search=search,
             year=year,
+            genre=genre,
         )
 
     def _fetch_section_page(
@@ -1004,8 +1006,9 @@ class ContentServiceV2:
         country: str | None = None,
         search: str | None = None,
         year: int | None = None,
+        genre: str | None = None,
     ) -> tuple[list[dict], int]:
-        return self.content_repo.get_movies_paginated(page, page_size, country, search, year)
+        return self.content_repo.get_movies_paginated(page, page_size, country, search, year, genre)
 
     @staticmethod
     def _resolve_stream_url(stream_options: list[dict], username: str, password: str) -> str:
@@ -1384,6 +1387,7 @@ class ContentServiceV2:
         year: int | None = None,
         username: str = "",
         password: str = "",
+        genre: str | None = None,
     ) -> dict:
         if content_type == "series":
             result = self._get_distinct_series_groups_catalog_raw(
@@ -1393,6 +1397,7 @@ class ContentServiceV2:
                 country=country,
                 search=search,
                 year=year,
+                genre=genre,
             )
             items = result.get("items") or []
             total = result.get("total", 0)
@@ -1402,7 +1407,7 @@ class ContentServiceV2:
             return self._build_paginated_payload(parsed_items, total, page, page_size)
         if content_type in ("movies", "channels"):
             if content_type == "movies":
-                rows, total = self.get_movies_paginated(page, page_size, country, search, year)
+                rows, total = self.get_movies_paginated(page, page_size, country, search, year, genre)
             else:
                 channels, total = self.get_channels_paginated(
                     page, page_size, country, group, search
@@ -1612,6 +1617,9 @@ class ContentServiceV2:
     def get_countries(self, content_type: str) -> list[str]:
         return self.content_repo.get_distinct_countries(content_type)
 
+    def get_genres(self, content_type: str) -> list[str]:
+        return self.content_repo.get_distinct_genres(content_type)
+
     def get_content_stats(self, content_type: str) -> dict:
         from sqlalchemy import func as sa_func
 
@@ -1654,7 +1662,8 @@ class ContentServiceV2:
     def get_catalog_filters(self, content_type: str, country: str | None = None) -> dict:
         countries = self.get_countries(content_type)
         groups = self.get_groups(content_type, [country] if country else None)
-        return {"countries": countries, "groups": groups}
+        genres = self.get_genres(content_type) if content_type in ("movies", "series") else []
+        return {"countries": countries, "groups": groups, "genres": genres}
 
     def get_channels_paginated(
         self,

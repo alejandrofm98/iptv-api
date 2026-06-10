@@ -620,6 +620,7 @@ async def get_content(
     country: str | None = Query(None, description="Filtrar por país"),
     search: str | None = Query(None, description="Buscar por nombre"),
     year: int | None = Query(None, description="Filtrar por año"),
+    genre: str | None = Query(None, description="Filtrar por género"),
     password: str | None = Query(None, description="Password para construir stream_url"),
     section_title: str | None = Query(
         None,
@@ -665,6 +666,7 @@ async def get_content(
         year=year,
         username=auth.username,
         password=password or "",
+        genre=genre,
     )
 
 
@@ -681,6 +683,17 @@ async def get_content_filters(
     if content_type == "channels" and "Favorites" not in payload["groups"]:
         payload = {**payload, "groups": ["Favorites", *payload["groups"]]}
     return payload
+
+
+@app.get("/api/content/genres", tags=["Content"])
+async def get_content_genres(
+    content_type: str = Query(
+        ..., enum=["movies", "series"], description="Tipo de contenido"
+    ),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
+):
+    return {"genres": content_svc.get_genres(content_type)}
 
 
 @app.get("/api/content/stats", tags=["Content"])

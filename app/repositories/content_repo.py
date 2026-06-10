@@ -93,6 +93,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         country: str | None = None,
         search: str | None = None,
         year: int | None = None,
+        genre: str | None = None,
     ) -> tuple[list[dict], int]:
         filters = []
         if country:
@@ -106,6 +107,8 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             )
         if year:
             filters.append(MovieCatalog.year == year)
+        if genre:
+            filters.append(MovieMetadata.genres.contains([genre]))
 
         count_stmt = select(func.count()).select_from(MovieCatalog)
         if filters:
@@ -181,6 +184,25 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         rows = self.session.execute(q).scalars().all()
         return [r for r in rows if r]
 
+    def get_distinct_genres(self, content_type: str) -> list[str]:
+        if content_type == "movies":
+            from sqlalchemy import func as sa_func, distinct
+
+            q = select(distinct(sa_func.unnest(MovieMetadata.genres))).order_by(
+                sa_func.unnest(MovieMetadata.genres)
+            )
+        elif content_type == "series":
+            from app.models.series import SeriesMetadata
+            from sqlalchemy import func as sa_func, distinct
+
+            q = select(distinct(sa_func.unnest(SeriesMetadata.genres))).order_by(
+                sa_func.unnest(SeriesMetadata.genres)
+            )
+        else:
+            return []
+        rows = self.session.execute(q).scalars().all()
+        return [r for r in rows if r]
+
     def search_by_provider_id(self, provider_id: str) -> MovieCatalog | None:
         stmt = select(MovieCatalog).where(MovieCatalog.provider_id == provider_id)
         return self.session.execute(stmt).scalar_one_or_none()
@@ -194,6 +216,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         country: str | None = None,
         search: str | None = None,
         year: int | None = None,
+        genre: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         filters: list[str] = []
         params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
@@ -212,6 +235,9 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         if year:
             filters.append("mc.year = :year")
             params["year"] = year
+        if genre:
+            filters.append("mm.genres @> ARRAY[:genre]::varchar[]")
+            params["genre"] = genre
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
         count_sql = f"SELECT COUNT(DISTINCT mc.tmdb_id) AS total FROM movies_catalog mc {where_clause}"

@@ -312,6 +312,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         country: str | None = None,
         search: str | None = None,
         year: int | None = None,
+        genre: str | None = None,
     ) -> dict[str, Any]:
         filters: list[str] = []
         params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
@@ -330,6 +331,9 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         if year:
             filters.append("sc.year = :year")
             params["year"] = year
+        if genre:
+            filters.append("sm.genres @> ARRAY[:genre]::varchar[]")
+            params["genre"] = genre
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
         count_sql = f"SELECT COUNT(DISTINCT sc.tmdb_id) AS total FROM series_catalog sc {where_clause}"
