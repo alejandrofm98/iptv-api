@@ -124,10 +124,28 @@ class ContentRepository(BaseRepository[MovieCatalog]):
 
         data_stmt = (
             select(
-                MovieCatalog,
+                MovieCatalog.id,
+                MovieCatalog.title.label("nombre"),
+                MovieCatalog.title.label("nombre_normalizado"),
+                MovieCatalog.tmdb_id,
+                MovieCatalog.year,
+                MovieCatalog.country,
+                MovieCatalog.group_normalizado.label("grupo"),
+                MovieCatalog.group_normalizado.label("grupo_normalizado"),
+                MovieCatalog.logo,
+                MovieCatalog.provider_id,
                 MovieMetadata.poster_path.label("tmdb_poster_path"),
                 MovieMetadata.backdrop_path,
                 MovieMetadata.vote_average,
+                MovieMetadata.vote_count,
+                MovieMetadata.genres,
+                MovieMetadata.overview_es,
+                MovieMetadata.overview_en,
+                MovieMetadata.release_date,
+                MovieMetadata.popularity,
+                MovieMetadata.status,
+                MovieMetadata.tagline,
+                MovieMetadata.title.label("tmdb_title"),
             )
             .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
             .order_by(desc(MovieCatalog.year).nullslast(), MovieCatalog.title)
