@@ -176,9 +176,9 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             from app.models.series import SeriesCatalog
 
             q = (
-                select(SeriesCatalog.nombre_normalizado)
+                select(SeriesCatalog.group_normalizado)
                 .distinct()
-                .order_by(SeriesCatalog.nombre_normalizado)
+                .order_by(SeriesCatalog.group_normalizado)
             )
             if countries:
                 q = q.where(SeriesCatalog.country.in_(countries))
