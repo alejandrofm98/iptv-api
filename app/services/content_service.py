@@ -1007,8 +1007,9 @@ class ContentServiceV2:
         search: str | None = None,
         year: int | None = None,
         genre: str | None = None,
+        group: str | None = None,
     ) -> tuple[list[dict], int]:
-        return self.content_repo.get_movies_paginated(page, page_size, country, search, year, genre)
+        return self.content_repo.get_movies_paginated(page, page_size, country, search, year, genre, group)
 
     @staticmethod
     def _resolve_stream_url(stream_options: list[dict], username: str, password: str) -> str:
@@ -1407,7 +1408,7 @@ class ContentServiceV2:
             return self._build_paginated_payload(parsed_items, total, page, page_size)
         if content_type in ("movies", "channels"):
             if content_type == "movies":
-                rows, total = self.get_movies_paginated(page, page_size, country, search, year, genre)
+                rows, total = self.get_movies_paginated(page, page_size, country, search, year, genre, group)
             else:
                 channels, total = self.get_channels_paginated(
                     page, page_size, country, group, search

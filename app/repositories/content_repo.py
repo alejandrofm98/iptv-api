@@ -94,6 +94,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         search: str | None = None,
         year: int | None = None,
         genre: str | None = None,
+        group: str | None = None,
     ) -> tuple[list[dict], int]:
         filters = []
         if country:
@@ -109,8 +110,14 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             filters.append(MovieCatalog.year == year)
         if genre:
             filters.append(MovieMetadata.genres.contains([genre]))
+        if group:
+            filters.append(MovieCatalog.group_normalizado.ilike(f"%{group}%"))
+
+        needs_metadata_join = genre is not None
 
         count_stmt = select(func.count()).select_from(MovieCatalog)
+        if needs_metadata_join:
+            count_stmt = count_stmt.outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
         if filters:
             count_stmt = count_stmt.where(and_(*filters))
         total = self.session.execute(count_stmt).scalar() or 0
