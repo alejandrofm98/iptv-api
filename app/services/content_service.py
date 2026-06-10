@@ -1612,11 +1612,40 @@ class ContentServiceV2:
         extra = kwargs.get("extra")
         return self._build_paginated_payload(items, total, page, page_size, extra)
 
-    def get_groups(self, content_type: str, country_list: list[str] | None = None) -> list[str]:
-        return self.content_repo.get_distinct_groups(content_type, country_list)
+    COUNTRY_NAMES: dict[str, str] = {
+        "AD": "Andorra", "AE": "Emiratos Árabes Unidos", "AF": "Afganistán",
+        "AL": "Albania", "AM": "Armenia", "AR": "Argentina", "AT": "Austria",
+        "AU": "Australia", "AZ": "Azerbaiyán", "BE": "Bélgica", "BG": "Bulgaria",
+        "BH": "Baréin", "BR": "Brasil", "BY": "Bielorrusia", "CA": "Canadá",
+        "CG": "República del Congo", "CH": "Suiza", "CY": "Chipre",
+        "CZ": "República Checa", "DE": "Alemania", "DK": "Dinamarca",
+        "DO": "República Dominicana", "DZ": "Argelia", "EC": "Ecuador",
+        "EG": "Egipto", "ES": "España", "FI": "Finlandia", "FR": "Francia",
+        "GB": "Reino Unido", "GR": "Grecia", "GT": "Guatemala", "HK": "Hong Kong",
+        "HN": "Honduras", "HR": "Croacia", "HU": "Hungría", "ID": "Indonesia",
+        "IE": "Irlanda", "IL": "Israel", "IN": "India", "IQ": "Irak",
+        "IR": "Irán", "IS": "Islandia", "IT": "Italia", "JM": "Jamaica",
+        "JO": "Jordania", "JP": "Japón", "KE": "Kenia", "KH": "Camboya",
+        "KR": "Corea del Sur", "KW": "Kuwait", "KZ": "Kazajistán",
+        "LB": "Líbano", "LT": "Lituania", "LU": "Luxemburgo", "LV": "Letonia",
+        "MA": "Marruecos", "MK": "Macedonia del Norte", "MT": "Malta",
+        "MX": "México", "MY": "Malasia", "NG": "Nigeria", "NL": "Países Bajos",
+        "NO": "Noruega", "NP": "Nepal", "NZ": "Nueva Zelanda", "PE": "Perú",
+        "PH": "Filipinas", "PK": "Pakistán", "PL": "Polonia", "PT": "Portugal",
+        "RO": "Rumania", "RS": "Serbia", "RU": "Rusia", "SA": "Arabia Saudita",
+        "SE": "Suecia", "SG": "Singapur", "SI": "Eslovenia", "SK": "Eslovaquia",
+        "SV": "El Salvador", "TH": "Tailandia", "TN": "Túnez", "TR": "Turquía",
+        "TW": "Taiwán", "UA": "Ucrania", "UK": "Reino Unido", "US": "Estados Unidos",
+        "UY": "Uruguay", "VE": "Venezuela", "VN": "Vietnam", "ZA": "Sudáfrica",
+    }
 
-    def get_countries(self, content_type: str) -> list[str]:
-        return self.content_repo.get_distinct_countries(content_type)
+    def get_groups(self, content_type: str, country_list: list[str] | None = None) -> list[dict[str, str]]:
+        raw = self.content_repo.get_distinct_groups(content_type, country_list)
+        return [{"value": g, "label": g} for g in raw]
+
+    def get_countries(self, content_type: str) -> list[dict[str, str]]:
+        raw = self.content_repo.get_distinct_countries(content_type)
+        return [{"value": c, "label": self.COUNTRY_NAMES.get(c, c)} for c in raw]
 
     def get_genres(self, content_type: str) -> list[str]:
         return self.content_repo.get_distinct_genres(content_type)

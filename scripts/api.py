@@ -570,8 +570,8 @@ async def get_groups_public(
         country_list = [c.strip().upper() for c in countries.split(",") if c.strip()]
 
     groups = content_svc.get_groups(content_type, country_list)
-    if content_type == "channels" and "Favorites" not in groups:
-        groups = ["Favorites", *groups]
+    if content_type == "channels" and not any(g["value"] == "Favorites" for g in groups):
+        groups = [{"value": "Favorites", "label": "Favoritos"}, *groups]
     return {"groups": groups}
 
 
@@ -680,8 +680,8 @@ async def get_content_filters(
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
     payload = content_svc.get_catalog_filters(content_type=content_type, country=country)
-    if content_type == "channels" and "Favorites" not in payload["groups"]:
-        payload = {**payload, "groups": ["Favorites", *payload["groups"]]}
+    if content_type == "channels" and not any(g["value"] == "Favorites" for g in payload["groups"]):
+        payload = {**payload, "groups": [{"value": "Favorites", "label": "Favoritos"}, *payload["groups"]]}
     return payload
 
 
