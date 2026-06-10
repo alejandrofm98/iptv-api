@@ -265,7 +265,8 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             params["genre"] = genre
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
-        count_sql = f"SELECT COUNT(DISTINCT mc.tmdb_id) AS total FROM movies_catalog mc {where_clause}"
+        count_join = "LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id" if genre else ""
+        count_sql = f"SELECT COUNT(DISTINCT mc.tmdb_id) AS total FROM movies_catalog mc {count_join} {where_clause}"
         total = self.session.execute(text(count_sql), params).scalar() or 0
 
         data_sql = f"""
