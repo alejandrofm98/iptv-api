@@ -332,7 +332,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             filters.append("sc.year = :year")
             params["year"] = year
         if genre:
-            filters.append("sm.genres @> ARRAY[:genre]::varchar[]")
+            filters.append("sm.genres @> ARRAY[:genre]::text[]")
             params["genre"] = genre
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 

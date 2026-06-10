@@ -1622,6 +1622,7 @@ class ContentServiceV2:
         "DO": "República Dominicana", "DZ": "Argelia", "EC": "Ecuador",
         "EG": "Egipto", "ES": "España", "FI": "Finlandia", "FR": "Francia",
         "GB": "Reino Unido", "GR": "Grecia", "GT": "Guatemala", "HK": "Hong Kong",
+        "EN": "Inglés",
         "HN": "Honduras", "HR": "Croacia", "HU": "Hungría", "ID": "Indonesia",
         "IE": "Irlanda", "IL": "Israel", "IN": "India", "IQ": "Irak",
         "IR": "Irán", "IS": "Islandia", "IT": "Italia", "JM": "Jamaica",

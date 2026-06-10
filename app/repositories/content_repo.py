@@ -109,7 +109,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         if year:
             filters.append(MovieCatalog.year == year)
         if genre:
-            filters.append(MovieMetadata.genres.contains([genre]))
+            filters.append(text("movies_metadata.genres @> ARRAY[:genre]::text[]").bindparams(genre=genre))
         if group:
             filters.append(MovieCatalog.group_normalizado.ilike(f"%{group}%"))
 
@@ -261,7 +261,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             filters.append("mc.year = :year")
             params["year"] = year
         if genre:
-            filters.append("mm.genres @> ARRAY[:genre]::varchar[]")
+            filters.append("mm.genres @> ARRAY[:genre]::text[]")
             params["genre"] = genre
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
