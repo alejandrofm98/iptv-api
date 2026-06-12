@@ -337,11 +337,11 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
         count_join = "LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id" if genre else ""
-        count_sql = f"SELECT COUNT(DISTINCT sc.tmdb_id) AS total FROM series_catalog sc {count_join} {where_clause}"
+        count_sql = f"SELECT COUNT(DISTINCT COALESCE(sc.tmdb_id, sc.id::text)) AS total FROM series_catalog sc {count_join} {where_clause}"
         total = self.session.execute(text(count_sql), params).scalar() or 0
 
         data_sql = f"""
-            SELECT DISTINCT ON (sc.tmdb_id)
+            SELECT DISTINCT ON (COALESCE(sc.tmdb_id, sc.id::text))
                 sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.country,
                 sc.group_normalizado, sc.logo, sc.provider_id,
                 sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
@@ -358,7 +358,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             FROM series_catalog sc
             LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
             {where_clause}
-            ORDER BY sc.tmdb_id NULLS LAST, sc.created_at DESC
+            ORDER BY COALESCE(sc.tmdb_id, sc.id::text) NULLS LAST, sc.created_at DESC
             LIMIT :limit OFFSET :offset
         """
         rows = self.session.execute(text(data_sql), params).mappings().all()
