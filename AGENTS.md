@@ -310,7 +310,17 @@ ruff format scripts services utils app tests && \
 5. Versionado explicito de API (`/api/v1/...`, `/api/v2/...`) antes
    del siguiente breaking change.
 
-## 10. Checklist antes de cerrar una tarea
+## 10. Despliegue (Dokploy)
+
+Este proyecto usa **Dokploy** para despliegue continuo. Cada `git push` a `master`
+despliega automaticamente el nuevo codigo en produccion.
+
+- **NO es necesario** hacer deploy manual, SSH al servidor, docker compose, etc.
+- **Solo hacer `git push`** — Dokploy detecta el push y reconstruye + reinicia el contenedor.
+- Tener en cuenta: cualquier push a `master` va a produccion inmediatamente.
+  Si necesitas probar sin afectar produccion, trabajar en una rama y hacer PR.
+
+## 11. Checklist antes de cerrar una tarea
 
 1. Codigo formateado: `ruff format` sin diffs.
 2. Lint limpio: `ruff check` sin warnings.
@@ -321,7 +331,7 @@ ruff format scripts services utils app tests && \
 7. Sin secretos en el diff (`git diff --staged | grep -iE 'key|secret|token|password'`).
 8. Sin emojis en codigo, comentarios ni docs.
 
-## 11. Acceso a base de datos
+## 12. Acceso a base de datos
 
 Para verificar datos en Postgres, usar `pgcli` (instalado en el sistema).
 
