@@ -805,7 +805,7 @@ class ContentServiceV2:
         use_upper_group = "group" in gp
         group_filter = gp.get("pattern") if not use_upper_group else None
         upper_group = gp.get("group") if use_upper_group else None
-        effective_country = gp.get("country") or country
+        effective_country = gp.get("country")
         year = gp.get("year")
         if content_type == "series":
             result = self._get_distinct_series_groups_catalog_raw(
