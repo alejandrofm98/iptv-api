@@ -98,7 +98,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
     ) -> tuple[list[dict], int]:
         filters = []
         if country:
-            filters.append(MovieCatalog.country == country)
+            filters.append(MovieCatalog.countries.any(country))
         if search:
             filters.append(
                 or_(
@@ -130,6 +130,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 MovieCatalog.tmdb_id,
                 MovieCatalog.year,
                 MovieCatalog.country,
+                MovieCatalog.countries,
                 MovieCatalog.group_normalizado.label("grupo"),
                 MovieCatalog.group_normalizado.label("grupo_normalizado"),
                 MovieCatalog.logo,
@@ -181,31 +182,27 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 .order_by(SeriesCatalog.group_normalizado)
             )
             if countries:
-                q = q.where(SeriesCatalog.country.in_(countries))
+                q = q.where(SeriesCatalog.countries.overlap(countries))
             rows = self.session.execute(q).scalars().all()
             return [r for r in rows if r]
         q = select(col).distinct().order_by(col)
         if countries:
-            q = q.where(table.country.in_(countries))
+            q = q.where(table.countries.overlap(countries))
         rows = self.session.execute(q).scalars().all()
         return [r for r in rows if r]
 
     def get_distinct_countries(self, content_type: str) -> list[str]:
-        if content_type == "movies":
-            table = MovieCatalog
-        elif content_type == "channels":
+        if content_type == "channels":
             from app.models.channel import Channel
 
             q = select(Channel.country).distinct().order_by(Channel.country)
             rows = self.session.execute(q).scalars().all()
             return [r for r in rows if r]
+        if content_type == "movies":
+            table = "movies_catalog"
         else:
-            from app.models.series import SeriesCatalog
-
-            q = select(SeriesCatalog.country).distinct().order_by(SeriesCatalog.country)
-            rows = self.session.execute(q).scalars().all()
-            return [r for r in rows if r]
-        q = select(table.country).distinct().order_by(table.country)
+            table = "series_catalog"
+        q = text(f"SELECT DISTINCT unnest({table}.countries) AS c FROM {table} WHERE {table}.countries IS NOT NULL ORDER BY c")
         rows = self.session.execute(q).scalars().all()
         return [r for r in rows if r]
 
@@ -252,7 +249,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             filters.append("UPPER(mc.group_normalizado) LIKE :upper_group")
             params["upper_group"] = f"%{upper_group}%"
         if country:
-            filters.append("mc.country = :country")
+            filters.append(":country = ANY(mc.countries)")
             params["country"] = country
         if search:
             filters.append("(mc.title ILIKE :search OR mc.tmdb_id::text ILIKE :search)")
@@ -271,7 +268,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
 
         data_sql = f"""
             SELECT DISTINCT ON (mc.tmdb_id)
-                mc.id, mc.title, mc.tmdb_id, mc.year, mc.country,
+                mc.id, mc.title, mc.tmdb_id, mc.year, mc.country, mc.countries,
                 mc.group_normalizado, mc.logo, mc.provider_id,
                 mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
                 mm.genres, mm.backdrop_path, mm.poster_path,

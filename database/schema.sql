@@ -248,6 +248,7 @@ CREATE TABLE IF NOT EXISTS movies_catalog (
     canonical_key VARCHAR,
     year INTEGER,
     country VARCHAR(10),
+    countries VARCHAR(10)[] DEFAULT '{}',
     group_normalizado TEXT,
     logo TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -262,6 +263,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_movies_catalog_tmdb ON movies_catalog(tmdb_
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_dedup ON movies_catalog(nombre_dedup_key);
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_year ON movies_catalog(year);
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_country ON movies_catalog(country);
+CREATE INDEX IF NOT EXISTS idx_movies_catalog_countries ON movies_catalog USING GIN (countries);
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_group ON movies_catalog(group_normalizado);
 CREATE INDEX IF NOT EXISTS idx_movies_catalog_canonical ON movies_catalog(canonical_key);
 
@@ -331,6 +333,7 @@ CREATE TABLE IF NOT EXISTS series_catalog (
     nombre_dedup_key TEXT,
     year INTEGER,
     country VARCHAR(10),
+    countries VARCHAR(10)[] DEFAULT '{}',
     group_normalizado TEXT,
     logo TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -345,6 +348,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_series_catalog_tmdb ON series_catalog(tmdb_
 CREATE INDEX IF NOT EXISTS idx_series_catalog_series_key ON series_catalog(series_key);
 CREATE INDEX IF NOT EXISTS idx_series_catalog_year ON series_catalog(year);
 CREATE INDEX IF NOT EXISTS idx_series_catalog_country ON series_catalog(country);
+CREATE INDEX IF NOT EXISTS idx_series_catalog_countries ON series_catalog USING GIN (countries);
 CREATE INDEX IF NOT EXISTS idx_series_catalog_group ON series_catalog(group_normalizado);
 CREATE INDEX IF NOT EXISTS idx_series_catalog_canonical ON series_catalog(canonical_key);
 

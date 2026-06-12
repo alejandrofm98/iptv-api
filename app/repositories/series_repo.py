@@ -323,7 +323,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             filters.append("UPPER(sc.group_normalizado) LIKE :upper_group")
             params["upper_group"] = f"%{upper_group}%"
         if country:
-            filters.append("sc.country = :country")
+            filters.append(":country = ANY(sc.countries)")
             params["country"] = country
         if search:
             filters.append("(sc.title ILIKE :search OR sc.title ILIKE :search)")
@@ -342,7 +342,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
 
         data_sql = f"""
             SELECT DISTINCT ON (COALESCE(sc.tmdb_id, sc.id::text))
-                sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.country,
+                sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.country, sc.countries,
                 sc.group_normalizado, sc.logo, sc.provider_id,
                 sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
                 sm.genres, sm.backdrop_path, sm.poster_path,

@@ -490,6 +490,7 @@ class ContentServiceV2:
             "grupo": row.get("grupo") or "",
             "grupo_normalizado": row.get("grupo_normalizado") or row.get("grupo") or "",
             "country": row.get("country"),
+            "countries": row.get("countries"),
             "provider_id": provider_id,
             "url": original_url,
             "stream_url": stream_url,
@@ -555,7 +556,8 @@ class ContentServiceV2:
                 else ("CINE" if content_type == "movies" else "SERIE")
             ),
             "channel_number": parsed.get("num") if content_type == "channels" else None,
-            "language_label": parsed.get("country"),
+            "language_label": self._countries_label(parsed.get("countries")),
+            "countries": parsed.get("countries"),
             "series_name": (
                 (parsed.get("serie_name") or parsed.get("nombre_normalizado") or original_title)
                 if content_type == "series"
@@ -620,7 +622,8 @@ class ContentServiceV2:
             "total_episodes": row.get("total_episodes", 0),
             "total_seasons": row.get("total_seasons", 0),
             "year": row.get("year"),
-            "language_label": row.get("country"),
+            "language_label": self._countries_label(row.get("countries")),
+            "countries": row.get("countries"),
             "overview": overview,
             "overview_es": row.get("overview_es") or "",
             "overview_en": row.get("overview_en") or "",
@@ -669,7 +672,8 @@ class ContentServiceV2:
                 stream_options, username, password
             ),
             "stream_label": first_stream.get("label", "Ver"),
-            "language_label": first_stream.get("country", ""),
+            "language_label": self._countries_label(row.get("countries")),
+            "countries": row.get("countries"),
             "overview": overview,
             "overview_es": overview_es,
             "overview_en": row.get("overview_en") or "",
@@ -731,7 +735,8 @@ class ContentServiceV2:
             "episode_number": None,
             "total_episodes": row.get("total_episodes", 0),
             "year": year,
-            "language_label": row.get("country"),
+            "language_label": self._countries_label(row.get("countries")),
+            "countries": row.get("countries"),
             "stream_url": "",
             "overview": row.get("overview_es") or row.get("overview_en"),
             "overview_es": row.get("overview_es"),
@@ -760,7 +765,7 @@ class ContentServiceV2:
         search: str | None = None,
         year: int | None = None,
     ) -> tuple[list[dict], int]:
-        return self.content_repo.get_movies_catalog_page(
+        rows, total = self.content_repo.get_movies_catalog_page(
             page=page,
             page_size=page_size,
             group=group,
@@ -769,6 +774,26 @@ class ContentServiceV2:
             search=search,
             year=year,
         )
+        # Ensure countries field is populated from stream data if missing
+        for row in rows:
+            row["countries"] = self._resolve_countries(row)
+        return rows, total
+
+    @staticmethod
+    def _resolve_countries(row: dict[str, Any]) -> list[str]:
+        co = row.get("countries")
+        if co and isinstance(co, list) and len(co) > 0:
+            return sorted(set(co))
+        legacy = row.get("country")
+        stream_opts = row.get("stream_options") or []
+        result = set()
+        if legacy:
+            result.add(legacy)
+        for s in stream_opts:
+            c = s.get("country")
+            if c:
+                result.add(c)
+        return sorted(result)
 
     def _get_distinct_series_groups_catalog_raw(
         self,
@@ -781,7 +806,7 @@ class ContentServiceV2:
         year: int | None = None,
         genre: str | None = None,
     ) -> dict:
-        return self.series_repo.get_distinct_series_groups_catalog(
+        result = self.series_repo.get_distinct_series_groups_catalog(
             page=page,
             page_size=page_size,
             group=group,
@@ -791,6 +816,11 @@ class ContentServiceV2:
             year=year,
             genre=genre,
         )
+        items = result.get("items") or []
+        for row in items:
+            row["countries"] = self._resolve_countries(row)
+        result["items"] = items
+        return result
 
     def _fetch_section_page(
         self,
@@ -805,7 +835,7 @@ class ContentServiceV2:
         use_upper_group = "group" in gp
         group_filter = gp.get("pattern") if not use_upper_group else None
         upper_group = gp.get("group") if use_upper_group else None
-        effective_country = gp.get("country")
+        effective_country = country or gp.get("country")
         year = gp.get("year")
         if content_type == "series":
             result = self._get_distinct_series_groups_catalog_raw(
@@ -871,6 +901,7 @@ class ContentServiceV2:
                         "page_size": page_size,
                         "has_more": page < pages,
                         "has_next": page < pages,
+                        "group_name": gp.get("group") or gp.get("pattern"),
                         "total": total,
                         "pages": pages,
                     }
@@ -918,6 +949,13 @@ class ContentServiceV2:
             if sources:
                 return sources[0]
         return None
+
+    @staticmethod
+    def _countries_label(countries: Any) -> str:
+        if not countries or not isinstance(countries, list):
+            return ""
+        valid = [c for c in countries if c and isinstance(c, str)]
+        return ", ".join(sorted(valid))
 
     @staticmethod
     def _guess_stream_format(url: str) -> str:
@@ -1348,6 +1386,7 @@ class ContentServiceV2:
                     "title": r.title or "",
                     "nombre_dedup_key": r.nombre_dedup_key or "",
                     "country": r.country or "",
+                    "countries": r.countries,
                     "year": r.year,
                     "poster_path": getattr(r, 'poster_path', None) or "",
                     "backdrop_path": getattr(r, 'backdrop_path', None) or "",
@@ -1369,6 +1408,7 @@ class ContentServiceV2:
                     "title": r.title or "",
                     "nombre_normalizado": getattr(r, 'nombre_normalizado', None) or "",
                     "country": r.country or "",
+                    "countries": r.countries,
                     "year": r.year,
                     "poster_path": getattr(r, 'poster_path', None) or "",
                     "backdrop_path": getattr(r, 'backdrop_path', None) or "",
