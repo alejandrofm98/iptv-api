@@ -335,12 +335,11 @@ despliega automaticamente el nuevo codigo en produccion.
 
 Para verificar datos en Postgres, usar `pgcli` (instalado en el sistema).
 
-Las credenciales estan en `.env` en la raiz del proyecto (nunca commiteado).
-Si no existe, crear uno con las variables `PG_HOST`, `PG_PORT`, `PG_DATABASE`,
-`PG_USER`, `PG_PASSWORD` que aparecen en `utils/config.py`.
+Las credenciales estan en `docker/.env` (nunca commiteado). Las variables
+`PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`.
 
 ```bash
-source .env 2>/dev/null || true
+source docker/.env 2>/dev/null || true
 PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DATABASE" -c "SELECT ...;"
 ```
 
@@ -367,3 +366,20 @@ pgcli -h $PG_HOST -p $PG_PORT -U $PG_USER -d $PG_DATABASE
 - `movies_catalog.provider_id` y `series_catalog.provider_id` son strings numericos (ej: "1394135")
 - `series_streams.provider_id` es el ID del stream de un **episodio** individual (ej: "1418278"), NO de la serie
 - Para buscar una serie por episode provider_id: JOIN series_streams -> series_episodes -> series_catalog
+
+## 13. Probar la API con curl
+
+Las credenciales de testing estan en `docker/.env`:
+
+```bash
+source docker/.env 2>/dev/null || true
+
+# Login
+TOKEN=$(curl -s -X POST "$Test_API_BASE_URL/api/auth/login" \
+  -d "username=$Test_USERNAME&password=$Test_PASSWORD" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Home catalog
+curl -s "$API_BASE_URL/api/home?country=ES&page_size=3" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```

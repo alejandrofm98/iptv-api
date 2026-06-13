@@ -902,6 +902,8 @@ class ContentServiceV2:
                         "has_more": page < pages,
                         "has_next": page < pages,
                         "group_name": gp.get("group") or gp.get("pattern"),
+                        "section_title": gp["title"],
+                        "year": gp.get("year"),
                         "total": total,
                         "pages": pages,
                     }
