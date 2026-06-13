@@ -342,7 +342,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
 
         data_sql = f"""
             SELECT DISTINCT ON (COALESCE(sc.tmdb_id, sc.id::text))
-                sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.country, sc.countries,
+                sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.countries,
                 sc.group_normalizado, sc.logo, sc.provider_id,
                 sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
                 sm.genres, sm.backdrop_path, sm.poster_path,

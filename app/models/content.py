@@ -56,7 +56,6 @@ class MovieCatalog(Base):
     nombre_dedup_key = Column(Text, nullable=True)
     canonical_key = Column(String, nullable=True)
     year = Column(Integer, nullable=True)
-    country = Column(String(10), nullable=True)
     countries = Column(ARRAY(String(10)), nullable=True)
     group_normalizado = Column(Text, nullable=True)
     logo = Column(Text, nullable=True)

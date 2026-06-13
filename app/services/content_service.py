@@ -719,13 +719,9 @@ class ContentServiceV2:
             "original_title": serie_name,
             "subtitle": group,
             "description": group,
-            "image_url": self._select_catalog_image_url(
-                {
-                    "logo": row.get("logo") or "",
-                    "poster_path": row.get("tmdb_poster_path") or row.get("poster_path"),
-                },
-                "series",
-            ),
+            "image_url": self._build_tmdb_image_url(row.get("poster_path"))
+            or row.get("logo")
+            or self.DEFAULT_IMAGE_SERIES,
             "group": group,
             "normalized_group": group,
             "original_group": group,

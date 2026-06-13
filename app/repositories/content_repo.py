@@ -129,7 +129,6 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 MovieCatalog.title.label("nombre_normalizado"),
                 MovieCatalog.tmdb_id,
                 MovieCatalog.year,
-                MovieCatalog.country,
                 MovieCatalog.countries,
                 MovieCatalog.group_normalizado.label("grupo"),
                 MovieCatalog.group_normalizado.label("grupo_normalizado"),
@@ -268,7 +267,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
 
         data_sql = f"""
             SELECT DISTINCT ON (mc.tmdb_id)
-                mc.id, mc.title, mc.tmdb_id, mc.year, mc.country, mc.countries,
+                mc.id, mc.title, mc.tmdb_id, mc.year, mc.countries,
                 mc.group_normalizado, mc.logo, mc.provider_id,
                 mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
                 mm.genres, mm.backdrop_path, mm.poster_path,

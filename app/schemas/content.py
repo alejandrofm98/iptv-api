@@ -18,7 +18,6 @@ class MovieCatalogItem(BaseModel):
     provider_id: str | None = None
     tmdb_id: str | None = None
     year: int | None = None
-    country: str | None = None
     group_normalizado: str | None = None
     logo: str | None = None
     poster_path: str | None = Field(None, alias="tmdb_poster_path")
@@ -51,7 +50,6 @@ class SeriesCatalogItem(BaseModel):
     provider_id: str | None = None
     tmdb_id: str | None = None
     year: int | None = None
-    country: str | None = None
     group_normalizado: str | None = None
     logo: str | None = None
     poster_path: str | None = Field(None, alias="tmdb_poster_path")
