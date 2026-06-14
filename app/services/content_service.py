@@ -558,6 +558,7 @@ class ContentServiceV2:
             "channel_number": parsed.get("num") if content_type == "channels" else None,
             "language_label": self._countries_label(parsed.get("countries")),
             "countries": parsed.get("countries"),
+            "countries_detail": self._countries_detail(parsed.get("countries")),
             "series_name": (
                 (parsed.get("serie_name") or parsed.get("nombre_normalizado") or original_title)
                 if content_type == "series"
@@ -624,6 +625,7 @@ class ContentServiceV2:
             "year": row.get("year"),
             "language_label": self._countries_label(row.get("countries")),
             "countries": row.get("countries"),
+            "countries_detail": self._countries_detail(row.get("countries")),
             "overview": overview,
             "overview_es": row.get("overview_es") or "",
             "overview_en": row.get("overview_en") or "",
@@ -674,6 +676,7 @@ class ContentServiceV2:
             "stream_label": first_stream.get("label", "Ver"),
             "language_label": self._countries_label(row.get("countries")),
             "countries": row.get("countries"),
+            "countries_detail": self._countries_detail(row.get("countries")),
             "overview": overview,
             "overview_es": overview_es,
             "overview_en": row.get("overview_en") or "",
@@ -733,6 +736,7 @@ class ContentServiceV2:
             "year": year,
             "language_label": self._countries_label(row.get("countries")),
             "countries": row.get("countries"),
+            "countries_detail": self._countries_detail(row.get("countries")),
             "stream_url": "",
             "overview": row.get("overview_es") or row.get("overview_en"),
             "overview_es": row.get("overview_es"),
@@ -779,15 +783,15 @@ class ContentServiceV2:
     def _resolve_countries(row: dict[str, Any]) -> list[str]:
         co = row.get("countries")
         if co and isinstance(co, list) and len(co) > 0:
-            return sorted(set(co))
+            return sorted(c for c in set(co) if c and c != "UNKNOWN")
         legacy = row.get("country")
         stream_opts = row.get("stream_options") or []
         result = set()
-        if legacy:
+        if legacy and legacy != "UNKNOWN":
             result.add(legacy)
         for s in stream_opts:
             c = s.get("country")
-            if c:
+            if c and c != "UNKNOWN":
                 result.add(c)
         return sorted(result)
 
@@ -948,12 +952,22 @@ class ContentServiceV2:
                 return sources[0]
         return None
 
-    @staticmethod
-    def _countries_label(countries: Any) -> str:
+    def _countries_label(self, countries: Any) -> str:
         if not countries or not isinstance(countries, list):
             return ""
-        valid = [c for c in countries if c and isinstance(c, str)]
-        return ", ".join(sorted(valid))
+        valid = [c for c in countries if c and isinstance(c, str) and c != "UNKNOWN"]
+        return ", ".join(
+            sorted(self.COUNTRY_NAMES.get(c, c) for c in valid)
+        )
+
+    def _countries_detail(self, countries: Any) -> list[dict[str, str]]:
+        if not countries or not isinstance(countries, list):
+            return []
+        valid = [c for c in countries if c and isinstance(c, str) and c != "UNKNOWN"]
+        return sorted(
+            [{"value": c, "label": self.COUNTRY_NAMES.get(c, c)} for c in valid],
+            key=lambda x: x["label"],
+        )
 
     @staticmethod
     def _guess_stream_format(url: str) -> str:
