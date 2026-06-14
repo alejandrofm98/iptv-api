@@ -28,6 +28,7 @@ def map_android_type(content_type: str) -> str:
         "channels": "channel",
         "movies": "movie",
         "series": "series",
+        "events": "event",
     }.get(content_type, content_type)
 
 
@@ -1551,7 +1552,7 @@ class ContentServiceV2:
         username: str = "",
         password: str = "",
     ) -> dict:
-        requested_types = [ct for ct in types if ct in ("channels", "movies", "series")]
+        requested_types = [ct for ct in types if ct in ("channels", "movies", "series", "events")]
         if not requested_types:
             requested_types = ["channels", "movies", "series"]
         merged_items: list[dict] = []
@@ -1591,6 +1592,10 @@ class ContentServiceV2:
                     self._to_android_catalog_item(row, content_type, username, password)
                     for row in rows
                 )
+            elif content_type == "events":
+                merged_items.extend(
+                    self._search_events(query, username, password)
+                )
         merged_items.sort(key=lambda item: item.get("title") or "")
         total = len(merged_items)
         offset = (page - 1) * page_size
@@ -1605,6 +1610,105 @@ class ContentServiceV2:
             "has_next": page < pages,
             "has_prev": page > 1,
             "types": requested_types,
+        }
+
+    def _search_events(
+        self, query: str, username: str = "", password: str = ""
+    ) -> list[dict[str, Any]]:
+        from datetime import date, timedelta
+
+        from sqlalchemy import text
+
+        query_lower = query.lower().strip()
+        all_events: list[dict[str, Any]] = []
+
+        for delta in range(-7, 8):
+            target_date = date.today() + timedelta(days=delta)
+            try:
+                sql = text("SELECT * FROM get_eventos_fecha_con_channels(:fecha)")
+                rows = self.session.execute(sql, {"fecha": target_date}).mappings().all()
+                for row in rows:
+                    evento = dict(row)
+                    competicion = (evento.get("competicion") or "").lower()
+                    equipos = (evento.get("equipos") or "").lower()
+                    categoria = (evento.get("categoria") or "").lower()
+                    subtitulo = (evento.get("subtitulo_competicion") or "").lower()
+                    if (
+                        query_lower in competicion
+                        or query_lower in equipos
+                        or query_lower in categoria
+                        or query_lower in subtitulo
+                    ):
+                        all_events.append(evento)
+            except Exception:
+                continue
+
+        seen_ids: set[str] = set()
+        unique_events: list[dict[str, Any]] = []
+        for evento in all_events:
+            eid = str(evento.get("id", ""))
+            if eid and eid not in seen_ids:
+                seen_ids.add(eid)
+                unique_events.append(evento)
+
+        return [
+            self._to_android_event(evento, username, password)
+            for evento in unique_events
+        ]
+
+    def _to_android_event(
+        self, evento: dict[str, Any], username: str = "", password: str = ""
+    ) -> dict[str, Any]:
+        evento_id = str(evento.get("id", ""))
+        competicion = evento.get("competicion") or ""
+        equipos = evento.get("equipos") or ""
+        fecha = evento.get("fecha") or ""
+        hora = evento.get("hora") or ""
+        categoria = evento.get("categoria") or ""
+        imagen = evento.get("imagen_evento") or ""
+        subtitulo = evento.get("subtitulo_competicion") or ""
+
+        title = f"{competicion} - {equipos}" if equipos else competicion
+        if not title:
+            title = categoria or "Evento"
+
+        badge = f"{fecha} {hora}".strip() if fecha else ""
+
+        canales_resueltos = evento.get("canales_resueltos") or []
+        first_channel = canales_resueltos[0] if canales_resueltos else {}
+        stream_url = first_channel.get("stream_url") or ""
+        provider_id = first_channel.get("provider_id") or ""
+
+        return {
+            "id": evento_id,
+            "provider_id": provider_id,
+            "type": "event",
+            "title": title,
+            "normalized_title": title.lower(),
+            "original_title": title,
+            "subtitle": subtitulo or categoria,
+            "description": f"{competicion}\n{equipos}\n{subtitulo}".strip(),
+            "image_url": imagen,
+            "group": competicion,
+            "normalized_group": competicion.lower(),
+            "original_group": competicion,
+            "badge_text": badge,
+            "channel_number": None,
+            "language_label": None,
+            "countries": None,
+            "countries_detail": None,
+            "series_name": None,
+            "season_number": None,
+            "episode_number": None,
+            "stream_url": stream_url,
+            "fecha": fecha,
+            "hora": hora,
+            "competicion": competicion,
+            "subtitulo_competicion": subtitulo,
+            "categoria": categoria,
+            "equipos": equipos,
+            "imagen_evento": imagen,
+            "canales_resueltos": canales_resueltos,
         }
 
     def resolve_replay_source_stream_url(

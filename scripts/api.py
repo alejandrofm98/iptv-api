@@ -974,7 +974,7 @@ async def delete_channel_favorite(
 @app.get("/api/search", tags=["Content"])
 async def search_content(
     q: str = Query(..., min_length=1, description="Texto de búsqueda"),
-    types: str | None = Query(None, description="Tipos separados por coma: channels,movies,series"),
+    types: str | None = Query(None, description="Tipos separados por coma: channels,movies,series,events"),
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(50, ge=1, le=100, description="Items por página"),
     password: str | None = Query(None, description="Password para construir stream_url"),
