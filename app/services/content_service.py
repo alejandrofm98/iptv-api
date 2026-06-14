@@ -1676,8 +1676,18 @@ class ContentServiceV2:
 
         canales_resueltos = evento.get("canales_resueltos") or []
         first_channel = canales_resueltos[0] if canales_resueltos else {}
-        stream_url = first_channel.get("stream_url") or ""
         provider_id = first_channel.get("provider_id") or ""
+
+        stream_url_raw = first_channel.get("stream_url") or ""
+        if stream_url_raw and username and password:
+            stream_url = self._interpolate_stream_url_template(
+                stream_url_raw, username, password
+            )
+        elif not stream_url_raw and provider_id and username and password:
+            base_url = self._https_base_url
+            stream_url = f"{base_url}/{username}/{password}/{provider_id}"
+        else:
+            stream_url = stream_url_raw
 
         return {
             "id": evento_id,
