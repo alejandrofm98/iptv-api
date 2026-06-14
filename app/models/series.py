@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -87,6 +88,13 @@ class SeriesEpisode(Base):
     air_date = Column(Date, nullable=True)
     still_path = Column(String(255), nullable=True)
     numero = Column(Integer, nullable=True)
+    title_en = Column(Text, nullable=True)
+    overview_en = Column(Text, nullable=True)
+    runtime = Column(Integer, nullable=True)
+    vote_average = Column(Float, nullable=True)
+    vote_count = Column(Integer, nullable=True)
+    episode_type = Column(String(50), nullable=True)
+    tmdb_checked = Column(Boolean, default=False)
 
     __table_args__ = (UniqueConstraint("catalog_id", "season_number", "episode_number"),)
 

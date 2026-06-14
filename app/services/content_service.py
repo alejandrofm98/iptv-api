@@ -1147,6 +1147,15 @@ class ContentServiceV2:
             "stream_label": first_stream.get("label", "Ver"),
             "language_label": first_stream.get("country", ""),
             "total_seasons": None,
+            "overview": row.get("overview", ""),
+            "overview_en": row.get("overview_en", ""),
+            "title_en": row.get("title_en", ""),
+            "air_date": str(row.get("air_date", "")) if row.get("air_date") else None,
+            "still_path": row.get("still_path", ""),
+            "runtime": row.get("runtime"),
+            "vote_average": row.get("vote_average"),
+            "vote_count": row.get("vote_count"),
+            "episode_type": row.get("episode_type", ""),
         }
 
     def get_replays(

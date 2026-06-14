@@ -135,6 +135,17 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                     se.season_number,
                     se.episode_number,
                     se.numero,
+                    se.title,
+                    se.title_en,
+                    se.overview,
+                    se.overview_en,
+                    se.air_date,
+                    se.still_path,
+                    se.runtime,
+                    se.vote_average,
+                    se.vote_count,
+                    se.episode_type,
+                    se.tmdb_checked,
                     jsonb_agg(
                         jsonb_build_object(
                             'url', ss.stream_url,
@@ -153,7 +164,10 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 FROM series_episodes se
                 LEFT JOIN series_streams ss ON ss.episode_id = se.id
                 WHERE se.catalog_id = :cid
-                GROUP BY se.id, se.season_number, se.episode_number, se.numero
+                GROUP BY se.id, se.season_number, se.episode_number, se.numero,
+                         se.title, se.title_en, se.overview, se.overview_en,
+                         se.air_date, se.still_path, se.runtime, se.vote_average,
+                         se.vote_count, se.episode_type, se.tmdb_checked
             )
             SELECT *
             FROM episode_streams
