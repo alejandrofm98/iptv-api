@@ -23,13 +23,12 @@ Uso:
     # result = {"url": "https://...", "provider": "streamtape", "type": "mp4"|"hls"}
 """
 
-import re
-import logging
 import asyncio
-import os
-from typing import Optional
-from urllib.parse import urlparse
 import json
+import logging
+import os
+import re
+from urllib.parse import urlparse
 
 import httpx
 
@@ -55,11 +54,25 @@ PLAYWRIGHT_SERVICE_URL = os.environ.get("VIDEO_EXTRACTOR_URL", "http://video-ext
 # Patrones de URLs falsas (ads, tracking, etc)
 # NOTA: hgplaycdn.com fue eliminado — es el CDN real del player de StreamWish
 FAKE_URL_PATTERNS = [
-    "vast.", "vpaid", "/ad/", "-ad-", "ads.", "advertising",
-    "player/jw", "jwplayer.", "vast.js", "tracking.",
-    "ssp.yahoo", "doubleclick", "googlesyndication",
-    "playnixes.com/player", "rtmark.net", "tiktokcdn.com/ad",
-    "medixiru.com", "ad-site", "huntrexus.com",
+    "vast.",
+    "vpaid",
+    "/ad/",
+    "-ad-",
+    "ads.",
+    "advertising",
+    "player/jw",
+    "jwplayer.",
+    "vast.js",
+    "tracking.",
+    "ssp.yahoo",
+    "doubleclick",
+    "googlesyndication",
+    "playnixes.com/player",
+    "rtmark.net",
+    "tiktokcdn.com/ad",
+    "medixiru.com",
+    "ad-site",
+    "huntrexus.com",
 ]
 
 
@@ -71,12 +84,13 @@ def _is_fake_url(url: str) -> bool:
 
 class _PlaywrightRequired(Exception):
     """Señal interno: este provider necesita el microservicio Playwright."""
+
     def __init__(self, provider: str):
         self.provider = provider
         super().__init__(f"{provider} requiere Playwright")
 
 
-def _first(pattern: str, text: str, group: int = 1, flags: int = 0) -> Optional[str]:
+def _first(pattern: str, text: str, group: int = 1, flags: int = 0) -> str | None:
     """Devuelve el primer match de un patrón o None."""
     m = re.search(pattern, text, flags)
     return m.group(group) if m else None
@@ -95,6 +109,7 @@ async def _post(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response
     headers = {**DEFAULT_HEADERS, **kwargs.pop("headers", {})}
     return await client.post(url, headers=headers, timeout=TIMEOUT, follow_redirects=True, **kwargs)
 
+
 async def _extract_stape(client: httpx.AsyncClient, url: str) -> dict:
     """Stape es una variante de Streamtape con dominio propio."""
     r = await _fetch(client, url, headers={"Referer": "https://stape.io"})
@@ -108,14 +123,12 @@ async def _extract_stape(client: httpx.AsyncClient, url: str) -> dict:
 
     # Alternativa con get_video
     match = _first(
-        r"get_video\?id=([^&\"']+)&expires=([^&\"']+)&ip=([^&\"']+)&token=([^\"'&\s]+)",
-        html
+        r"get_video\?id=([^&\"']+)&expires=([^&\"']+)&ip=([^&\"']+)&token=([^\"'&\s]+)", html
     )
     if match:
         # match es el primer grupo; necesitamos todos
         m = re.search(
-            r"get_video\?id=([^&\"']+)&expires=([^&\"']+)&ip=([^&\"']+)&token=([^\"'&\s]+)",
-            html
+            r"get_video\?id=([^&\"']+)&expires=([^&\"']+)&ip=([^&\"']+)&token=([^\"'&\s]+)", html
         )
         direct = (
             f"https://stape.io/get_video"
@@ -127,10 +140,7 @@ async def _extract_stape(client: httpx.AsyncClient, url: str) -> dict:
 
 
 async def _extract_fembed_like(
-    client: httpx.AsyncClient,
-    url: str,
-    provider: str,
-    api_domain: Optional[str] = None
+    client: httpx.AsyncClient, url: str, provider: str, api_domain: str | None = None
 ) -> dict:
     """
     Extracteur genérico para proveedores con API estilo Fembed:
@@ -150,13 +160,13 @@ async def _extract_fembed_like(
             "Referer": url,
             "X-Requested-With": "XMLHttpRequest",
             "Content-Type": "application/x-www-form-urlencoded",
-        }
+        },
     )
 
     try:
         data = r.json()
     except Exception:
-        raise ValueError(f"{provider}: respuesta API no es JSON — {r.text[:200]}")
+        raise ValueError(f"{provider}: respuesta API no es JSON — {r.text[:200]}") from None
 
     if not data.get("success"):
         raise ValueError(f"{provider}: API devolvió success=false — {data}")
@@ -166,10 +176,7 @@ async def _extract_fembed_like(
         raise ValueError(f"{provider}: sin fuentes en la respuesta")
 
     # Seleccionar la mayor calidad disponible
-    best = max(
-        sources,
-        key=lambda s: int(re.sub(r"\D", "", s.get("label", "0")) or 0)
-    )
+    best = max(sources, key=lambda s: int(re.sub(r"\D", "", s.get("label", "0")) or 0))
     file_url = best.get("file") or best.get("src") or ""
     if not file_url:
         raise ValueError(f"{provider}: fuente sin URL")
@@ -187,25 +194,19 @@ async def _extract_netu(client: httpx.AsyncClient, url: str) -> dict:
     html = r.text
 
     # Buscar src con m3u8 en el HTML del player
-    match = _first(r'''src\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]''', html)
+    match = _first(r"""src\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]""", html)
     if match:
         return {
             "url": match,
             "provider": "netu",
             "type": "hls",
-            "required_headers": {
-                "Origin": "https://hqq.tv",
-                "Referer": "https://hqq.tv"
-            }
+            "required_headers": {"Origin": "https://hqq.tv", "Referer": "https://hqq.tv"},
         }
 
     # Fallback: intentar API Fembed-like
     try:
         result = await _extract_fembed_like(client, url, "netu")
-        result["required_headers"] = {
-            "Origin": "https://hqq.tv",
-            "Referer": "https://hqq.tv"
-        }
+        result["required_headers"] = {"Origin": "https://hqq.tv", "Referer": "https://hqq.tv"}
         return result
     except Exception:
         pass
@@ -233,7 +234,7 @@ def _unpack_js(packed: str) -> str:
             r"""\s*\{.+?\}\s*\(\s*['"](.+?)['"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*"""
             r"""['"](.+?)['"]\s*\.split\s*\(\s*['"]\|['"]\s*\)""",
             packed,
-            re.DOTALL
+            re.DOTALL,
         )
 
         # Variante 2: k como array literal ['a','b',...]
@@ -243,7 +244,7 @@ def _unpack_js(packed: str) -> str:
                 r"""\s*\{.+?\}\s*\(\s*['"](.+?)['"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*"""
                 r"""\[(.+?)\]\s*[,\)]""",
                 packed,
-                re.DOTALL
+                re.DOTALL,
             )
             if m2:
                 p_val = m2.group(1)
@@ -333,6 +334,7 @@ async def _extract_streamwish(client: httpx.AsyncClient, url: str) -> dict:
 
 # ─────────────────────────── Streamtape corregido ────────────────────────────
 
+
 async def _extract_streamtape(client: httpx.AsyncClient, url: str) -> dict:
     r = await _fetch(client, url, headers={"Referer": "https://streamtape.com"})
     html = r.text
@@ -346,15 +348,13 @@ async def _extract_streamtape(client: httpx.AsyncClient, url: str) -> dict:
 
     # Captura part1: la asignación innerHTML = '...'
     part1 = _first(
-        r"""getElementById\(['"]robotlink['"]\)\.innerHTML\s*=\s*['"]([^'"]+)['"]""",
-        html
+        r"""getElementById\(['"]robotlink['"]\)\.innerHTML\s*=\s*['"]([^'"]+)['"]""", html
     )
 
     # Captura part2: la concatenación  innerHTML + 'XXXX'
     # Puede estar en la misma línea o en línea separada, con o sin espacios
     part2 = _first(
-        r"""getElementById\(['"]robotlink['"]\)\.innerHTML\s*\+\s*['"]([^'"]+)['"]""",
-        html
+        r"""getElementById\(['"]robotlink['"]\)\.innerHTML\s*\+\s*['"]([^'"]+)['"]""", html
     )
 
     def _build_url(raw: str) -> str:
@@ -376,7 +376,7 @@ async def _extract_streamtape(client: httpx.AsyncClient, url: str) -> dict:
     # Fallback 1: get_video con 4 grupos
     m = re.search(
         r"get_video\?id=([^&\"'\s<>]+)&expires=([^&\"'\s<>]+)&ip=([^&\"'\s<>]+)&token=([^\"'\s&<>]+)",
-        html
+        html,
     )
     if m:
         direct = (
@@ -388,17 +388,13 @@ async def _extract_streamtape(client: httpx.AsyncClient, url: str) -> dict:
 
     # Fallback 2: get_video URL completa
     m2 = re.search(
-        r"(https?://(?:www\.)?(?:streamtape|tapecontent)\.[a-z]+/get_video\?[^\"' <>\n]+)",
-        html
+        r"(https?://(?:www\.)?(?:streamtape|tapecontent)\.[a-z]+/get_video\?[^\"' <>\n]+)", html
     )
     if m2:
         return {"url": m2.group(1), "provider": "streamtape", "type": "mp4"}
 
     # Fallback 3: cualquier URL de tapecontent.net en el HTML
-    m3 = re.search(
-        r"(https?://[a-z0-9]+\.tapecontent\.net/[^\"' <>\n]+)",
-        html
-    )
+    m3 = re.search(r"(https?://[a-z0-9]+\.tapecontent\.net/[^\"' <>\n]+)", html)
     if m3:
         return {"url": m3.group(1), "provider": "streamtape", "type": "mp4"}
 
@@ -448,9 +444,10 @@ async def _extract_doodstream(client: httpx.AsyncClient, url: str) -> dict:
     r2 = await _fetch(client, token_url, headers={"Referer": url})
     token_base = r2.text.strip()
 
-    import time
     import random
     import string
+    import time
+
     rand_str = "".join(random.choices(string.ascii_letters + string.digits, k=10))
     timestamp = int(time.time() * 1000)
     direct = f"{token_base}{rand_str}?token={rand_str}&expiry={timestamp}"
@@ -492,7 +489,7 @@ async def _extract_okru(client: httpx.AsyncClient, url: str) -> dict:
     try:
         opts = json.loads(raw)
     except Exception:
-        raise ValueError("Okru: JSON inválido en data-options")
+        raise ValueError("Okru: JSON inválido en data-options") from None
 
     # Las fuentes están anidadas en flashvars → metadata → videos
     flash_vars = opts.get("flashvars", {})
@@ -503,7 +500,7 @@ async def _extract_okru(client: httpx.AsyncClient, url: str) -> dict:
     try:
         metadata = json.loads(metadata_str)
     except Exception:
-        raise ValueError("Okru: metadata no es JSON válido")
+        raise ValueError("Okru: metadata no es JSON válido") from None
 
     videos = metadata.get("videos", [])
     if not videos:
@@ -594,6 +591,7 @@ async def _extract_lulustream(client: httpx.AsyncClient, url: str) -> dict:
 
 # ─────────────────────────── Playwright service call ────────────────────────
 
+
 async def _call_playwright_service(url: str, provider: str) -> dict:
     """Llama al microservicio Playwright para extraer video."""
     try:
@@ -606,7 +604,9 @@ async def _call_playwright_service(url: str, provider: str) -> dict:
             data = response.json()
 
             if not data.get("success"):
-                raise ValueError(f"{provider}: microservicio falló — {data.get('error', 'unknown')}")
+                raise ValueError(
+                    f"{provider}: microservicio falló — {data.get('error', 'unknown')}"
+                )
 
             return {
                 "url": data["url"],
@@ -614,14 +614,17 @@ async def _call_playwright_service(url: str, provider: str) -> dict:
                 "type": data.get("type", "mp4"),
             }
     except httpx.ConnectError:
-        raise ValueError(f"{provider}: microservicio Playwright no disponible en {PLAYWRIGHT_SERVICE_URL}")
+        raise ValueError(
+            f"{provider}: microservicio Playwright no disponible en {PLAYWRIGHT_SERVICE_URL}"
+        ) from None
     except Exception as e:
-        raise ValueError(f"{provider}: error llamando microservicio — {str(e)}")
+        raise ValueError(f"{provider}: error llamando microservicio — {e!s}") from e
 
 
 # ─────────────────────────── router principal ────────────────────────────────
 
-def _detect_provider(url: str) -> Optional[str]:
+
+def _detect_provider(url: str) -> str | None:
     """Detecta el proveedor a partir del dominio de la URL."""
     domain = urlparse(url).netloc.lower()
 
@@ -631,10 +634,23 @@ def _detect_provider(url: str) -> Optional[str]:
         (["netu.ac", "netu.io", "hqq.tv", "hqq.ac"], "netu"),
         (["streamhide.to", "streamhide.com", "guccihide.com", "ridehide.com"], "streamhide"),
         (["vidhide.com", "vidhide.to", "vid-guard.com"], "vidhide"),
-        (["streamwish.com", "streamwish.to", "awish.one", "strwish.com", "sfastwish.com", "niramirus.com"], "streamwish"),
+        (
+            [
+                "streamwish.com",
+                "streamwish.to",
+                "awish.one",
+                "strwish.com",
+                "sfastwish.com",
+                "niramirus.com",
+            ],
+            "streamwish",
+        ),
         (["filelions.com", "filelions.to", "filelions.live", "alions.pro"], "filelions"),
         (["vidmoly.to", "vidmoly.com"], "vidmoly"),
-        (["dood.to", "dood.la", "doodstream.com", "dooood.com", "ds2play.com", "doods.pro"], "doodstream"),
+        (
+            ["dood.to", "dood.la", "doodstream.com", "dooood.com", "ds2play.com", "doods.pro"],
+            "doodstream",
+        ),
         (["filemoon.sx", "filemoon.to", "filemoon.in", "moonplayer.to"], "filemoon"),
         (["mp4upload.com", "www.mp4upload.com"], "mp4upload"),
         (["ok.ru", "odnoklassniki.ru"], "okru"),
@@ -652,26 +668,27 @@ def _detect_provider(url: str) -> Optional[str]:
 
 
 _EXTRACTORS = {
-    "streamtape":  _extract_streamtape,
-    "stape":       _extract_stape,
-    "netu":        _extract_netu,
-    "streamhide":  _extract_streamhide,
-    "vidhide":     _extract_vidhide,
-    "streamwish":  _extract_streamwish,
-    "filelions":   _extract_filelions,
-    "vidmoly":     _extract_vidmoly,
-    "doodstream":  _extract_doodstream,
-    "filemoon":    _extract_filemoon,
-    "mp4upload":   _extract_mp4upload,
-    "okru":        _extract_okru,
-    "uqload":      _extract_uqload,
-    "upstream":    _extract_upstream,
-    "voe":         _extract_voe,
-    "lulustream":  _extract_lulustream,
+    "streamtape": _extract_streamtape,
+    "stape": _extract_stape,
+    "netu": _extract_netu,
+    "streamhide": _extract_streamhide,
+    "vidhide": _extract_vidhide,
+    "streamwish": _extract_streamwish,
+    "filelions": _extract_filelions,
+    "vidmoly": _extract_vidmoly,
+    "doodstream": _extract_doodstream,
+    "filemoon": _extract_filemoon,
+    "mp4upload": _extract_mp4upload,
+    "okru": _extract_okru,
+    "uqload": _extract_uqload,
+    "upstream": _extract_upstream,
+    "voe": _extract_voe,
+    "lulustream": _extract_lulustream,
 }
 
 
 # ─────────────────────────── servicio principal ──────────────────────────────
+
 
 class VideoExtractorService:
     """
@@ -724,12 +741,13 @@ class VideoExtractorService:
             try:
                 result = await extractor(client, url)
                 logger.info(
-                    f"[VideoExtractor] OK {provider} → {result['type']}: "
-                    f"{result['url'][:80]}..."
+                    f"[VideoExtractor] OK {provider} → {result['type']}: {result['url'][:80]}..."
                 )
                 return result
             except _PlaywrightRequired:
-                logger.info(f"[VideoExtractor] {provider} requiere Playwright, llamando microservicio...")
+                logger.info(
+                    f"[VideoExtractor] {provider} requiere Playwright, llamando microservicio..."
+                )
                 result = await _call_playwright_service(url, provider)
                 logger.info(
                     f"[VideoExtractor] OK (Playwright) {provider} → {result['type']}: "
@@ -747,6 +765,7 @@ class VideoExtractorService:
         Returns:
             Lista de dicts. Si una URL falla, incluye {"error": "...", "url": "..."}
         """
+
         async def _safe(url: str) -> dict:
             try:
                 return await self.extract(url)
@@ -759,6 +778,6 @@ class VideoExtractorService:
         """Devuelve la lista de proveedores soportados."""
         return list(_EXTRACTORS.keys())
 
-    def detect_provider(self, url: str) -> Optional[str]:
+    def detect_provider(self, url: str) -> str | None:
         """Devuelve el nombre del proveedor detectado o None."""
         return _detect_provider(url)

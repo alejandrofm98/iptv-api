@@ -1,0 +1,120 @@
+[project]
+name = "iptv-api"
+version = "2.1.0"
+description = "IPTV API: users, devices, content catalog, HLS stream proxy"
+requires-python = ">=3.12"
+readme = "README.md"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["scripts", "services", "utils", "app", "tests"]
+extend-exclude = [
+    "data/m3u",
+    "alembic/versions",
+    ".venv",
+    "video-extractor-service",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E501",   # line-too-long (lo maneja el formatter)
+    "B008",   # FastAPI Depends() en signatures es idiomático
+    "B023",   # function definition does not bind loop variable — real pero requiere refactor async
+    "UP015",  # redundant open() mode — molesta con archivos m3u grandes
+    "UP042",  # class inherits from str and enum.Enum — estilo, no rompe nada
+    "UP046",  # Generic class uses Generic subclass — Python 3.12 type params
+    "RUF001", # ambiguous EN DASH — intencional en regex de series_repo
+    "RUF012", # mutable class attribute defaults — diseño intencional del codebase
+    "SIM105", # contextlib.suppress — estilo, no crítico
+]
+unfixable = ["B"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/api.py" = ["B008", "E402", "F401", "F811"]
+"alembic/env.py" = ["E402", "F401"]
+"tests/*" = ["B011", "B017", "E402"]
+"video-extractor-service/*" = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "services", "utils", "scripts"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_return_any = false
+disallow_untyped_defs = false
+no_implicit_optional = true
+show_error_codes = true
+exclude = [
+    "alembic/versions/",
+    "video-extractor-service/",
+    ".venv/",
+    "data/m3u/",
+]
+
+[[tool.mypy.overrides]]
+module = "scripts.api"
+ignore_errors = true
+# Monolito de 2256 lineas, se migrara a app/routers/ en roadmap
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["services.bulk_insert", "services.transcode_service", "services.video_extractor_service", "services.resilience_service"]
+ignore_errors = true
+# Legacy services, se migran a app/services/ en roadmap
+
+[tool.vulture]
+min_confidence = 80
+paths = ["scripts", "services", "utils", "app"]
+sort_by_size = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+]
+markers = [
+    "integration: marks tests as integration (deselect with '-m \"not integration\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.coverage.run]
+source = ["scripts", "services", "utils", "app"]
+omit = [
+    "*/__pycache__/*",
+    "*/tests/*",
+    "*/.venv/*",
+    "alembic/*",
+    "video-extractor-service/*",
+    "scripts/api.py",  # monolito cubierto por tests de integracion
+]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "def __repr__",
+]

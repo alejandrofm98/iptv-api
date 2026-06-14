@@ -1,19 +1,34 @@
 """
 Dependencias reutilizables para la API
 """
+
 import logging
-from typing import Optional
-from fastapi import Depends, Query, Request, HTTPException, status
+
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger("iptv-api")
 
-from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService, WatchProgressService, ChannelFavoritesService
-from services.transcode_service import TranscodeService
-from utils.config import get_settings
-from utils.exceptions import UnauthorizedException, ForbiddenException, ServiceUnavailableException
-from utils.models import AuthResult
+# Imports de app/services deben ir después del logger para configuración temprana
+from app.database import SessionLocal  # noqa: E402
+from app.services.calendar_service import CalendarServiceV2  # noqa: E402
+from app.services.channel_favorites_service import ChannelFavoritesServiceV2  # noqa: E402
+from app.services.content_service import ContentServiceV2  # noqa: E402
+from app.services.device_service import DeviceServiceV2  # noqa: E402
+from app.services.playlist_service import PlaylistServiceV2  # noqa: E402
+from app.services.stream_service import StreamProxyServiceV2  # noqa: E402
+from app.services.user_service import UserServiceV2  # noqa: E402
+from app.services.watch_progress_service import WatchProgressServiceV2  # noqa: E402
+from services.transcode_service import TranscodeService  # noqa: E402
+from utils.config import get_settings  # noqa: E402
+from utils.exceptions import (  # noqa: E402
+    ForbiddenException,
+    ServiceUnavailableException,
+    UnauthorizedException,
+)
+from utils.models import AuthResult  # noqa: E402
 
 # Configuración JWT
 settings = get_settings()
@@ -23,74 +38,13 @@ ALGORITHM = "HS256"
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
-# Clientes de servicios (se inicializan en lifespan)
-user_service: Optional[UserService] = None
-device_service: Optional[DeviceService] = None
-playlist_service: Optional[PlaylistService] = None
-stream_service: Optional[StreamProxyService] = None
-content_service: Optional[ContentService] = None
-transcode_service: Optional[TranscodeService] = None
-calendar_service: Optional[CalendarService] = None
-watch_progress_service: Optional[WatchProgressService] = None
-channel_favorites_service: Optional[ChannelFavoritesService] = None
-
-
-def set_services(
-    user_svc: UserService,
-    device_svc: DeviceService,
-    playlist_svc: PlaylistService,
-    stream_svc: StreamProxyService,
-    content_svc: ContentService,
-    transcode_svc: TranscodeService,
-    calendar_svc: CalendarService,
-    watch_progress_svc: WatchProgressService = None,
-    channel_favorites_svc: ChannelFavoritesService = None,
-):
-    """Inicializa los servicios globales"""
-    global user_service, device_service, playlist_service, stream_service, content_service, transcode_service, calendar_service, watch_progress_service, channel_favorites_service
-    user_service = user_svc
-    device_service = device_svc
-    playlist_service = playlist_svc
-    stream_service = stream_svc
-    content_service = content_svc
-    transcode_service = transcode_svc
-    calendar_service = calendar_svc
-    watch_progress_service = watch_progress_svc
-    channel_favorites_service = channel_favorites_svc
+# Cliente singleton para transcode (no usa BD)
+transcode_service: TranscodeService | None = None
 
 
 # ============================================
 # Dependencias de Servicios
 # ============================================
-
-def get_user_service() -> UserService:
-    if not user_service:
-        raise ServiceUnavailableException("Servicio de usuarios no disponible")
-    return user_service
-
-
-def get_device_service() -> DeviceService:
-    if not device_service:
-        raise ServiceUnavailableException("Servicio de dispositivos no disponible")
-    return device_service
-
-
-def get_playlist_service() -> PlaylistService:
-    if not playlist_service:
-        raise ServiceUnavailableException("Servicio de playlists no disponible")
-    return playlist_service
-
-
-def get_stream_service() -> StreamProxyService:
-    if not stream_service:
-        raise ServiceUnavailableException("Servicio de streaming no disponible")
-    return stream_service
-
-
-def get_content_service() -> ContentService:
-    if not content_service:
-        raise ServiceUnavailableException("Servicio de contenido no disponible")
-    return content_service
 
 
 def get_transcode_service() -> TranscodeService:
@@ -99,27 +53,86 @@ def get_transcode_service() -> TranscodeService:
     return transcode_service
 
 
-def get_calendar_service() -> CalendarService:
-    if not calendar_service:
-        raise ServiceUnavailableException("Servicio de calendario no disponible")
-    return calendar_service
+# ============================================
+# Dependencias SQLAlchemy v2
+# ============================================
 
 
-def get_watch_progress_service() -> WatchProgressService:
-    if not watch_progress_service:
-        raise ServiceUnavailableException("Servicio de progreso no disponible")
-    return watch_progress_service
+def get_db():
+    """Crea una sesión de SQLAlchemy por request."""
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
 
 
-def get_channel_favorites_service() -> ChannelFavoritesService:
-    if not channel_favorites_service:
-        raise ServiceUnavailableException("Servicio de favoritos no disponible")
-    return channel_favorites_service
+def get_watch_progress_service_v2(
+    session: Session = Depends(get_db),
+) -> WatchProgressServiceV2:
+    return WatchProgressServiceV2(session)
+
+
+def get_user_service_v2(
+    session: Session = Depends(get_db),
+) -> UserServiceV2:
+    return UserServiceV2(session)
+
+
+def get_device_service_v2(
+    session: Session = Depends(get_db),
+) -> DeviceServiceV2:
+    return DeviceServiceV2(session)
+
+
+def get_channel_favorites_service_v2(
+    session: Session = Depends(get_db),
+) -> ChannelFavoritesServiceV2:
+    return ChannelFavoritesServiceV2(session)
+
+
+def get_calendar_service_v2(
+    session: Session = Depends(get_db),
+) -> CalendarServiceV2:
+    return CalendarServiceV2(session)
+
+
+_playlist_service_v2: PlaylistServiceV2 | None = None
+
+
+def get_stream_service_v2(
+    session: Session = Depends(get_db),
+) -> StreamProxyServiceV2:
+    from app.repositories.channel_repo import ChannelRepository
+    from app.repositories.config_repo import ConfigRepository
+    from app.repositories.content_repo import ContentRepository
+    from app.repositories.series_repo import SeriesRepository
+
+    return StreamProxyServiceV2(
+        config_repo=ConfigRepository(session),
+        channel_repo=ChannelRepository(session),
+        content_repo=ContentRepository(session),
+        series_repo=SeriesRepository(session),
+    )
+
+
+def get_playlist_service_v2() -> PlaylistServiceV2:
+    global _playlist_service_v2
+    if _playlist_service_v2 is None:
+        _playlist_service_v2 = PlaylistServiceV2()
+    return _playlist_service_v2
+
+
+def get_content_service_v2(
+    session: Session = Depends(get_db),
+) -> ContentServiceV2:
+    return ContentServiceV2(session)
 
 
 # ============================================
 # Dependencias de Autenticación
 # ============================================
+
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     """
@@ -137,7 +150,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         return {"id": user_id, "role": role}
 
     except JWTError:
-        raise UnauthorizedException("Token inválido o expirado")
+        raise UnauthorizedException("Token inválido o expirado") from None
 
 
 async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
@@ -152,33 +165,29 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
 
 async def require_auth_with_jwt(
     token: str = Depends(oauth2_scheme),
-    user_svc: UserService = Depends(get_user_service)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
 ) -> AuthResult:
     """
     Valida token JWT Bearer y retorna AuthResult.
     Usado para endpoints de contenido que requieren autenticación.
     """
-    global user_service
-    
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
-        
+
         if user_id is None:
             logger.warning("[DIAG] JWT auth: token has no 'sub' claim")
             raise UnauthorizedException("Token inválido")
-        
-        # Obtener usuario para verificar estado
+
         user = user_svc.get_user(user_id)
         logger.info(f"[DIAG] JWT auth: user_id={user_id}, user_found={user is not None}")
-        
+
         if user is None:
             raise UnauthorizedException("Usuario no encontrado")
-        
+
         if not user.get("is_active", True):
             raise ForbiddenException("Usuario desactivado")
-        
-        # Retornar AuthResult con todos los campos requeridos
+
         return AuthResult(
             valid=True,
             user_id=user_id,
@@ -186,27 +195,27 @@ async def require_auth_with_jwt(
             message="OK",
             can_connect=True,
             current_devices=user.get("active_devices", 0),
-            max_devices=user.get("max_connections", 5)
+            max_devices=user.get("max_connections", 5),
         )
-        
+
     except JWTError:
-        raise UnauthorizedException("Token inválido o expirado")
+        raise UnauthorizedException("Token inválido o expirado") from None
 
 
 async def require_auth_with_credentials(
     username: str = Query(..., description="Nombre de usuario"),
     password: str = Query(..., description="Contraseña"),
-    user_svc: UserService = Depends(get_user_service)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
 ) -> AuthResult:
     """
     Valida credenciales desde query parameters.
     Usado para endpoints públicos que requieren autenticación.
     """
     auth = user_svc.validate_credentials(username, password)
-    
+
     if not auth.valid:
         raise UnauthorizedException(auth.message)
-    
+
     return AuthResult(
         valid=auth.valid,
         user_id=auth.user_id,
@@ -214,7 +223,7 @@ async def require_auth_with_credentials(
         message=auth.message,
         can_connect=auth.can_connect,
         current_devices=auth.current_devices,
-        max_devices=auth.max_devices
+        max_devices=auth.max_devices,
     )
 
 
@@ -222,38 +231,34 @@ async def require_auth_with_session(
     request: Request,
     username: str = Query(..., description="Nombre de usuario"),
     password: str = Query(..., description="Contraseña"),
-    user_svc: UserService = Depends(get_user_service),
-    device_svc: DeviceService = Depends(get_device_service)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
+    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
 ) -> AuthResult:
     """
     Valida credenciales y registra/actualiza la sesión del dispositivo.
     Usado para endpoints de streaming que requieren control de dispositivos.
     """
     auth = user_svc.validate_credentials(username, password)
-    
+
     if not auth.valid:
         raise UnauthorizedException(auth.message)
-    
+
     if not auth.can_connect:
         raise ForbiddenException(auth.message)
-    
-    # Registrar sesión del dispositivo
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    ip_address = request.client.host if request.client else 'Unknown'
-    
+
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    ip_address = request.client.host if request.client else "Unknown"
+
     success, message, _ = device_svc.register_or_update_session(
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
-        max_connections=auth.max_devices
+        max_connections=auth.max_devices,
     )
-    
+
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=message
-        )
-    
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
+
     return AuthResult(
         valid=auth.valid,
         user_id=auth.user_id,
@@ -261,5 +266,5 @@ async def require_auth_with_session(
         message=auth.message,
         can_connect=auth.can_connect,
         current_devices=auth.current_devices,
-        max_devices=auth.max_devices
+        max_devices=auth.max_devices,
     )

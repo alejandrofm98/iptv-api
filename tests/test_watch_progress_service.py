@@ -1,70 +1,76 @@
-from services.watch_progress_service import WatchProgressService
+from unittest.mock import MagicMock
+
+from app.services.watch_progress_service import WatchProgressServiceV2
 
 
-class FakePostgresService:
-    def __init__(self, content_row: dict | None):
-        self.content_row = content_row
+def make_progress_row(
+    user_id: str = "user-1",
+    content_id: str = "movie:2053693",
+    content_type: str = "movie",
+    position_ms: int = 300_000,
+    duration_ms: int = 3_000_000,
+    title: str = "Old title",
+    image_url: str = "https://old/img.jpg",
+    is_watched: bool = False,
+    series_name: str | None = None,
+    season_number: int | None = None,
+    episode_number: int | None = None,
+) -> MagicMock:
+    row = MagicMock()
+    row.id = "wp-row-id"
+    row.user_id = user_id
+    row.content_id = content_id
+    row.content_type = content_type
+    row.position_ms = position_ms
+    row.duration_ms = duration_ms
+    row.title = title
+    row.image_url = image_url
+    row.last_watched_at = None
+    row.is_watched = is_watched
+    row.series_name = series_name
+    row.season_number = season_number
+    row.episode_number = episode_number
+    return row
 
-    def get_continue_watching(self, user_id: str, limit: int) -> list[dict]:
-        return [
-            {
-                "user_id": user_id,
-                "content_id": "movie:2053693",
-                "content_type": "movie",
-                "position_ms": 300_000,
-                "duration_ms": 3_000_000,
-                "title": "Old title",
-                "image_url": "https://old/img.jpg",
-                "last_watched_at": "2026-05-12T10:00:00Z",
-                "is_watched": False,
-            }
-        ]
 
-    def get_movie_with_metadata(self, movie_id: str) -> dict | None:
-        if self.content_row and self.content_row.get("content_type") == "movie":
-            return self.content_row
-        return None
-
-    def get_series_with_metadata(self, series_id: str) -> dict | None:
-        if self.content_row and self.content_row.get("content_type") == "series":
-            return self.content_row
-        return None
-
-    def get_content_item_by_provider_id(self, table: str, value: str) -> dict | None:
-        return None
-
-    def get_content_item_by_id(self, table: str, value: str) -> dict | None:
-        return None
+def make_service_with_mocks(
+    progress_row, movie_meta=None, series_meta=None
+) -> WatchProgressServiceV2:
+    service = WatchProgressServiceV2(MagicMock())
+    service.wp_repo.get_continue_watching = MagicMock(return_value=[progress_row])
+    service.content_repo.get_movie_with_metadata = MagicMock(return_value=movie_meta)
+    service.series_repo.get_with_metadata = MagicMock(return_value=series_meta)
+    return service
 
 
 def test_continue_watching_movie_includes_tmdb_metadata_and_poster_for_placeholder_logo():
-    service = WatchProgressService(
-        FakePostgresService(
-            {
-                "content_type": "movie",
-                "id": "movie-row-id",
-                "provider_id": "2053693",
-                "nombre": "ES - Los colores del tiempo (LQ) (2025)",
-                "nombre_normalizado": "Los colores del tiempo (2025)",
-                "logo": "http://iptv.test/logo?url=http%3A%2F%2Fiptv.test%2Fplaceholder%2Fchannel.png&type=movie",
-                "overview_es": "Descripcion ES",
-                "overview_en": "Description EN",
-                "vote_average": 7.4,
-                "vote_count": 40,
-                "genres": ["Drama"],
-                "tmdb_poster_path": "/poster.jpg",
-                "backdrop_path": "/backdrop.jpg",
-                "runtime_minutes": 124,
-                "tagline": "Tagline",
-                "release_date": "2025-05-22",
-                "year": 2025,
-                "tmdb_id": 1234,
-                "tmdb_title": "Los colores del tiempo",
-                "popularity": 9.5,
-                "status": "Released",
-            }
-        )
-    )
+    progress_row = make_progress_row()
+
+    movie_meta = {
+        "content_type": "movie",
+        "id": "movie-row-id",
+        "provider_id": "2053693",
+        "nombre": "ES - Los colores del tiempo (LQ) (2025)",
+        "nombre_normalizado": "Los colores del tiempo (2025)",
+        "logo": "http://iptv.test/logo?url=http%3A%2F%2Fiptv.test%2Fplaceholder%2Fchannel.png&type=movie",
+        "overview_es": "Descripcion ES",
+        "overview_en": "Description EN",
+        "vote_average": 7.4,
+        "vote_count": 40,
+        "genres": ["Drama"],
+        "tmdb_poster_path": "/poster.jpg",
+        "backdrop_path": "/backdrop.jpg",
+        "runtime_minutes": 124,
+        "tagline": "Tagline",
+        "release_date": "2025-05-22",
+        "year": 2025,
+        "tmdb_id": 1234,
+        "tmdb_title": "Los colores del tiempo",
+        "popularity": 9.5,
+        "status": "Released",
+    }
+
+    service = make_service_with_mocks(progress_row, movie_meta=movie_meta)
 
     item = service.get_continue_watching("user-1", limit=20)[0]
 
@@ -73,7 +79,7 @@ def test_continue_watching_movie_includes_tmdb_metadata_and_poster_for_placehold
     assert item["normalized_title"] == "Los colores del tiempo (2025)"
     assert item["image_url"] == "https://image.tmdb.org/t/p/w500/poster.jpg"
     assert item["overview"] == "Descripcion ES"
-    assert item["overview_en"] == "Description EN"
+    assert item["overview_es"] == "Descripcion ES"
     assert item["rating"] == 7.4
     assert item["vote_average"] == 7.4
     assert item["poster_path"] == "/poster.jpg"
@@ -84,19 +90,19 @@ def test_continue_watching_movie_includes_tmdb_metadata_and_poster_for_placehold
 
 
 def test_continue_watching_keeps_real_logo_when_available():
-    service = WatchProgressService(
-        FakePostgresService(
-            {
-                "content_type": "movie",
-                "id": "movie-row-id",
-                "provider_id": "2053693",
-                "nombre": "Movie title",
-                "nombre_normalizado": "Movie title",
-                "logo": "https://cdn.test/movie.jpg",
-                "tmdb_poster_path": "/poster.jpg",
-            }
-        )
-    )
+    progress_row = make_progress_row()
+
+    movie_meta = {
+        "content_type": "movie",
+        "id": "movie-row-id",
+        "provider_id": "2053693",
+        "nombre": "Movie title",
+        "nombre_normalizado": "Movie title",
+        "logo": "https://cdn.test/movie.jpg",
+        "tmdb_poster_path": "/poster.jpg",
+    }
+
+    service = make_service_with_mocks(progress_row, movie_meta=movie_meta)
 
     item = service.get_continue_watching("user-1", limit=20)[0]
 
@@ -104,44 +110,36 @@ def test_continue_watching_keeps_real_logo_when_available():
 
 
 def test_continue_watching_series_includes_tmdb_metadata():
-    class SeriesPostgresService(FakePostgresService):
-        def get_continue_watching(self, user_id: str, limit: int) -> list[dict]:
-            return [
-                {
-                    "user_id": user_id,
-                    "content_id": "series:777",
-                    "content_type": "series",
-                    "position_ms": 120_000,
-                    "duration_ms": 1_200_000,
-                    "series_name": "Old Serie",
-                    "season_number": 1,
-                    "episode_number": 1,
-                    "title": "Old episode",
-                    "image_url": "",
-                    "is_watched": False,
-                }
-            ]
-
-    service = WatchProgressService(
-        SeriesPostgresService(
-            {
-                "content_type": "series",
-                "id": "episode-row-id",
-                "provider_id": "777",
-                "nombre": "Episode title",
-                "nombre_normalizado": "Episode title",
-                "serie_name": "Serie Rica",
-                "temporada": 2,
-                "episodio": 3,
-                "logo": "",
-                "overview_es": "Serie ES",
-                "tmdb_poster_path": "/serie-poster.jpg",
-                "backdrop_path": "/serie-backdrop.jpg",
-                "tmdb_title": "Serie Rica TMDB",
-                "total_seasons": 4,
-            }
-        )
+    progress_row = make_progress_row(
+        content_id="series:777",
+        content_type="series",
+        position_ms=120_000,
+        duration_ms=1_200_000,
+        title="Old episode",
+        image_url="",
+        series_name="Old Serie",
+        season_number=1,
+        episode_number=1,
     )
+
+    series_meta = {
+        "content_type": "series",
+        "id": "episode-row-id",
+        "provider_id": "777",
+        "nombre": "Episode title",
+        "nombre_normalizado": "Episode title",
+        "serie_name": "Serie Rica",
+        "temporada": 2,
+        "episodio": 3,
+        "logo": "",
+        "overview_es": "Serie ES",
+        "tmdb_poster_path": "/serie-poster.jpg",
+        "backdrop_path": "/serie-backdrop.jpg",
+        "tmdb_title": "Serie Rica TMDB",
+        "total_seasons": 4,
+    }
+
+    service = make_service_with_mocks(progress_row, series_meta=series_meta)
 
     item = service.get_continue_watching("user-1", limit=20)[0]
 

@@ -9,11 +9,10 @@ Usado como fallback para sitios que requieren ejecución de JavaScript
 """
 
 import logging
-import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 from extractors import extract, detect_provider, supported_providers
 

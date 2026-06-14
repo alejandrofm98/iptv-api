@@ -8,17 +8,77 @@ Cambios principales:
 - Manejo de errores consistente
 - Estructura organizada con prefijos claros
 """
+
 import asyncio
 import gzip
 import logging
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 from urllib.parse import quote, urljoin
 
+import requests
+import uvicorn
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    StreamingResponse,
+)
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
+from jose import JWTError, jwt
+from pydantic import BaseModel
 from starlette.responses import RedirectResponse
 
+from app.services.calendar_service import CalendarServiceV2
+from app.services.channel_favorites_service import ChannelFavoritesServiceV2
+from app.services.content_service import ContentServiceV2
+from app.services.device_service import DeviceServiceV2
+from app.services.playlist_service import PlaylistServiceV2
+from app.services.stream_service import StreamProxyServiceV2
+from app.services.user_service import UserServiceV2
+from app.services.watch_progress_service import WatchProgressServiceV2
+from services.transcode_service import TranscodeService
+from services.video_extractor_service import VideoExtractorService
+from utils.config import get_settings
+from utils.constants import JWT_ACCESS_TOKEN_EXPIRE_MINUTES, JWT_ALGORITHM
+from utils.dependencies import AuthResult as AuthDep
+from utils.dependencies import (
+    get_calendar_service_v2,
+    get_channel_favorites_service_v2,
+    get_content_service_v2,
+    get_device_service_v2,
+    get_playlist_service_v2,
+    get_stream_service_v2,
+    get_transcode_service,
+    get_user_service_v2,
+    get_watch_progress_service_v2,
+    require_admin,
+    require_auth_with_jwt,
+)
+from utils.exceptions import (
+    BadRequestException,
+    ForbiddenException,
+    NotFoundException,
+    TooManyRequestsException,
+    UnauthorizedException,
+)
+from utils.models import (
+    CalendarDayResponse,
+    CalendarEvent,
+    ChannelFavoriteCreate,
+    SystemStats,
+    Token,
+    UserCreate,
+    UserUpdate,
+    WatchProgressUpsert,
+)
+
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -26,57 +86,6 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("hpack").setLevel(logging.WARNING)
 
 logger = logging.getLogger("iptv-api")
-
-from datetime import datetime, timedelta
-from typing import Optional
-
-logging.getLogger("httpx").setLevel(logging.DEBUG)
-
-import uvicorn
-import requests
-from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status, Response
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, StreamingResponse, FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
-
-from services import UserService, DeviceService, PlaylistService, StreamProxyService, ContentService, CalendarService, WatchProgressService, ChannelFavoritesService
-from services.transcode_service import TranscodeService
-from services.postgres_service import get_postgres_service
-from utils.config import get_settings
-from utils.models import (
-    UserCreate,
-    UserUpdate,
-    ValidateCredentials,
-    AuthResult,
-    SystemStats,
-    Token,
-    CalendarDayResponse,
-    CalendarEvent,
-    ReplayItem,
-    ChannelFavoriteCreate,
-    ChannelFavoriteResponse,
-    WatchProgressUpsert,
-    WatchProgressResponse,
-)
-from utils.constants import JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES
-from utils.exceptions import (
-    NotFoundException, UnauthorizedException, ForbiddenException,
-    BadRequestException, ConflictException, TooManyRequestsException
-)
-from utils.dependencies import (
-    set_services, get_user_service, get_device_service, get_playlist_service,
-    get_stream_service, get_content_service, get_transcode_service, get_calendar_service,
-    get_watch_progress_service, get_channel_favorites_service, get_current_user, require_admin,
-    require_auth_with_credentials, require_auth_with_session, require_auth_with_jwt,
-    AuthResult as AuthDep
-)
-
-from services.video_extractor_service import VideoExtractorService
-from fastapi import FastAPI, HTTPException, Request, Query, Depends, Body
-from pydantic import BaseModel, HttpUrl
-from typing import Optional, List
 
 # Configuración
 settings = get_settings()
@@ -86,20 +95,33 @@ ACCESS_TOKEN_EXPIRE_MINUTES = JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
-ALLOWED_WEB_ORIGINS = ['https://walactvweb.walerike.com', 'http://localhost:4200']
+ALLOWED_WEB_ORIGINS = ["https://walactvweb.walerike.com", "http://localhost:4200"]
 
 
 # ============================================
 # Ciclo de Vida
 # ============================================
 
+
 async def cleanup_sessions_task():
-    """Tarea periódica para limpiar sesiones inactivas"""
+    from app.database import SessionLocal
+    from app.repositories.session_repo import SessionRepository
+
     while True:
         try:
             await asyncio.sleep(settings.cleanup_interval_minutes * 60)
-            device_svc = get_device_service()
-            cleaned = device_svc.cleanup_inactive_sessions()
+
+            def _do_cleanup():
+                session = SessionLocal()
+                try:
+                    repo = SessionRepository(session)
+                    cleaned = repo.cleanup_inactive(settings.session_timeout_minutes)
+                    session.commit()
+                    return cleaned
+                finally:
+                    session.close()
+
+            cleaned = await asyncio.to_thread(_do_cleanup)
             if cleaned > 0:
                 print(f"🧹 Limpiadas {cleaned} sesiones inactivas")
         except Exception as e:
@@ -125,23 +147,36 @@ async def lifespan(app: FastAPI):
     if not settings.is_valid():
         print("❌ Error: Configuración incompleta")
     else:
-        pg_svc = get_postgres_service()
-        user_svc = UserService(pg_svc)
-        device_svc = DeviceService(pg_svc)
-        playlist_svc = PlaylistService(pg_svc)
-        stream_svc = StreamProxyService(pg_svc)
-        content_svc = ContentService(pg_svc)
-        transcode_svc = TranscodeService()
-        watch_progress_svc = WatchProgressService(pg_svc)
-        channel_favorites_svc = ChannelFavoritesService(pg_svc)
+        from app.database import SessionLocal
+        from app.repositories.channel_repo import ChannelRepository
+        from app.repositories.config_repo import ConfigRepository
+        from app.repositories.content_repo import ContentRepository
+        from app.repositories.series_repo import SeriesRepository
+        from app.services.stream_service import StreamProxyServiceV2
 
-        calendar_svc = CalendarService(pg_svc)
+        session = SessionLocal()
+        try:
+            stream_svc = StreamProxyServiceV2(
+                config_repo=ConfigRepository(session),
+                channel_repo=ChannelRepository(session),
+                content_repo=ContentRepository(session),
+                series_repo=SeriesRepository(session),
+            )
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(stream_svc.preload_cache),
+                    timeout=15.0,
+                )
+            except Exception as e:
+                print(f"⚠️ Warning: preload_cache failed ({e}), continuing without cache")
+        finally:
+            session.close()
+        import utils.dependencies as deps
 
-        set_services(user_svc, device_svc, playlist_svc, stream_svc, content_svc, transcode_svc, calendar_svc, watch_progress_svc, channel_favorites_svc)
-
-        stream_svc.preload_cache()
-        asyncio.create_task(cleanup_sessions_task())
-        asyncio.create_task(cleanup_hls_task())
+        deps.transcode_service = TranscodeService()
+        background_tasks = []
+        background_tasks.append(asyncio.create_task(cleanup_sessions_task()))
+        background_tasks.append(asyncio.create_task(cleanup_hls_task()))
         print("✅ IPTV API iniciada correctamente")
 
     yield
@@ -162,16 +197,13 @@ app = FastAPI(
     title="IPTV API",
     description="API para gestión de usuarios IPTV con control de dispositivos y JWT",
     version="2.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://walactvweb.walerike.com",
-        "http://localhost:4200"
-    ],
+    allow_origins=["https://walactvweb.walerike.com", "http://localhost:4200"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -180,7 +212,6 @@ app.add_middleware(
 )
 
 # Servir imágenes placeholder estáticas
-from pathlib import Path
 IMAGES_DIR = Path(__file__).parent.parent / "resources" / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/assets/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
@@ -190,9 +221,9 @@ app.mount("/assets/images", StaticFiles(directory=str(IMAGES_DIR)), name="images
 async def global_exception_handler(request: Request, exc: Exception):
     """Manejador global que asegura cabeceras CORS en errores"""
     from fastapi.responses import JSONResponse
+
     return JSONResponse(
-        status_code=500,
-        content={"error": "Internal Server Error", "message": str(exc)}
+        status_code=500, content={"error": "Internal Server Error", "message": str(exc)}
     )
 
 
@@ -208,20 +239,22 @@ class ExtractRequest(BaseModel):
 
 
 class ExtractMultiRequest(BaseModel):
-    urls: List[str]
+    urls: list[str]
     """Lista de URLs a extraer en paralelo (máximo 10)."""
+
 
 # ============================================
 # Funciones de Utilidad
 # ============================================
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
     """Crea un token JWT de acceso"""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.now(UTC) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -238,12 +271,12 @@ def validate_stream_token(token: str) -> dict:
 
         return {"id": user_id, "role": role}
     except JWTError:
-        raise UnauthorizedException("Token inválido o expirado")
+        raise UnauthorizedException("Token inválido o expirado") from None
 
 
 def build_replay_proxy_url(target_url: str, token: str) -> str:
-    encoded_url = quote(target_url, safe='')
-    encoded_token = quote(token, safe='')
+    encoded_url = quote(target_url, safe="")
+    encoded_token = quote(token, safe="")
     return f"/api/replay-proxy?url={encoded_url}&token={encoded_token}"
 
 
@@ -251,34 +284,40 @@ def rewrite_m3u8_content(content: str, source_url: str, token: str) -> str:
     rewritten_lines = []
     for raw_line in content.splitlines():
         line = raw_line.strip()
-        if not line or line.startswith('#'):
+        if not line or line.startswith("#"):
             rewritten_lines.append(raw_line)
             continue
 
         absolute_url = urljoin(source_url, line)
         rewritten_lines.append(build_replay_proxy_url(absolute_url, token))
 
-    return '\n'.join(rewritten_lines)
+    return "\n".join(rewritten_lines)
 
 
 def build_replay_upstream_headers(url: str, request: Request) -> dict:
     lowered_url = url.lower()
     headers = {
-        'User-Agent': 'PostmanRuntime/7.43.0',
-        'Accept': '*/*',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
+        "User-Agent": "PostmanRuntime/7.43.0",
+        "Accept": "*/*",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
     }
 
-    request_range = request.headers.get('range')
+    request_range = request.headers.get("range")
     if request_range:
-        headers['Range'] = request_range
+        headers["Range"] = request_range
 
-    if 'dailymotion.com' in lowered_url or 'dmcdn.net' in lowered_url or 'dmxleo.dailymotion.com' in lowered_url:
-        headers.update({
-            'Postman-Token': 'iptv-api-replay-proxy',
-            'Cookie': 'dmvk=69adf139dae1d; ts=966072; v1st=4068e8cf-d19d-4adc-a624-69ab5f4c5a48',
-        })
+    if (
+        "dailymotion.com" in lowered_url
+        or "dmcdn.net" in lowered_url
+        or "dmxleo.dailymotion.com" in lowered_url
+    ):
+        headers.update(
+            {
+                "Postman-Token": "iptv-api-replay-proxy",
+                "Cookie": "dmvk=69adf139dae1d; ts=966072; v1st=4068e8cf-d19d-4adc-a624-69ab5f4c5a48",
+            }
+        )
 
     return headers
 
@@ -286,6 +325,7 @@ def build_replay_upstream_headers(url: str, request: Request) -> dict:
 # ============================================
 # Health Check
 # ============================================
+
 
 @app.get("/", tags=["Health"])
 async def root():
@@ -301,33 +341,34 @@ async def health_check():
 # API: Autenticación
 # ============================================
 
+
 @app.post("/api/auth/login", response_model=Token, tags=["Auth"])
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    svc: UserService = Depends(get_user_service)
+    svc: UserServiceV2 = Depends(get_user_service_v2),
 ):
     """Endpoint de Login. Retorna JWT token."""
-    user = svc.get_user_by_username(form_data.username)
+    user = svc.get_by_username(form_data.username)
 
     if not user:
         raise UnauthorizedException("Usuario o contraseña incorrectos")
 
-    if not svc._verify_password(form_data.password, user['password_hash']):
+    if not svc._verify_password(form_data.password, user["password_hash"]):
         raise UnauthorizedException("Usuario o contraseña incorrectos")
 
-    if not user['is_active']:
+    if not user.get("is_active", True):
         raise ForbiddenException("Usuario inactivo")
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user['id'], "role": user.get('role', 'user')},
-        expires_delta=access_token_expires
+        data={"sub": user["id"], "role": user.get("role", "user")},
+        expires_delta=access_token_expires,
     )
 
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "role": user.get('role', 'user')
+        "role": user.get("role", "user"),
     }
 
 
@@ -335,17 +376,18 @@ async def login(
 # API: Usuarios (Admin)
 # ============================================
 
+
 @app.post("/api/admin/users", response_model=dict, tags=["Admin - Users"])
 async def create_user(
     user_data: UserCreate,
     _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service)
+    svc: UserServiceV2 = Depends(get_user_service_v2),
 ):
     """Crear nuevo usuario (Solo Admin)"""
     try:
-        return svc.create_user(user_data)
+        return svc.create_user_from_model(user_data)
     except ValueError as e:
-        raise BadRequestException(str(e))
+        raise BadRequestException(str(e)) from e
 
 
 @app.get("/api/admin/users", response_model=dict, tags=["Admin - Users"])
@@ -353,24 +395,20 @@ async def list_users(
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(100, ge=1, le=1000, description="Items por página"),
     _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service)
+    svc: UserServiceV2 = Depends(get_user_service_v2),
 ):
     """Listar usuarios paginados (Solo Admin)"""
-    skip = (page - 1) * page_size
-    users = svc.list_users(skip, page_size)
-
-    all_users = svc.list_users(0, 10000)
-    total = len(all_users)
+    items, total = svc.list_users(page, page_size)
     pages = (total + page_size - 1) // page_size
 
     return {
-        "items": users,
+        "items": items,
         "total": total,
         "page": page,
         "page_size": page_size,
         "pages": pages,
         "has_next": page < pages,
-        "has_prev": page > 1
+        "has_prev": page > 1,
     }
 
 
@@ -378,7 +416,7 @@ async def list_users(
 async def get_user(
     user_id: str,
     _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service)
+    svc: UserServiceV2 = Depends(get_user_service_v2),
 ):
     """Obtener usuario por ID (Solo Admin)"""
     user = svc.get_user(user_id)
@@ -392,7 +430,7 @@ async def update_user(
     user_id: str,
     user_data: UserUpdate,
     _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service)
+    svc: UserServiceV2 = Depends(get_user_service_v2),
 ):
     """Actualizar usuario (Solo Admin)"""
     user = svc.update_user(user_id, user_data)
@@ -405,7 +443,7 @@ async def update_user(
 async def delete_user(
     user_id: str,
     _: dict = Depends(require_admin),
-    svc: UserService = Depends(get_user_service)
+    svc: UserServiceV2 = Depends(get_user_service_v2),
 ):
     """Eliminar usuario (Solo Admin)"""
     success = svc.delete_user(user_id)
@@ -418,11 +456,12 @@ async def delete_user(
 # API: Dispositivos (Admin)
 # ============================================
 
+
 @app.get("/api/admin/users/{user_id}/devices", response_model=list, tags=["Admin - Devices"])
 async def get_user_devices(
     user_id: str,
     _: dict = Depends(require_admin),
-    svc: DeviceService = Depends(get_device_service)
+    svc: DeviceServiceV2 = Depends(get_device_service_v2),
 ):
     """Obtiene dispositivos de un usuario"""
     return svc.get_user_devices(user_id)
@@ -433,7 +472,7 @@ async def disconnect_device(
     user_id: str,
     device_id: str,
     _: dict = Depends(require_admin),
-    svc: DeviceService = Depends(get_device_service)
+    svc: DeviceServiceV2 = Depends(get_device_service_v2),
 ):
     """Desconecta un dispositivo específico"""
     success = svc.disconnect_device(user_id, device_id)
@@ -446,7 +485,7 @@ async def disconnect_device(
 async def disconnect_all_devices(
     user_id: str,
     _: dict = Depends(require_admin),
-    svc: DeviceService = Depends(get_device_service)
+    svc: DeviceServiceV2 = Depends(get_device_service_v2),
 ):
     """Desconecta todos los dispositivos de un usuario"""
     count = svc.disconnect_all_devices(user_id)
@@ -458,7 +497,7 @@ async def get_all_sessions(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=1000),
     _: dict = Depends(require_admin),
-    svc: DeviceService = Depends(get_device_service)
+    svc: DeviceServiceV2 = Depends(get_device_service_v2),
 ):
     """Obtiene todas las sesiones activas paginadas"""
     sessions = svc.get_all_sessions(page_size * page)
@@ -472,7 +511,7 @@ async def get_all_sessions(
         "total": total,
         "page": page,
         "page_size": page_size,
-        "pages": pages
+        "pages": pages,
     }
 
 
@@ -480,34 +519,33 @@ async def get_all_sessions(
 # API: Stats (Admin)
 # ============================================
 
+
 @app.get("/api/admin/stats", response_model=SystemStats, tags=["Admin - Stats"])
 async def get_system_stats(
     _: dict = Depends(require_admin),
-    user_svc: UserService = Depends(get_user_service),
-    device_svc: DeviceService = Depends(get_device_service),
-    playlist_svc: PlaylistService = Depends(get_playlist_service)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
+    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
+    playlist_svc: PlaylistServiceV2 = Depends(get_playlist_service_v2),
 ):
     """Obtiene estadísticas del sistema"""
-    users = user_svc.list_users(limit=10000)
+    _, total_users = user_svc.list_users(page=1, page_size=1)
     sessions = device_svc.get_all_sessions(limit=10000)
     playlist_stats = playlist_svc.get_playlist_stats()
 
-    active_users = sum(1 for u in users if u.get('is_active', False))
-
     return SystemStats(
-        total_users=len(users),
-        active_users=active_users,
+        total_users=total_users,
+        active_users=total_users,
         total_sessions=len(sessions),
-        total_channels=playlist_stats['total_channels'],
-        total_movies=playlist_stats['total_movies'],
-        total_series=playlist_stats['total_series']
+        total_channels=playlist_stats["total_channels"],
+        total_movies=playlist_stats["total_movies"],
+        total_series=playlist_stats["total_series"],
     )
 
 
 @app.get("/api/admin/resilience", tags=["Admin - Stats"])
 async def get_resilience_status(
     _: dict = Depends(require_admin),
-    stream_svc: StreamProxyService = Depends(get_stream_service)
+    stream_svc: StreamProxyServiceV2 = Depends(get_stream_service_v2),
 ):
     """Obtiene el estado de resiliencia de streams (circuit breaker, retry, buffer)"""
     return stream_svc.get_resilience_status()
@@ -517,75 +555,82 @@ async def get_resilience_status(
 # API: Contenido (Público)
 # ============================================
 
+
 @app.get("/api/content/groups", tags=["Content"])
 async def get_groups_public(
-    content_type: str = Query('channels', enum=['channels', 'movies', 'series']),
-    countries: Optional[str] = Query(None, description="Filtrar por países (separados por coma: US,MX,ES)"),
+    content_type: str = Query("channels", enum=["channels", "movies", "series"]),
+    countries: str | None = Query(
+        None, description="Filtrar por países (separados por coma: US,MX,ES)"
+    ),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene grupos disponibles por tipo de contenido. Requiere Bearer Token."""
     country_list = None
     if countries:
-        country_list = [c.strip().upper() for c in countries.split(',') if c.strip()]
+        country_list = [c.strip().upper() for c in countries.split(",") if c.strip()]
 
     groups = content_svc.get_groups(content_type, country_list)
-    if content_type == 'channels' and 'Favorites' not in groups:
-        groups = ['Favorites', *groups]
+    if content_type == "channels" and not any(g["value"] == "Favorites" for g in groups):
+        groups = [{"value": "Favorites", "label": "Favoritos"}, *groups]
     return {"groups": groups}
 
 
 @app.get("/api/content/countries", tags=["Content"])
 async def get_countries_public(
-    content_type: str = Query('channels', enum=['channels', 'movies', 'series']),
+    content_type: str = Query("channels", enum=["channels", "movies", "series"]),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene países disponibles por tipo de contenido (requiere Bearer Token)"""
     return {"countries": content_svc.get_countries(content_type)}
 
 
 @app.post("/api/admin/content/reload", tags=["Admin - Content"])
 async def reload_template(
     _: dict = Depends(require_admin),
-    playlist_svc: PlaylistService = Depends(get_playlist_service)
+    playlist_svc: PlaylistServiceV2 = Depends(get_playlist_service_v2),
 ):
     """Recarga los templates M3U en memoria"""
     playlist_svc.reload_template()
     templates = playlist_svc._templates
-    if templates.get('full'):
+    if templates.get("full"):
         return {
             "status": "success",
             "message": "Templates recargados correctamente",
-            "templates": {
-                k: len(v) if v else 0 for k, v in templates.items()
-            }
+            "templates": {k: len(v) if v else 0 for k, v in templates.items()},
         }
     else:
-        raise BadRequestException("No se pudo recargar el template. Verifica que playlist_template.m3u exista.")
+        raise BadRequestException(
+            "No se pudo recargar el template. Verifica que playlist_template.m3u exista."
+        )
 
 
 # ============================================
 # API: Contenido (Público - Requiere Auth)
 # ============================================
 
+
 @app.get("/api/content", tags=["Content"])
 async def get_content(
-    content_type: str = Query(..., enum=['channels', 'movies', 'series'], description="Tipo de contenido"),
+    content_type: str = Query(
+        ..., enum=["channels", "movies", "series"], description="Tipo de contenido"
+    ),
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(50, ge=1, le=100, description="Items por página"),
-    group: Optional[str] = Query(None, description="Filtrar por grupo"),
-    country: Optional[str] = Query(None, description="Filtrar por país"),
-    search: Optional[str] = Query(None, description="Buscar por nombre"),
-    year: Optional[int] = Query(None, description="Filtrar por año"),
-    password: Optional[str] = Query(None, description="Password para construir stream_url"),
-    section_title: Optional[str] = Query(None, description="Título de sección del home para paginación consistente (ej: 2026 ESTRENOS, NETFLIX)"),
+    group: str | None = Query(None, description="Filtrar por grupo"),
+    country: str | None = Query(None, description="Filtrar por país"),
+    search: str | None = Query(None, description="Buscar por nombre"),
+    year: int | None = Query(None, description="Filtrar por año"),
+    genre: str | None = Query(None, description="Filtrar por género"),
+    password: str | None = Query(None, description="Password para construir stream_url"),
+    section_title: str | None = Query(
+        None,
+        description="Título de sección del home para paginación consistente (ej: 2026 ESTRENOS, NETFLIX)",
+    ),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service),
-    favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
+    favorites_svc: ChannelFavoritesServiceV2 = Depends(get_channel_favorites_service_v2),
 ):
-    """Obtiene lista paginada de contenido. Requiere Bearer Token."""
-    if content_type == 'channels' and group == 'Favorites':
+    if content_type == "channels" and group == "Favorites":
         return favorites_svc.get_favorite_channels(
             user_id=auth.user_id,
             content_svc=content_svc,
@@ -594,17 +639,17 @@ async def get_content(
             country=country,
             search=search,
             username=auth.username,
-            password=password or '',
+            password=password or "",
         )
 
-    if section_title and content_type in ('movies', 'series'):
+    if section_title and content_type in ("movies", "series"):
         result = content_svc.get_section_page(
             content_type=content_type,
             section_title=section_title,
             page=page,
             page_size=page_size,
             username=auth.username,
-            password=password or '',
+            password=password or "",
             country=country,
         )
         if result is None:
@@ -620,31 +665,45 @@ async def get_content(
         search=search,
         year=year,
         username=auth.username,
-        password=password or ''
+        password=password or "",
+        genre=genre,
     )
 
 
 @app.get("/api/content/filters", tags=["Content"])
 async def get_content_filters(
-    content_type: str = Query(..., enum=['channels', 'movies', 'series'], description="Tipo de contenido"),
-    country: Optional[str] = Query(None, description="Filtrar grupos por país"),
+    content_type: str = Query(
+        ..., enum=["channels", "movies", "series"], description="Tipo de contenido"
+    ),
+    country: str | None = Query(None, description="Filtrar grupos por país"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene idiomas y grupos disponibles para filtros por tipo de contenido."""
     payload = content_svc.get_catalog_filters(content_type=content_type, country=country)
-    if content_type == 'channels' and 'Favorites' not in payload['groups']:
-        payload = {**payload, 'groups': ['Favorites', *payload['groups']]}
+    if content_type == "channels" and not any(g["value"] == "Favorites" for g in payload["groups"]):
+        payload = {**payload, "groups": [{"value": "Favorites", "label": "Favoritos"}, *payload["groups"]]}
     return payload
+
+
+@app.get("/api/content/genres", tags=["Content"])
+async def get_content_genres(
+    content_type: str = Query(
+        ..., enum=["movies", "series"], description="Tipo de contenido"
+    ),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
+):
+    return {"genres": content_svc.get_genres(content_type)}
 
 
 @app.get("/api/content/stats", tags=["Content"])
 async def get_content_stats(
-    content_type: str = Query(..., enum=['channels', 'movies', 'series'], description="Tipo de contenido"),
+    content_type: str = Query(
+        ..., enum=["channels", "movies", "series"], description="Tipo de contenido"
+    ),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene estadísticas de contenido (total de items y timestamp). Para detectar cambios en cache local."""
     return content_svc.get_content_stats(content_type=content_type)
 
 
@@ -653,104 +712,114 @@ async def get_content_stats(
 # para evitar que el endpoint genérico las capture primero.
 # ============================================
 
+
 @app.get("/api/full/channels", response_class=JSONResponse, tags=["Content"])
 async def get_channels_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene TODOS los canales desde archivo JSON estático con gzip. Para cache local en cliente TV."""
-    logger.info("[DIAG] /api/full/channels endpoint reached")
     import os
 
-    json_data = content_svc.get_all_content_bulk('channels')
-
-    base_dirs = [
-        '/app/data/json',
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json'),
-    ]
-
-    for base_dir in base_dirs:
-        gz_path = os.path.join(base_dir, 'channels.json.gz')
+    json_data = content_svc.get_all_content_bulk("channels")
+    for base_dir in [
+        "/app/data/json",
+        os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "..",
+            "walactv-scrapper",
+            "data",
+            "json",
+        ),
+    ]:
+        gz_path = os.path.join(base_dir, "channels.json.gz")
         if os.path.exists(gz_path):
-            with open(gz_path, 'rb') as f:
+            with open(gz_path, "rb") as f:
                 gz_data = f.read()
             return Response(
                 content=gz_data,
-                media_type='application/json',
+                media_type="application/json",
                 headers={
-                    'Content-Encoding': 'gzip',
-                    'Content-Length': str(len(gz_data)),
-                    'X-Content-Type': 'channels.json',
-                }
+                    "Content-Encoding": "gzip",
+                    "Content-Length": str(len(gz_data)),
+                    "X-Content-Type": "channels.json",
+                },
             )
-
     return json_data
 
 
 @app.get("/api/full/movies", response_class=JSONResponse, tags=["Content"])
 async def get_movies_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene TODAS las películas desde archivo JSON estático con gzip. Para cache local en cliente TV."""
-    logger.info("[DIAG] /api/full/movies endpoint reached")
     import os
 
-    json_data = content_svc.get_all_content_bulk('movies')
-
-    for base_dir in ['/app/data/json', os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json')]:
-        gz_path = os.path.join(base_dir, 'movies.json.gz')
+    json_data = content_svc.get_all_content_bulk("movies")
+    for base_dir in [
+        "/app/data/json",
+        os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "..",
+            "walactv-scrapper",
+            "data",
+            "json",
+        ),
+    ]:
+        gz_path = os.path.join(base_dir, "movies.json.gz")
         if os.path.exists(gz_path):
-            with open(gz_path, 'rb') as f:
+            with open(gz_path, "rb") as f:
                 gz_data = f.read()
             return Response(
                 content=gz_data,
-                media_type='application/json',
+                media_type="application/json",
                 headers={
-                    'Content-Encoding': 'gzip',
-                    'Content-Length': str(len(gz_data)),
-                    'X-Content-Type': 'movies.json',
-                }
+                    "Content-Encoding": "gzip",
+                    "Content-Length": str(len(gz_data)),
+                    "X-Content-Type": "movies.json",
+                },
             )
-
     return json_data
 
 
 @app.get("/api/full/series", response_class=JSONResponse, tags=["Content"])
 async def get_series_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene TODAS las series desde archivo JSON estático con gzip. Para cache local en cliente TV."""
-    logger.info("[DIAG] /api/full/series endpoint reached")
     import os
 
-    json_data = content_svc.get_all_content_bulk('series')
-
-    for base_dir in ['/app/data/json', os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'walactv-scrapper', 'data', 'json')]:
-        gz_path = os.path.join(base_dir, 'series.json.gz')
+    json_data = content_svc.get_all_content_bulk("series")
+    for base_dir in [
+        "/app/data/json",
+        os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "..",
+            "walactv-scrapper",
+            "data",
+            "json",
+        ),
+    ]:
+        gz_path = os.path.join(base_dir, "series.json.gz")
         if os.path.exists(gz_path):
-            with open(gz_path, 'rb') as f:
+            with open(gz_path, "rb") as f:
                 gz_data = f.read()
             return Response(
                 content=gz_data,
-                media_type='application/json',
+                media_type="application/json",
                 headers={
-                    'Content-Encoding': 'gzip',
-                    'Content-Length': str(len(gz_data)),
-                    'X-Content-Type': 'series.json',
-                }
+                    "Content-Encoding": "gzip",
+                    "Content-Length": str(len(gz_data)),
+                    "X-Content-Type": "series.json",
+                },
             )
-
     return json_data
 
 
 @app.get("/api/full/channels/legacy", tags=["Content"])
 async def get_all_channels_bulk(
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene TODOS los canales en una sola llamada. Deprecated: usar /api/content/channels/full"""
     return content_svc.get_all_channels_bulk()
 
 
@@ -760,21 +829,20 @@ async def get_all_channels_bulk(
 # ============================================
 
 # Valores reservados que tienen su propio endpoint — nunca deben llegar aquí
-_RESERVED_ITEM_IDS = {'full', 'all'}
+_RESERVED_ITEM_IDS = {"full", "all"}
+
 
 @app.get("/api/content/{content_type}/{item_id}", tags=["Content"])
 async def get_content_item(
     content_type: str,
     item_id: str,
-    password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    password: str | None = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    if content_type not in ['channels', 'movies', 'series']:
+    if content_type not in ["channels", "movies", "series"]:
         raise BadRequestException("Tipo de contenido inválido")
 
-    # Protección extra: si item_id es un valor reservado de otro endpoint
-    # significa que el router lo capturó por error (fichero viejo en producción, etc.)
     if item_id in _RESERVED_ITEM_IDS:
         raise BadRequestException(
             f"'{item_id}' no es un ID válido. "
@@ -785,7 +853,7 @@ async def get_content_item(
         content_type=content_type,
         item_id=item_id,
         username=auth.username,
-        password=password or ''
+        password=password or "",
     )
 
     if not item:
@@ -798,15 +866,17 @@ async def get_content_item(
 @app.get("/api/home", tags=["Content"])
 async def get_home(
     page_size: int = Query(24, ge=1, le=50, description="Items por bloque"),
-    country: Optional[str] = Query(None, description="Filtrar home por country, por ejemplo ES o EN"),
-    password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    country: str | None = Query(None, description="Filtrar home por country, por ejemplo ES o EN"),
+    password: str | None = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service),
-    favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
+    favorites_svc: ChannelFavoritesServiceV2 = Depends(get_channel_favorites_service_v2),
 ):
     """Obtiene bloques ligeros para la home de clientes TV."""
-    payload = content_svc.get_home_catalog_new(username=auth.username, country=country, password=password or '')
-    payload['favorites'] = favorites_svc.get_favorite_channels(
+    payload = content_svc.get_home_catalog_new(
+        username=auth.username, country=country, password=password or "", page_size=page_size
+    )
+    payload["favorites"] = favorites_svc.get_favorite_channels(
         user_id=auth.user_id,
         content_svc=content_svc,
         page=1,
@@ -814,35 +884,47 @@ async def get_home(
         country=None,
         search=None,
         username=auth.username,
-        password=password or '',
+        password=password or "",
     )["items"]
-    logger.info("/api/home: user=%s country=%s favorites=%d", auth.username, country, len(payload['favorites']))
+    logger.info(
+        "/api/home: user=%s country=%s favorites=%d",
+        auth.username,
+        country,
+        len(payload["favorites"]),
+    )
     return payload
 
 
 @app.get("/api/home2", tags=["Content"])
 async def get_home_v2(
     page_size: int = Query(24, ge=1, le=50, description="Items por bloque"),
-    country: Optional[str] = Query(None, description="Filtrar home por country"),
-    password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    country: str | None = Query(None, description="Filtrar home por country"),
+    password: str | None = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
     """Obtiene bloques ligeros para la home (nueva versión con paginación infinita)."""
     return content_svc.get_home_catalog_new(
-        username=auth.username, country=country, password=password or '',
+        username=auth.username,
+        country=country,
+        password=password or "",
+        page_size=page_size,
     )
 
 
 @app.get("/api/content/section", tags=["Content"])
 async def get_section(
-    content_type: str = Query(..., enum=['movies', 'series'], description="Tipo de contenido"),
+    content_type: str = Query(..., enum=["movies", "series"], description="Tipo de contenido"),
     section_title: str = Query(..., description="Título de sección: NETFLIX, 2026 ESTRENOS, ..."),
-    page: int = Query(2, ge=1, description="Página a cargar (1 = lo que ya tiene /home → empezar en 2)"),
+    page: int = Query(
+        2,
+        ge=1,
+        description="Página a cargar (1 = lo que ya tiene /home → empezar en 2)",
+    ),
     page_size: int = Query(24, ge=1, le=50, description="Items por página"),
-    password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    password: str | None = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
     """Carga más items de una sección específica. Para paginación infinita."""
     result = content_svc.get_section_page(
@@ -851,7 +933,7 @@ async def get_section(
         page=page,
         page_size=page_size,
         username=auth.username,
-        password=password or '',
+        password=password or "",
         country=None,
     )
     if result is None:
@@ -862,20 +944,18 @@ async def get_section(
 @app.get("/api/channel-favorites", tags=["Channel Favorites"])
 async def list_channel_favorites(
     auth: AuthDep = Depends(require_auth_with_jwt),
-    favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
+    favorites_svc: ChannelFavoritesServiceV2 = Depends(get_channel_favorites_service_v2),
 ):
-    """Lista los favoritos del usuario autenticado."""
     items = favorites_svc.list_favorites(auth.user_id)
     return {"items": items, "total": len(items)}
 
 
-@app.post("/api/channel-favorites", response_model=ChannelFavoriteResponse, tags=["Channel Favorites"])
+@app.post("/api/channel-favorites", tags=["Channel Favorites"])
 async def add_channel_favorite(
     body: ChannelFavoriteCreate,
     auth: AuthDep = Depends(require_auth_with_jwt),
-    favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
+    favorites_svc: ChannelFavoritesServiceV2 = Depends(get_channel_favorites_service_v2),
 ):
-    """Agrega o confirma un canal favorito por provider_id."""
     return favorites_svc.add_favorite(auth.user_id, body.channel_provider_id)
 
 
@@ -883,9 +963,8 @@ async def add_channel_favorite(
 async def delete_channel_favorite(
     channel_provider_id: str,
     auth: AuthDep = Depends(require_auth_with_jwt),
-    favorites_svc: ChannelFavoritesService = Depends(get_channel_favorites_service),
+    favorites_svc: ChannelFavoritesServiceV2 = Depends(get_channel_favorites_service_v2),
 ):
-    """Elimina un canal favorito por provider_id."""
     deleted = favorites_svc.remove_favorite(auth.user_id, channel_provider_id)
     if not deleted:
         raise NotFoundException("ChannelFavorite", channel_provider_id)
@@ -895,22 +974,24 @@ async def delete_channel_favorite(
 @app.get("/api/search", tags=["Content"])
 async def search_content(
     q: str = Query(..., min_length=1, description="Texto de búsqueda"),
-    types: Optional[str] = Query(None, description="Tipos separados por coma: channels,movies,series"),
+    types: str | None = Query(None, description="Tipos separados por coma: channels,movies,series,events"),
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(50, ge=1, le=100, description="Items por página"),
-    password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    password: str | None = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
     """Busca contenido en varios tipos sin descargar la playlist completa."""
-    requested_types = [value.strip() for value in (types or "channels,movies,series").split(',') if value.strip()]
+    requested_types = [
+        value.strip() for value in (types or "channels,movies,series").split(",") if value.strip()
+    ]
     return content_svc.search_catalog(
         query=q,
         types=requested_types,
         page=page,
         page_size=page_size,
         username=auth.username,
-        password=password or '',
+        password=password or "",
     )
 
 
@@ -918,12 +999,11 @@ async def search_content(
 async def get_replays(
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(24, ge=1, le=100, description="Items por página"),
-    event_type: Optional[str] = Query(None, description="Filtrar por tipo de evento"),
-    search: Optional[str] = Query(None, description="Buscar por título o descripción"),
+    event_type: str | None = Query(None, description="Filtrar por tipo de evento"),
+    search: str | None = Query(None, description="Buscar por título o descripción"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene lista paginada de replays. Requiere Bearer Token."""
     return content_svc.get_replays(
         page=page,
         page_size=page_size,
@@ -932,13 +1012,12 @@ async def get_replays(
     )
 
 
-@app.get("/api/replays/{slug}", response_model=ReplayItem, tags=["Replays"])
+@app.get("/api/replays/{slug}", tags=["Replays"])
 async def get_replay(
     slug: str,
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene un replay específico por slug. Requiere Bearer Token."""
     item = content_svc.get_replay(slug)
     if not item:
         raise NotFoundException("Replay", slug)
@@ -958,42 +1037,37 @@ async def proxy_replay_stream(
     upstream_headers = build_replay_upstream_headers(url, request)
 
     try:
-        if lowered_url.endswith('.m3u8'):
-            upstream = requests.get(
-                url,
-                timeout=30,
-                headers=upstream_headers,
+        if lowered_url.endswith(".m3u8"):
+            upstream = await asyncio.to_thread(
+                lambda: requests.get(url, timeout=30, headers=upstream_headers)
             )
             upstream.raise_for_status()
             rewritten = rewrite_m3u8_content(upstream.text, url, token)
             return Response(
                 content=rewritten,
-                media_type='application/vnd.apple.mpegurl',
+                media_type="application/vnd.apple.mpegurl",
                 headers={
-                    'Cache-Control': 'no-store',
+                    "Cache-Control": "no-store",
                 },
             )
 
-        upstream = requests.get(
-            url,
-            stream=True,
-            timeout=60,
-            headers=upstream_headers,
+        upstream = await asyncio.to_thread(
+            lambda: requests.get(url, stream=True, timeout=60, headers=upstream_headers)
         )
         upstream.raise_for_status()
-        media_type = upstream.headers.get('content-type', 'application/octet-stream').split(';')[0]
+        media_type = upstream.headers.get("content-type", "application/octet-stream").split(";")[0]
         response_headers = {
-            'Cache-Control': 'no-store',
+            "Cache-Control": "no-store",
         }
-        content_length = upstream.headers.get('content-length')
+        content_length = upstream.headers.get("content-length")
         if content_length:
-            response_headers['Content-Length'] = content_length
-        content_range = upstream.headers.get('content-range')
+            response_headers["Content-Length"] = content_length
+        content_range = upstream.headers.get("content-range")
         if content_range:
-            response_headers['Content-Range'] = content_range
-        accept_ranges = upstream.headers.get('accept-ranges')
+            response_headers["Content-Range"] = content_range
+        accept_ranges = upstream.headers.get("accept-ranges")
         if accept_ranges:
-            response_headers['Accept-Ranges'] = accept_ranges
+            response_headers["Accept-Ranges"] = accept_ranges
 
         def stream_iterator():
             with upstream:
@@ -1008,9 +1082,9 @@ async def proxy_replay_stream(
             headers=response_headers,
         )
     except requests.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Error remoto proxy replay: {e}")
+        raise HTTPException(status_code=502, detail=f"Error remoto proxy replay: {e}") from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error proxy replay: {e}")
+        raise HTTPException(status_code=500, detail=f"Error proxy replay: {e}") from e
 
 
 @app.get("/api/replays/{slug}/stream/{source_index}/{button_index}", tags=["Replays"])
@@ -1020,18 +1094,18 @@ async def proxy_replay_source_stream(
     button_index: int,
     request: Request,
     token: str = Query(..., description="JWT para autorizar el proxy"),
-    content_svc: ContentService = Depends(get_content_service),
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
     """Resuelve una URL fresca para una fuente de replay y la proxya."""
     validate_stream_token(token)
 
     resolved = content_svc.resolve_replay_source_stream_url(slug, source_index, button_index)
-    if not resolved or not resolved.get('stream_url'):
+    if not resolved or not resolved.get("stream_url"):
         raise NotFoundException("Replay source", f"{slug}:{source_index}:{button_index}")
 
     return await proxy_replay_stream(
         request=request,
-        url=resolved['stream_url'],
+        url=resolved["stream_url"],
         token=token,
     )
 
@@ -1040,21 +1114,21 @@ async def proxy_replay_source_stream(
 # API: Calendar
 # ============================================
 
+
 @app.get("/api/calendar/{fecha}", response_model=CalendarDayResponse, tags=["Calendar"])
 async def get_calendar_by_date(
     fecha: str,
-    password: Optional[str] = Query(None, description="Password para construir stream_url"),
-    client: Optional[str] = Query(None, description="'android' para URLs con /live/"),
+    password: str | None = Query(None, description="Password para construir stream_url"),
+    client: str | None = Query(None, description="'android' para URLs con /live/"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    calendar_svc=Depends(get_calendar_service)
+    calendar_svc: CalendarServiceV2 = Depends(get_calendar_service_v2),
 ):
-    """Obtiene todos los eventos deportivos de una fecha. Requiere Bearer Token."""
     from datetime import datetime
 
     try:
         datetime.strptime(fecha, "%Y-%m-%d")
     except ValueError:
-        raise BadRequestException("Formato de fecha inválido. Use YYYY-MM-DD")
+        raise BadRequestException("Formato de fecha inválido. Use YYYY-MM-DD") from None
 
     eventos_raw = calendar_svc.get_events_by_date(fecha)
 
@@ -1067,8 +1141,8 @@ async def get_calendar_by_date(
 
     all_channel_ids = []
     for evento in eventos_raw:
-        for ch in evento.get('canales_resueltos', []) or []:
-            cid = ch.get('channel_id')
+        for ch in evento.get("canales_resueltos", []) or []:
+            cid = ch.get("channel_id")
             if cid:
                 all_channel_ids.append(cid)
 
@@ -1076,28 +1150,30 @@ async def get_calendar_by_date(
 
     eventos = []
     for evento in eventos_raw:
-        canales_resueltos = evento.get('canales_resueltos', []) or []
+        canales_resueltos = evento.get("canales_resueltos", []) or []
         if username and pwd:
             for ch in canales_resueltos:
-                stream_id = ch.get('provider_id') or provider_map.get(ch.get('channel_id'))
+                stream_id = ch.get("provider_id") or provider_map.get(ch.get("channel_id"))
                 if stream_id:
-                    ch['provider_id'] = stream_id
-                    if client == 'android':
-                        ch['stream_url'] = f"{base_url}/live/{username}/{pwd}/{stream_id}"
-                    elif not ch.get('stream_url'):
-                        ch['stream_url'] = f"{base_url}/{username}/{pwd}/{stream_id}"
-        eventos.append(CalendarEvent(
-            id=str(evento['id']),
-            fecha=evento.get('fecha'),
-            hora=evento.get('hora'),
-            competicion=evento.get('competicion'),
-            subtitulo_competicion=evento.get('subtitulo_competicion'),
-            categoria=evento.get('categoria'),
-            equipos=evento.get('equipos'),
-            imagen_evento=evento.get('imagen_evento'),
-            canales_original=evento.get('canales_original', []) or [],
-            canales_resueltos=canales_resueltos
-        ))
+                    ch["provider_id"] = stream_id
+                    if client == "android":
+                        ch["stream_url"] = f"{base_url}/live/{username}/{pwd}/{stream_id}"
+                    elif not ch.get("stream_url"):
+                        ch["stream_url"] = f"{base_url}/{username}/{pwd}/{stream_id}"
+        eventos.append(
+            CalendarEvent(
+                id=str(evento["id"]),
+                fecha=evento.get("fecha"),
+                hora=evento.get("hora"),
+                competicion=evento.get("competicion"),
+                subtitulo_competicion=evento.get("subtitulo_competicion"),
+                categoria=evento.get("categoria"),
+                equipos=evento.get("equipos"),
+                imagen_evento=evento.get("imagen_evento"),
+                canales_original=evento.get("canales_original", []) or [],
+                canales_resueltos=canales_resueltos,
+            )
+        )
 
     return CalendarDayResponse(fecha=fecha, total_eventos=len(eventos), eventos=eventos)
 
@@ -1105,46 +1181,45 @@ async def get_calendar_by_date(
 @app.get("/api/calendar/event/{event_id}", response_model=CalendarEvent, tags=["Calendar"])
 async def get_calendar_event(
     event_id: str,
-    password: Optional[str] = Query(None, description="Password para construir stream_url"),
-    client: Optional[str] = Query(None, description="'android' para URLs con /live/"),
+    password: str | None = Query(None, description="Password para construir stream_url"),
+    client: str | None = Query(None, description="'android' para URLs con /live/"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    calendar_svc=Depends(get_calendar_service)
+    calendar_svc: CalendarServiceV2 = Depends(get_calendar_service_v2),
 ):
-    """Obtiene un evento específico por su ID. Requiere Bearer Token."""
     evento = calendar_svc.get_event_by_id(event_id)
 
     if not evento:
         raise NotFoundException("Evento", event_id)
 
-    canales_resueltos = evento.get('canales_resueltos', []) or []
+    canales_resueltos = evento.get("canales_resueltos", []) or []
 
     username = auth.username or ""
     pwd = password or ""
     base_url = settings.public_domain.rstrip("/")
 
     if username and pwd:
-        all_channel_ids = [ch.get('channel_id') for ch in canales_resueltos if ch.get('channel_id')]
+        all_channel_ids = [ch.get("channel_id") for ch in canales_resueltos if ch.get("channel_id")]
         provider_map = calendar_svc.get_provider_ids(all_channel_ids) if all_channel_ids else {}
         for ch in canales_resueltos:
-            stream_id = ch.get('provider_id') or provider_map.get(ch.get('channel_id'))
+            stream_id = ch.get("provider_id") or provider_map.get(ch.get("channel_id"))
             if stream_id:
-                ch['provider_id'] = stream_id
-                if client == 'android':
-                    ch['stream_url'] = f"{base_url}/live/{username}/{pwd}/{stream_id}"
-                elif not ch.get('stream_url'):
-                    ch['stream_url'] = f"{base_url}/{username}/{pwd}/{stream_id}"
+                ch["provider_id"] = stream_id
+                if client == "android":
+                    ch["stream_url"] = f"{base_url}/live/{username}/{pwd}/{stream_id}"
+                elif not ch.get("stream_url"):
+                    ch["stream_url"] = f"{base_url}/{username}/{pwd}/{stream_id}"
 
     return CalendarEvent(
-        id=str(evento['id']),
-        fecha=evento.get('fecha'),
-        hora=evento.get('hora'),
-        competicion=evento.get('competicion'),
-        subtitulo_competicion=evento.get('subtitulo_competicion'),
-        categoria=evento.get('categoria'),
-        equipos=evento.get('equipos'),
-        imagen_evento=evento.get('imagen_evento'),
-        canales_original=evento.get('canales_original', []) or [],
-        canales_resueltos=canales_resueltos
+        id=str(evento["id"]),
+        fecha=evento.get("fecha"),
+        hora=evento.get("hora"),
+        competicion=evento.get("competicion"),
+        subtitulo_competicion=evento.get("subtitulo_competicion"),
+        categoria=evento.get("categoria"),
+        equipos=evento.get("equipos"),
+        imagen_evento=evento.get("imagen_evento"),
+        canales_original=evento.get("canales_original", []) or [],
+        canales_resueltos=canales_resueltos,
     )
 
 
@@ -1152,18 +1227,17 @@ async def get_calendar_event(
 async def get_serie_episodes(
     serie_name: str,
     request: Request,
-    page: Optional[int] = Query(None, ge=1, description="Número de página"),
-    page_size: Optional[int] = Query(None, ge=1, le=100, description="Items por página"),
-    password: Optional[str] = Query(None, description="Password para construir stream_url"),
+    page: int | None = Query(None, ge=1, description="Número de página"),
+    page_size: int | None = Query(None, ge=1, le=100, description="Items por página"),
+    password: str | None = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    content_svc: ContentService = Depends(get_content_service)
+    content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Obtiene todos los episodios de una serie. Requiere Bearer Token."""
     if "page" not in request.query_params and "page_size" not in request.query_params:
         episodes = content_svc.get_episodes_by_serie_name(
             serie_name=serie_name,
             username=auth.username,
-            password=password or '',
+            password=password or "",
         )
 
         if not episodes:
@@ -1172,19 +1246,19 @@ async def get_serie_episodes(
         return {
             "serie_name": serie_name,
             "total_episodes": len(episodes),
-            "seasons": list(set([ep.get('temporada') for ep in episodes if ep.get('temporada')])),
+            "seasons": list(set([ep.get("temporada") for ep in episodes if ep.get("temporada")])),
             "episodes": episodes,
         }
 
     episodes = content_svc.get_episodes_by_serie_name_paginated(
         serie_name=serie_name,
         username=auth.username,
-        password=password or '',
+        password=password or "",
         page=page or 1,
         page_size=page_size or 50,
     )
 
-    if episodes.get('total', 0) == 0:
+    if episodes.get("total", 0) == 0:
         raise NotFoundException("Serie", serie_name)
 
     return episodes
@@ -1194,11 +1268,12 @@ async def get_serie_episodes(
 # API: Watch Progress
 # ============================================
 
+
 @app.get("/api/watch-progress", tags=["Watch Progress"])
 async def get_continue_watching(
     limit: int = Query(20, ge=1, le=50, description="Máximo de items"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+    wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Obtiene items con progreso de visualización incompleto. Requiere Bearer Token."""
     items = wp_svc.get_continue_watching(auth.user_id, limit=limit)
@@ -1209,17 +1284,18 @@ async def get_continue_watching(
 async def get_watched_items(
     limit: int = Query(100, ge=1, le=500, description="Máximo de items"),
     auth: AuthDep = Depends(require_auth_with_jwt),
-    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+    wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Obtiene items marcados como vistos. Requiere Bearer Token."""
     items = wp_svc.get_watched_items(auth.user_id, limit=limit)
     return {"items": items, "total": len(items)}
 
+
 @app.get("/api/watch-progress/{content_id}", tags=["Watch Progress"])
 async def get_watch_progress(
     content_id: str,
     auth: AuthDep = Depends(require_auth_with_jwt),
-    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+    wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Obtiene el progreso de un item específico. Requiere Bearer Token."""
     progress = wp_svc.get_progress(auth.user_id, content_id)
@@ -1233,7 +1309,7 @@ async def upsert_watch_progress(
     content_id: str,
     body: WatchProgressUpsert,
     auth: AuthDep = Depends(require_auth_with_jwt),
-    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+    wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Crea o actualiza el progreso de visualización. Requiere Bearer Token."""
     result = wp_svc.upsert_progress(auth.user_id, content_id, body.model_dump())
@@ -1244,7 +1320,7 @@ async def upsert_watch_progress(
 async def delete_watch_progress(
     content_id: str,
     auth: AuthDep = Depends(require_auth_with_jwt),
-    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+    wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Elimina el progreso de visualización de un item. Requiere Bearer Token."""
     deleted = wp_svc.delete_progress(auth.user_id, content_id)
@@ -1257,7 +1333,7 @@ async def delete_watch_progress(
 async def mark_watched(
     content_id: str,
     auth: AuthDep = Depends(require_auth_with_jwt),
-    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+    wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Marca un contenido como visto. Requiere Bearer Token."""
     result = wp_svc.set_is_watched(auth.user_id, content_id, True)
@@ -1268,7 +1344,7 @@ async def mark_watched(
 async def mark_unwatched(
     content_id: str,
     auth: AuthDep = Depends(require_auth_with_jwt),
-    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+    wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Marca un contenido como no visto. Requiere Bearer Token."""
     result = wp_svc.set_is_watched(auth.user_id, content_id, False)
@@ -1279,7 +1355,7 @@ async def mark_unwatched(
 async def get_watch_status(
     content_id: str,
     auth: AuthDep = Depends(require_auth_with_jwt),
-    wp_svc: WatchProgressService = Depends(get_watch_progress_service)
+    wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Obtiene el estado de visto de un contenido. Requiere Bearer Token."""
     progress = wp_svc.get_progress(auth.user_id, content_id)
@@ -1298,34 +1374,27 @@ async def get_watch_status(
 # API: Playlist M3U
 # ============================================
 
+
 @app.get("/get.php", tags=["Playlist"])
 async def get_playlist_standard(
     request: Request,
     username: str = Query(..., description="Usuario"),
     password: str = Query(..., description="Contraseña"),
-    type: Optional[str] = Query(None, description="Tipo: m3u, m3u_plus"),
-    output: Optional[str] = Query(None, description="Output: ts, m3u8"),
-    content: str = Query('full', description="Contenido: full, live, movie, series"),
-    user_svc: UserService = Depends(get_user_service),
-    device_svc: DeviceService = Depends(get_device_service),
-    playlist_svc: PlaylistService = Depends(get_playlist_service)
+    type: str | None = Query(None, description="Tipo: m3u, m3u_plus"),
+    _output: str | None = Query(None, description="Output: ts, m3u8"),
+    content: str = Query("full", description="Contenido: full, live, movie, series"),
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
+    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
+    playlist_svc: PlaylistServiceV2 = Depends(get_playlist_service_v2),
 ):
     """
     Genera playlist M3U — Formato estándar de proveedores IPTV.
-
-    Parámetro 'content':
-        - full: Todo el contenido (por defecto)
-        - live: Solo canales en vivo
-        - movie: Solo películas
-        - series: Solo series
-
-    Nota: Para reproductores móviles, usar content=live reduce significativamente el tamaño.
     """
-    valid_content = ['full', 'live', 'movie', 'series']
+    valid_content = ["full", "live", "movie", "series"]
     if content not in valid_content:
-        content = 'full'
+        content = "full"
 
-    auth = user_svc.validate_credentials(username, password)
+    auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
 
     if not auth.valid:
         raise UnauthorizedException(auth.message)
@@ -1333,14 +1402,15 @@ async def get_playlist_standard(
     if not auth.can_connect:
         raise ForbiddenException(auth.message)
 
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    ip_address = request.client.host if request.client else 'Unknown'
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    ip_address = request.client.host if request.client else "Unknown"
 
-    success, message, _ = device_svc.register_or_update_session(
+    success, message, _ = await asyncio.to_thread(
+        device_svc.register_or_update_session,
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
-        max_connections=auth.max_devices
+        max_connections=auth.max_devices,
     )
 
     if not success:
@@ -1348,9 +1418,11 @@ async def get_playlist_standard(
 
     logger.info(f"📋 Playlist solicitada: user={username}, content={content}, ua={user_agent[:50]}")
 
-    m3u_content = playlist_svc.generate_m3u(username=username, password=password, content_type=content)
+    m3u_content = playlist_svc.generate_m3u(
+        username=username, password=password, content_type=content
+    )
 
-    content_bytes = m3u_content.encode('utf-8')
+    content_bytes = m3u_content.encode("utf-8")
 
     content_length = len(content_bytes)
 
@@ -1363,7 +1435,9 @@ async def get_playlist_standard(
 
     content_length = len(content_bytes)
 
-    filename = f"playlist_{username}_{content}.m3u" if content != 'full' else f"playlist_{username}.m3u"
+    filename = (
+        f"playlist_{username}_{content}.m3u" if content != "full" else f"playlist_{username}.m3u"
+    )
 
     headers = {
         "Content-Length": str(content_length),
@@ -1377,21 +1451,17 @@ async def get_playlist_standard(
     if is_gzip:
         headers["Content-Encoding"] = "gzip"
 
-    return Response(
-        content=content_bytes,
-        media_type="application/octet-stream",
-        headers=headers
-    )
+    return Response(content=content_bytes, media_type="application/octet-stream", headers=headers)
 
 
 # ============================================
 # Endpoints HLS — sirven ficheros generados por ffmpeg
 # ============================================
 
+
 @app.get("/hls/{session_id}/playlist.m3u8", tags=["HLS"])
 async def hls_playlist(
-    session_id: str,
-    transcode_svc: TranscodeService = Depends(get_transcode_service)
+    session_id: str, transcode_svc: TranscodeService = Depends(get_transcode_service)
 ):
     """Sirve el playlist .m3u8 de una sesión HLS activa."""
     file_path = transcode_svc.get_file_path(session_id, "playlist.m3u8")
@@ -1403,7 +1473,7 @@ async def hls_playlist(
         media_type="application/vnd.apple.mpegurl",
         headers={
             "Cache-Control": "no-cache, no-store",
-        }
+        },
     )
 
 
@@ -1412,7 +1482,7 @@ async def hls_segment(
     request: Request,
     session_id: str,
     segment: str,
-    transcode_svc: TranscodeService = Depends(get_transcode_service)
+    transcode_svc: TranscodeService = Depends(get_transcode_service),
 ):
     """Sirve un segmento .ts de una sesión HLS activa."""
     if "/" in segment or ".." in segment:
@@ -1431,7 +1501,7 @@ async def hls_segment(
         headers={
             "Cache-Control": "no-cache",
             **_build_cast_cors_headers(request),
-        }
+        },
     )
 
 
@@ -1454,7 +1524,9 @@ def _build_cast_options_response(request: Request) -> Response:
     return Response(status_code=204, headers=_build_cast_cors_headers(request))
 
 
-def _build_cast_playlist_response(session_id: str, request: Request, transcode_svc: TranscodeService) -> PlainTextResponse:
+def _build_cast_playlist_response(
+    session_id: str, request: Request, transcode_svc: TranscodeService
+) -> PlainTextResponse:
     file_path = transcode_svc.get_file_path(session_id, "playlist.m3u8")
     if not file_path:
         raise NotFoundException("Sesión HLS", session_id)
@@ -1463,11 +1535,7 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
         playlist_content = f.read()
 
     forwarded_proto = request.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
-    forwarded_host = (
-        request.headers.get("x-forwarded-host") or
-        request.headers.get("host") or
-        ""
-    )
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
 
     internal_hosts = ["iptv-api", "localhost", "127.0.0.1"]
     is_internal = any(h in forwarded_host for h in internal_hosts)
@@ -1478,7 +1546,7 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
         base_url = settings.public_domain.rstrip("/")
 
     if base_url.startswith("http://"):
-        base_url = "https://" + base_url[len("http://"):]
+        base_url = "https://" + base_url[len("http://") :]
 
     logger.info(
         f"📺 Cast playlist base_url={base_url}, session={session_id}, "
@@ -1498,7 +1566,7 @@ def _build_cast_playlist_response(session_id: str, request: Request, transcode_s
         headers={
             "Cache-Control": "no-cache, no-store",
             **_build_cast_cors_headers(request),
-        }
+        },
     )
 
 
@@ -1507,11 +1575,16 @@ async def cast_hls_segment(
     request: Request,
     session_id: str,
     segment: str,
-    transcode_svc: TranscodeService = Depends(get_transcode_service)
+    transcode_svc: TranscodeService = Depends(get_transcode_service),
 ):
     """Sirve segmentos HLS para Chromecast."""
     logger.info(f"📺 Chromecast segment: session={session_id}, segment={segment}")
-    return await hls_segment(request=request, session_id=session_id, segment=segment, transcode_svc=transcode_svc)
+    return await hls_segment(
+        request=request,
+        session_id=session_id,
+        segment=segment,
+        transcode_svc=transcode_svc,
+    )
 
 
 @app.options("/cast/hls/{session_id}/{segment}", tags=["HLS", "Chromecast"])
@@ -1553,11 +1626,10 @@ async def extract_video_get(
             # None si el proveedor no da múltiples calidades
         }
     except ValueError as e:
-        raise BadRequestException(str(e))
+        raise BadRequestException(str(e)) from e
     except Exception as e:
         logger.error(f"[/api/video-extract] Error inesperado: {e}")
-        raise HTTPException(status_code=502,
-                            detail=f"Error al extraer video: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Error al extraer video: {e!s}") from e
 
 
 @app.post("/api/video-extract/multi", tags=["Video Extractor"])
@@ -1596,24 +1668,27 @@ async def extract_video_multi(
 # API: Stream Proxy
 # ============================================
 
+
 async def _proxy_stream_handler(
     content_type: str,
     username: str,
     password: str,
     stream_id: str,
     request: Request,
-    user_svc: UserService,
-    device_svc: DeviceService,
-    stream_svc: StreamProxyService,
+    user_svc: UserServiceV2,
+    device_svc: DeviceServiceV2,
+    stream_svc: StreamProxyServiceV2,
     transcode_svc: TranscodeService,
     force_hls_for_live: bool = False,
-    hls_profile: str = 'web'
+    hls_profile: str = "web",
 ):
     """Handler interno para proxy de streams."""
-    if content_type not in ['live', 'movie', 'series']:
-        raise BadRequestException("Tipo de stream inválido", {"valid_types": ["live", "movie", "series"]})
+    if content_type not in ["live", "movie", "series"]:
+        raise BadRequestException(
+            "Tipo de stream inválido", {"valid_types": ["live", "movie", "series"]}
+        )
 
-    auth = user_svc.validate_credentials(username, password)
+    auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
 
     if not auth.valid:
         raise UnauthorizedException(auth.message)
@@ -1621,28 +1696,31 @@ async def _proxy_stream_handler(
     if not auth.can_connect:
         raise ForbiddenException(auth.message)
 
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    ip_address = request.client.host if request.client else 'Unknown'
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    ip_address = request.client.host if request.client else "Unknown"
 
-    success, message, _ = device_svc.register_or_update_session(
+    success, message, _ = await asyncio.to_thread(
+        device_svc.register_or_update_session,
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
-        max_connections=auth.max_devices
+        max_connections=auth.max_devices,
     )
 
     if not success:
         raise TooManyRequestsException(message)
 
-    clean_stream_id = stream_id.split('.')[0]
+    clean_stream_id = stream_id.split(".")[0]
     original_url = stream_svc.get_original_url(clean_stream_id, content_type)
 
-    logger.info(f"🎬 STREAM REQUEST: type={content_type}, user={username}, stream_id={clean_stream_id}, url={original_url[:60] if original_url else 'NOT FOUND'}...")
+    logger.info(
+        f"🎬 STREAM REQUEST: type={content_type}, user={username}, stream_id={clean_stream_id}, url={original_url[:60] if original_url else 'NOT FOUND'}..."
+    )
 
     if not original_url:
         raise NotFoundException("Stream", stream_id)
 
-    origin = request.headers.get('origin') or request.headers.get('referer', '')
+    origin = request.headers.get("origin") or request.headers.get("referer", "")
     is_from_allowed_web = any(orig in origin for orig in ALLOWED_WEB_ORIGINS if origin)
     logger.info(
         f"🌐 Stream routing: type={content_type}, user={username}, "
@@ -1650,14 +1728,12 @@ async def _proxy_stream_handler(
         f"origin={origin[:100] if origin else 'none'}"
     )
 
-    should_use_hls = (is_from_allowed_web or force_hls_for_live) and content_type == 'live'
+    should_use_hls = (is_from_allowed_web or force_hls_for_live) and content_type == "live"
 
     if should_use_hls and transcode_svc:
         hls_source_url = original_url
         resolved_hls_url = await stream_svc.resolve_redirects(
-            original_url,
-            use_cache=False,
-            use_proxy=True
+            original_url, use_cache=False, use_proxy=True
         )
         logger.info(
             f"🎯 HLS bootstrap resolve: stream_id={clean_stream_id}, "
@@ -1666,10 +1742,7 @@ async def _proxy_stream_handler(
         hls_source_url = resolved_hls_url
 
         session = await transcode_svc.get_or_create_session(
-            username,
-            clean_stream_id,
-            hls_source_url,
-            profile=hls_profile
+            username, clean_stream_id, hls_source_url, profile=hls_profile
         )
         ready = await transcode_svc.wait_for_playlist(session)
         if not ready:
@@ -1677,11 +1750,9 @@ async def _proxy_stream_handler(
         logger.info(f"🎬 HLS redirect: session={session.session_id}")
         return RedirectResponse(url=f"/hls/{session.session_id}/playlist.m3u8", status_code=302)
 
-    use_cache_for_redirect = content_type != 'live'
+    use_cache_for_redirect = content_type != "live"
     stream_url = await stream_svc.resolve_redirects(
-        original_url,
-        use_cache=use_cache_for_redirect,
-        use_proxy=True
+        original_url, use_cache=use_cache_for_redirect, use_proxy=True
     )
     if stream_url != original_url:
         logger.info(
@@ -1692,34 +1763,34 @@ async def _proxy_stream_handler(
         logger.info(f"🎯 Bootstrap con proxy sin cambio ({content_type}): {original_url[:60]}...")
 
     request_headers = {}
-    if content_type in ['movie', 'series']:
-        range_header = request.headers.get('range')
+    if content_type in ["movie", "series"]:
+        range_header = request.headers.get("range")
         if range_header:
-            request_headers['Range'] = range_header
+            request_headers["Range"] = range_header
 
     try:
         status_code, headers, body = await stream_svc.get_stream_response(
-            stream_url,
-            headers=request_headers
+            stream_url, headers=request_headers
         )
 
         if isinstance(body, str):
             from fastapi.responses import PlainTextResponse
+
             return PlainTextResponse(
                 content=body,
                 status_code=status_code,
                 headers=headers,
-                media_type=headers.get('content-type', 'application/vnd.apple.mpegurl')
+                media_type=headers.get("content-type", "application/vnd.apple.mpegurl"),
             )
 
         return StreamingResponse(
             body,
             status_code=status_code,
             headers=headers,
-            media_type=headers.get('content-type', 'video/mp2t')
+            media_type=headers.get("content-type", "video/mp2t"),
         )
     except Exception as e:
-        raise BadRequestException(f"Error al obtener stream: {str(e)}")
+        raise BadRequestException(f"Error al obtener stream: {e!s}") from e
 
 
 # ============================================
@@ -1728,7 +1799,16 @@ async def _proxy_stream_handler(
 # capturen paths que empiezan por "api" u otros prefijos reservados.
 # ============================================
 
-_RESERVED_PREFIXES = {'api', 'cast', 'hls', 'auth', 'internal', 'logo', 'get.php', 'health'}
+_RESERVED_PREFIXES = {
+    "api",
+    "cast",
+    "hls",
+    "auth",
+    "internal",
+    "logo",
+    "get.php",
+    "health",
+}
 
 
 @app.get("/{content_type}/{username}/{password}/{stream_id}", tags=["Stream"])
@@ -1738,19 +1818,23 @@ async def proxy_stream_content(
     password: str,
     stream_id: str,
     request: Request,
-    user_svc: UserService = Depends(get_user_service),
-    device_svc: DeviceService = Depends(get_device_service),
-    stream_svc: StreamProxyService = Depends(get_stream_service),
-    transcode_svc: TranscodeService = Depends(get_transcode_service)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
+    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
+    stream_svc: StreamProxyServiceV2 = Depends(get_stream_service_v2),
+    transcode_svc: TranscodeService = Depends(get_transcode_service),
 ):
     """
     Proxy de streams para live, movie y series.
     Formato: /{live|movie|series}/{username}/{password}/{stream_id}
     """
     if content_type in _RESERVED_PREFIXES:
-        logger.warning(f"[DIAG] Catch-all 4-seg BLOCKED: content_type={content_type}, user={username}, stream_id={stream_id}")
+        logger.warning(
+            f"[DIAG] Catch-all 4-seg BLOCKED: content_type={content_type}, user={username}, stream_id={stream_id}"
+        )
         raise BadRequestException(f"Ruta no válida: '{content_type}' es un prefijo reservado")
-    logger.info(f"[DIAG] Catch-all 4-seg ENTERED: /{content_type}/{username}/{password}/{stream_id}")
+    logger.info(
+        f"[DIAG] Catch-all 4-seg ENTERED: /{content_type}/{username}/{password}/{stream_id}"
+    )
     return await _proxy_stream_handler(
         content_type=content_type,
         username=username,
@@ -1762,7 +1846,7 @@ async def proxy_stream_content(
         stream_svc=stream_svc,
         transcode_svc=transcode_svc,
         force_hls_for_live=False,
-        hls_profile='web'
+        hls_profile="web",
     )
 
 
@@ -1772,18 +1856,22 @@ async def proxy_stream_channel(
     password: str,
     stream_id: str,
     request: Request,
-    user_svc: UserService = Depends(get_user_service),
-    device_svc: DeviceService = Depends(get_device_service),
-    stream_svc: StreamProxyService = Depends(get_stream_service),
-    transcode_svc: TranscodeService = Depends(get_transcode_service)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
+    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
+    stream_svc: StreamProxyServiceV2 = Depends(get_stream_service_v2),
+    transcode_svc: TranscodeService = Depends(get_transcode_service),
 ):
     """Proxy de streams para canales en vivo (sin tipo en URL)."""
     if username in _RESERVED_PREFIXES or password in _RESERVED_PREFIXES:
-        logger.warning(f"[DIAG] Catch-all 3-seg BLOCKED: username={username}, password={password}, stream_id={stream_id}")
-        raise BadRequestException(f"Ruta no válida: '{username}' o '{password}' son prefijos reservados")
+        logger.warning(
+            f"[DIAG] Catch-all 3-seg BLOCKED: username={username}, password={password}, stream_id={stream_id}"
+        )
+        raise BadRequestException(
+            f"Ruta no válida: '{username}' o '{password}' son prefijos reservados"
+        )
     logger.info(f"[DIAG] Catch-all 3-seg ENTERED: /{username}/{password}/{stream_id}")
     return await _proxy_stream_handler(
-        content_type='live',
+        content_type="live",
         username=username,
         password=password,
         stream_id=stream_id,
@@ -1793,24 +1881,27 @@ async def proxy_stream_channel(
         stream_svc=stream_svc,
         transcode_svc=transcode_svc,
         force_hls_for_live=True,
-        hls_profile='web'
+        hls_profile="web",
     )
 
 
-@app.get("/cast/live/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
+@app.get(
+    "/cast/live/{username}/{password}/{stream_id}/playlist.m3u8",
+    tags=["Stream", "Chromecast"],
+)
 async def proxy_stream_channel_chromecast(
     username: str,
     password: str,
     stream_id: str,
     request: Request,
-    user_svc: UserService = Depends(get_user_service),
-    device_svc: DeviceService = Depends(get_device_service),
-    stream_svc: StreamProxyService = Depends(get_stream_service),
-    transcode_svc: TranscodeService = Depends(get_transcode_service)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
+    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
+    stream_svc: StreamProxyServiceV2 = Depends(get_stream_service_v2),
+    transcode_svc: TranscodeService = Depends(get_transcode_service),
 ):
     """Genera una playlist HLS compatible con Chromecast para canales en vivo."""
     logger.info(f"📺 Chromecast request: user={username}, stream_id={stream_id}")
-    auth = user_svc.validate_credentials(username, password)
+    auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
 
     if not auth.valid:
         raise UnauthorizedException(auth.message)
@@ -1818,36 +1909,32 @@ async def proxy_stream_channel_chromecast(
     if not auth.can_connect:
         raise ForbiddenException(auth.message)
 
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    ip_address = request.client.host if request.client else 'Unknown'
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    ip_address = request.client.host if request.client else "Unknown"
 
-    success, message, _ = device_svc.register_or_update_session(
+    success, message, _ = await asyncio.to_thread(
+        device_svc.register_or_update_session,
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
-        max_connections=auth.max_devices
+        max_connections=auth.max_devices,
     )
 
     if not success:
         raise TooManyRequestsException(message)
 
-    clean_stream_id = stream_id.split('.')[0]
-    original_url = stream_svc.get_original_url(clean_stream_id, 'live')
+    clean_stream_id = stream_id.split(".")[0]
+    original_url = stream_svc.get_original_url(clean_stream_id, "live")
 
     if not original_url:
         raise NotFoundException("Stream", stream_id)
 
     hls_source_url = await stream_svc.resolve_redirects(
-        original_url,
-        use_cache=False,
-        use_proxy=True
+        original_url, use_cache=False, use_proxy=True
     )
 
     session = await transcode_svc.get_or_create_session(
-        username,
-        clean_stream_id,
-        hls_source_url,
-        profile='chromecast'
+        username, clean_stream_id, hls_source_url, profile="chromecast"
     )
     ready = await transcode_svc.wait_for_playlist(session)
     if not ready:
@@ -1857,7 +1944,10 @@ async def proxy_stream_channel_chromecast(
     return _build_cast_playlist_response(session.session_id, request, transcode_svc)
 
 
-@app.options("/cast/live/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
+@app.options(
+    "/cast/live/{username}/{password}/{stream_id}/playlist.m3u8",
+    tags=["Stream", "Chromecast"],
+)
 async def proxy_stream_channel_chromecast_options(
     username: str,
     password: str,
@@ -1867,16 +1957,19 @@ async def proxy_stream_channel_chromecast_options(
     return _build_cast_options_response(request)
 
 
-@app.get("/cast/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
+@app.get(
+    "/cast/{username}/{password}/{stream_id}/playlist.m3u8",
+    tags=["Stream", "Chromecast"],
+)
 async def proxy_stream_channel_chromecast_shortcut(
     username: str,
     password: str,
     stream_id: str,
     request: Request,
-    user_svc: UserService = Depends(get_user_service),
-    device_svc: DeviceService = Depends(get_device_service),
-    stream_svc: StreamProxyService = Depends(get_stream_service),
-    transcode_svc: TranscodeService = Depends(get_transcode_service)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
+    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
+    stream_svc: StreamProxyServiceV2 = Depends(get_stream_service_v2),
+    transcode_svc: TranscodeService = Depends(get_transcode_service),
 ):
     """Atajo Chromecast para live, alineado con la ruta web sin /live."""
     return await proxy_stream_channel_chromecast(
@@ -1887,11 +1980,14 @@ async def proxy_stream_channel_chromecast_shortcut(
         user_svc=user_svc,
         device_svc=device_svc,
         stream_svc=stream_svc,
-        transcode_svc=transcode_svc
+        transcode_svc=transcode_svc,
     )
 
 
-@app.options("/cast/{username}/{password}/{stream_id}/playlist.m3u8", tags=["Stream", "Chromecast"])
+@app.options(
+    "/cast/{username}/{password}/{stream_id}/playlist.m3u8",
+    tags=["Stream", "Chromecast"],
+)
 async def proxy_stream_channel_chromecast_shortcut_options(
     username: str,
     password: str,
@@ -1905,19 +2001,23 @@ async def proxy_stream_channel_chromecast_shortcut_options(
 # API: Stream Validation (Nginx)
 # ============================================
 
-@app.get("/auth/validate-stream/{content_type}/{username}/{password}/{provider_id}", tags=["Stream Validation"])
+
+@app.get(
+    "/auth/validate-stream/{content_type}/{username}/{password}/{provider_id}",
+    tags=["Stream Validation"],
+)
 async def validate_stream(
     content_type: str,
     username: str,
     password: str,
     provider_id: str,
     request: Request,
-    user_svc: UserService = Depends(get_user_service),
-    device_svc: DeviceService = Depends(get_device_service),
-    stream_svc: StreamProxyService = Depends(get_stream_service)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
+    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
+    stream_svc: StreamProxyServiceV2 = Depends(get_stream_service_v2),
 ):
     """Valida credenciales y devuelve URL original para nginx auth_request."""
-    auth = user_svc.validate_credentials(username, password)
+    auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
 
     if not auth.valid:
         raise UnauthorizedException(auth.message)
@@ -1925,43 +2025,40 @@ async def validate_stream(
     if not auth.can_connect:
         raise ForbiddenException(auth.message)
 
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    ip_address = request.client.host if request.client else 'Unknown'
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    ip_address = request.client.host if request.client else "Unknown"
 
-    success, message, _ = device_svc.register_or_update_session(
+    success, message, _ = await asyncio.to_thread(
+        device_svc.register_or_update_session,
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
-        max_connections=auth.max_devices
+        max_connections=auth.max_devices,
     )
 
     if not success:
         raise TooManyRequestsException(message)
 
-    clean_provider_id = provider_id.split('.')[0]
+    clean_provider_id = provider_id.split(".")[0]
     original_url = stream_svc.get_original_url(clean_provider_id, content_type)
 
     if not original_url:
         raise NotFoundException("Stream", provider_id)
 
     final_url = await stream_svc.resolve_redirects(
-        original_url,
-        use_cache=content_type != 'live',
-        use_proxy=True
+        original_url, use_cache=content_type != "live", use_proxy=True
     )
 
     return PlainTextResponse(
         content="OK",
-        headers={
-            "X-Original-Url": final_url,
-            "X-Provider-Id": clean_provider_id
-        }
+        headers={"X-Original-Url": final_url, "X-Provider-Id": clean_provider_id},
     )
 
 
 # ============================================
 # API: Internal Stream URL (for Nginx direct proxy)
 # ============================================
+
 
 @app.get("/internal/stream-url", tags=["Internal"])
 async def get_stream_url_internal(
@@ -1970,33 +2067,34 @@ async def get_stream_url_internal(
     password: str = Query(...),
     id: str = Query(...),
     type: str = Query("live", description="Tipo de contenido: live, movie, series"),
-    user_svc: UserService = Depends(get_user_service),
-    device_svc: DeviceService = Depends(get_device_service),
-    stream_svc: StreamProxyService = Depends(get_stream_service)
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
+    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
+    stream_svc: StreamProxyServiceV2 = Depends(get_stream_service_v2),
 ):
     """
     Endpoint interno para obtener URL de stream.
     Devuelve redirect 307 al stream del proveedor para proxy directo via nginx.
     """
-    auth = user_svc.validate_credentials(user, password)
+    auth = await asyncio.to_thread(user_svc.validate_credentials, user, password)
 
     if not auth.valid or not auth.can_connect:
         raise UnauthorizedException("Credenciales inválidas")
 
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    ip_address = request.client.host if request.client else 'Unknown'
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    ip_address = request.client.host if request.client else "Unknown"
 
-    success, message, _ = device_svc.register_or_update_session(
+    success, message, _ = await asyncio.to_thread(
+        device_svc.register_or_update_session,
         user_id=auth.user_id,
         user_agent=user_agent,
         ip_address=ip_address,
-        max_connections=auth.max_devices
+        max_connections=auth.max_devices,
     )
 
     if not success:
         raise TooManyRequestsException(message)
 
-    clean_id = id.split('.')[0]
+    clean_id = id.split(".")[0]
 
     content_type_map = {"live": "live", "movie": "movie", "series": "series"}
     content_type = content_type_map.get(type, "live")
@@ -2010,9 +2108,7 @@ async def get_stream_url_internal(
 
     use_cache = content_type != "live"
     final_url = await stream_svc.resolve_redirects(
-        original_url,
-        use_cache=use_cache,
-        use_proxy=True
+        original_url, use_cache=use_cache, use_proxy=True
     )
 
     print(f"[DEBUG] final_url: {final_url}")
@@ -2025,14 +2121,16 @@ async def get_stream_url_internal(
 # API: Logo/Image Proxy
 # ============================================
 
+
 @app.get("/logo", tags=["Logo"])
 async def proxy_logo(
     url: str = Query(..., description="URL original del logo"),
     type: str = Query("channel", description="Tipo: channel, movie, series"),
-    stream_svc: StreamProxyService = Depends(get_stream_service)
+    stream_svc: StreamProxyServiceV2 = Depends(get_stream_service_v2),
 ):
     """Proxy de imágenes/logos para resolver Mixed Content."""
     from urllib.parse import unquote
+
     import httpx
 
     try:
@@ -2040,7 +2138,7 @@ async def proxy_logo(
     except Exception:
         original_url = url
 
-    if not original_url.startswith('http'):
+    if not original_url.startswith("http"):
         original_url = f"http://{original_url}"
 
     placeholder_map = {
@@ -2052,9 +2150,12 @@ async def proxy_logo(
 
     try:
         async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
-            response = await client.get(original_url, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            })
+            response = await client.get(
+                original_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                },
+            )
             response.raise_for_status()
 
             content_type = response.headers.get("content-type", "image/jpeg")
@@ -2064,12 +2165,13 @@ async def proxy_logo(
                 media_type=content_type,
                 headers={
                     "Cache-Control": "public, max-age=86400",
-                }
+                },
             )
     except Exception:
         pass
 
     from pathlib import Path
+
     placeholder_path = Path(__file__).parent.parent / "resources" / "images" / placeholder_filename
     if placeholder_path.exists():
         with open(placeholder_path, "rb") as f:
@@ -2080,13 +2182,10 @@ async def proxy_logo(
             headers={
                 "Cache-Control": "public, max-age=86400",
                 "X-Fallback": "true",
-            }
+            },
         )
 
-    return Response(
-        content=b"",
-        status_code=204
-    )
+    return Response(content=b"", status_code=204)
 
 
 # ============================================
@@ -2094,9 +2193,4 @@ async def proxy_logo(
 # ============================================
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "api:app",
-        host="0.0.0.0",
-        port=3010,
-        reload=True
-    )
+    uvicorn.run("api:app", host="0.0.0.0", port=3010, reload=True)

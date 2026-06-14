@@ -1,7 +1,14 @@
 docker/.env
+.env
+utils/.env
 database/insert.sql
 data/m3u/*
 postman/environment.json
 .idea/*
 *.iml
 /.playwright-cli/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class

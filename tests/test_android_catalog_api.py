@@ -1,23 +1,12 @@
-import sys
-import types
-
 from fastapi.testclient import TestClient
 
-
-psycopg2_module = types.ModuleType("psycopg2")
-psycopg2_pool_module = types.ModuleType("psycopg2.pool")
-psycopg2_pool_module.SimpleConnectionPool = object
-psycopg2_extras_module = types.ModuleType("psycopg2.extras")
-psycopg2_extras_module.RealDictCursor = object
-psycopg2_extras_module.execute_batch = lambda *args, **kwargs: None
-psycopg2_module.pool = psycopg2_pool_module
-
-sys.modules.setdefault("psycopg2", psycopg2_module)
-sys.modules.setdefault("psycopg2.pool", psycopg2_pool_module)
-sys.modules.setdefault("psycopg2.extras", psycopg2_extras_module)
-
 from scripts.api import app
-from utils.dependencies import get_calendar_service, get_channel_favorites_service, get_content_service, require_auth_with_jwt
+from utils.dependencies import (
+    get_calendar_service_v2,
+    get_channel_favorites_service_v2,
+    get_content_service_v2,
+    require_auth_with_jwt,
+)
 from utils.models import AuthResult
 
 
@@ -25,7 +14,9 @@ class StubContentService:
     def __init__(self):
         self.last_home_country = None
 
-    def get_home_catalog(self, username: str, page_size: int = 12, country: str | None = None, password: str = '') -> dict:
+    def get_home_catalog(
+        self, username: str, page_size: int = 12, country: str | None = None, password: str = ""
+    ) -> dict:
         self.last_home_country = country
         return {
             "featured_channels": [{"id": "1", "title": "Noticias 24", "type": "channel"}],
@@ -34,7 +25,9 @@ class StubContentService:
             "stats": {"channels": 10, "movies": 20, "series": 30},
         }
 
-    def get_home_catalog_new(self, username: str, country: str | None = None, password: str = '') -> dict:
+    def get_home_catalog_new(
+        self, username: str, country: str | None = None, password: str = ""
+    ) -> dict:
         return self.get_home_catalog(username=username, country=country, password=password)
 
     def search_catalog(
@@ -44,7 +37,7 @@ class StubContentService:
         page: int,
         page_size: int,
         username: str,
-        password: str = '',
+        password: str = "",
     ) -> dict:
         return {
             "items": [
@@ -70,7 +63,7 @@ class StubContentService:
         search: str | None,
         username: str,
         year: int | None = None,
-        password: str = '',
+        password: str = "",
     ) -> dict:
         return {
             "items": [
@@ -78,7 +71,9 @@ class StubContentService:
                     "id": "10",
                     "type": "series" if content_type == "series" else content_type[:-1],
                     "title": "Serie Uno S01 E01" if content_type == "series" else "Canal Uno",
-                    "normalized_title": "Serie Uno S01 E01" if content_type == "series" else "Canal Uno",
+                    "normalized_title": "Serie Uno S01 E01"
+                    if content_type == "series"
+                    else "Canal Uno",
                     "subtitle": "Drama" if content_type == "series" else "Noticias",
                     "normalized_group": "Drama" if content_type == "series" else "Noticias",
                     "group": "Drama" if content_type == "series" else "Noticias",
@@ -128,7 +123,9 @@ class StubContentService:
             "seasons": [1],
         }
 
-    def get_episodes_by_serie_name(self, serie_name: str, username: str, password: str) -> list[dict]:
+    def get_episodes_by_serie_name(
+        self, serie_name: str, username: str, password: str
+    ) -> list[dict]:
         return [{"id": "ep-1", "temporada": 1, "title": "Episodio 1"}]
 
 
@@ -193,12 +190,21 @@ class StubChannelFavoritesService:
             "provider_id": channel_provider_id,
             "created_at": "2026-03-28T00:00:00Z",
         }
-        self.items = [item, *[existing for existing in self.items if existing["channel_provider_id"] != channel_provider_id]]
+        self.items = [
+            item,
+            *[
+                existing
+                for existing in self.items
+                if existing["channel_provider_id"] != channel_provider_id
+            ],
+        ]
         return item
 
     def remove_favorite(self, user_id: str, channel_provider_id: str) -> bool:
         original_count = len(self.items)
-        self.items = [item for item in self.items if item["channel_provider_id"] != channel_provider_id]
+        self.items = [
+            item for item in self.items if item["channel_provider_id"] != channel_provider_id
+        ]
         return len(self.items) != original_count
 
     def get_favorite_channels(
@@ -210,7 +216,7 @@ class StubChannelFavoritesService:
         country: str | None,
         search: str | None,
         username: str,
-        password: str = '',
+        password: str = "",
     ) -> dict:
         params = {
             "user_id": user_id,
@@ -264,9 +270,9 @@ def create_client() -> TestClient:
     stub_content_service = StubContentService()
     stub_favorites_service = StubChannelFavoritesService()
     app.dependency_overrides[require_auth_with_jwt] = override_auth
-    app.dependency_overrides[get_content_service] = lambda: stub_content_service
-    app.dependency_overrides[get_calendar_service] = lambda: StubCalendarService()
-    app.dependency_overrides[get_channel_favorites_service] = lambda: stub_favorites_service
+    app.dependency_overrides[get_content_service_v2] = lambda: stub_content_service
+    app.dependency_overrides[get_calendar_service_v2] = lambda: StubCalendarService()
+    app.dependency_overrides[get_channel_favorites_service_v2] = lambda: stub_favorites_service
     client = TestClient(app)
     client.stub_content_service = stub_content_service
     client.stub_favorites_service = stub_favorites_service
@@ -313,7 +319,10 @@ def test_get_home_accepts_country_filter() -> None:
 def test_search_returns_paginated_catalog_results() -> None:
     client = create_client()
 
-    response = client.get("/api/search", params={"q": "deporte", "types": "channels,series", "page": 1, "page_size": 20})
+    response = client.get(
+        "/api/search",
+        params={"q": "deporte", "types": "channels,series", "page": 1, "page_size": 20},
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -325,7 +334,10 @@ def test_search_returns_paginated_catalog_results() -> None:
 def test_content_returns_android_friendly_payload() -> None:
     client = create_client()
 
-    response = client.get("/api/content", params={"content_type": "series", "page": 1, "page_size": 20, "country": "ES"})
+    response = client.get(
+        "/api/content",
+        params={"content_type": "series", "page": 1, "page_size": 20, "country": "ES"},
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -337,7 +349,9 @@ def test_content_returns_android_friendly_payload() -> None:
 def test_content_filters_returns_languages_and_groups() -> None:
     client = create_client()
 
-    response = client.get("/api/content/filters", params={"content_type": "channels", "country": "ES"})
+    response = client.get(
+        "/api/content/filters", params={"content_type": "channels", "country": "ES"}
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -361,7 +375,14 @@ def test_content_favorites_group_uses_channel_favorites_service() -> None:
 
     response = client.get(
         "/api/content",
-        params={"content_type": "channels", "group": "Favorites", "page": 2, "page_size": 5, "country": "ES", "search": "deporte"},
+        params={
+            "content_type": "channels",
+            "group": "Favorites",
+            "page": 2,
+            "page_size": 5,
+            "country": "ES",
+            "search": "deporte",
+        },
     )
 
     assert response.status_code == 200

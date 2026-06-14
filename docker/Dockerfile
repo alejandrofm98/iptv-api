@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copiar código fuente
 # Copiamos desde el contexto raíz del proyecto
+COPY app/ /app/app/
 COPY services/ /app/services/
 COPY utils/ /app/utils/
 COPY scripts/ /app/scripts/
@@ -38,7 +39,7 @@ RUN mkdir -p /app/data/m3u
 EXPOSE 3010
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=5 \
     CMD curl -f http://localhost:3010/health || exit 1
 
 # Comando por defecto
