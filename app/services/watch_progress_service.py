@@ -246,6 +246,15 @@ class WatchProgressServiceV2:
             if c and c not in candidates:
                 candidates.append(c)
 
+        # Si el content_id original es UUID, la canonicalización pudo haber
+        # guardado bajo un provider_id numérico — añadirlo como candidato
+        for ct in ("movie", "series"):
+            row = self._find_content_row(ct, content_id)
+            if row and row.get("provider_id"):
+                pid = str(row["provider_id"])
+                if pid not in candidates:
+                    candidates.append(pid)
+
         rows = []
         seen = set()
         for c in candidates:
