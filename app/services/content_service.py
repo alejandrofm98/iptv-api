@@ -604,7 +604,7 @@ class ContentServiceV2:
         return {
             "id": row.get("provider_id") or str(row.get("id") or ""),
             "provider_id": row.get("provider_id") or "",
-            "type": "series_group",
+            "type": "series",
             "title": serie_name,
             "normalized_title": normalized_title,
             "original_title": serie_name,

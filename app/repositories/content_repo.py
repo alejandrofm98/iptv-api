@@ -146,6 +146,31 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 MovieMetadata.status,
                 MovieMetadata.tagline,
                 MovieMetadata.title.label("tmdb_title"),
+                text("""(
+                    SELECT COALESCE(
+                        jsonb_agg(
+                            jsonb_build_object(
+                                'url', ms.stream_url,
+                                'label', COALESCE(ms.label, ms.country, 'Ver'),
+                                'country', ms.country,
+                                'quality', ms.quality,
+                                'provider_id', ms.provider_id,
+                                'numero', ms.numero
+                            ) ORDER BY
+                                CASE WHEN ms.country = 'ES' THEN 0
+                                     WHEN ms.country = 'EN' THEN 1
+                                     WHEN ms.country = 'LATAM' THEN 2
+                                     ELSE 3 END,
+                                ms.numero ASC
+                        ),
+                        '[]'::jsonb
+                    )
+                    FROM movie_streams ms
+                    WHERE ms.movie_id = movies_catalog.id
+                )""").label("stream_options"),
+                text("""(
+                    SELECT COUNT(ms.id) FROM movie_streams ms WHERE ms.movie_id = movies_catalog.id
+                )""").label("stream_count"),
             )
             .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
             .order_by(desc(MovieMetadata.release_date).nullslast(), MovieCatalog.title)
