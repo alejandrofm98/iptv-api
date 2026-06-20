@@ -38,6 +38,8 @@ class StubContentService:
         page_size: int,
         username: str,
         password: str = "",
+        country: str | None = None,
+        genre: str | None = None,
     ) -> dict:
         return {
             "items": [

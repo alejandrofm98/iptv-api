@@ -765,6 +765,7 @@ class ContentServiceV2:
         country: str | None = None,
         search: str | None = None,
         year: int | None = None,
+        genre: str | None = None,
     ) -> tuple[list[dict], int]:
         rows, total = self.content_repo.get_movies_catalog_page(
             page=page,
@@ -774,6 +775,7 @@ class ContentServiceV2:
             country=country,
             search=search,
             year=year,
+            genre=genre,
         )
         # Ensure countries field is populated from stream data if missing
         for row in rows:
@@ -1560,6 +1562,8 @@ class ContentServiceV2:
         page_size: int = 50,
         username: str = "",
         password: str = "",
+        country: str | None = None,
+        genre: str | None = None,
     ) -> dict:
         requested_types = [ct for ct in types if ct in ("channels", "movies", "series", "events")]
         if not requested_types:
@@ -1567,20 +1571,20 @@ class ContentServiceV2:
         merged_items: list[dict] = []
         for content_type in requested_types:
             if content_type == "movies":
-                rows, _ = self._get_movies_catalog_page_raw(1, 1000, search=query)
+                rows, _ = self._get_movies_catalog_page_raw(1, 1000, search=query, country=country, genre=genre)
                 merged_items.extend(
                     self._to_android_movie_from_catalog(row, username, password) for row in rows
                 )
             elif content_type == "series":
                 result = self._get_distinct_series_groups_catalog_raw(
-                    page=1, page_size=1000, search=query
+                    page=1, page_size=1000, search=query, country=country, genre=genre
                 )
                 merged_items.extend(
                     self._to_android_series_from_catalog(row, username, password)
                     for row in (result.get("items") or [])
                 )
             elif content_type == "channels":
-                channels, _ = self.channel_repo.get_paginated(1, 1000, search=query)
+                channels, _ = self.channel_repo.get_paginated(1, 1000, search=query, country=country)
                 rows = [
                     {
                         "id": str(c.id),

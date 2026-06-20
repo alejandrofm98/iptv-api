@@ -977,6 +977,8 @@ async def search_content(
     types: str | None = Query(None, description="Tipos separados por coma: channels,movies,series,events"),
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(50, ge=1, le=100, description="Items por página"),
+    country: str | None = Query(None, description="Filtrar por país (codigo ISO)"),
+    genre: str | None = Query(None, description="Filtrar por género"),
     password: str | None = Query(None, description="Password para construir stream_url"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
@@ -992,6 +994,8 @@ async def search_content(
         page_size=page_size,
         username=auth.username,
         password=password or "",
+        country=country,
+        genre=genre,
     )
 
 
