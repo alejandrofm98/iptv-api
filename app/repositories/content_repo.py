@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import String, and_, case, desc, func, or_, select, text
+from sqlalchemy import String, and_, case, desc, func, literal_column, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.models.content import MovieCatalog, MovieMetadata, MovieStream
@@ -146,7 +146,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 MovieMetadata.status,
                 MovieMetadata.tagline,
                 MovieMetadata.title.label("tmdb_title"),
-                text("""(
+                literal_column("""(
                     SELECT COALESCE(
                         jsonb_agg(
                             jsonb_build_object(
@@ -168,7 +168,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                     FROM movie_streams ms
                     WHERE ms.movie_id = movies_catalog.id
                 )""").label("stream_options"),
-                text("""(
+                literal_column("""(
                     SELECT COUNT(ms.id) FROM movie_streams ms WHERE ms.movie_id = movies_catalog.id
                 )""").label("stream_count"),
             )
