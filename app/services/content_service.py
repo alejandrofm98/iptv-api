@@ -522,6 +522,8 @@ class ContentServiceV2:
             base_item["tmdb_title"] = row.get("tmdb_title")
             base_item["popularity"] = row.get("popularity")
             base_item["status"] = row.get("status")
+            if content_type == "movies":
+                base_item["stream_options"] = row.get("stream_options") or []
             if content_type == "series":
                 base_item["total_seasons"] = row.get("total_seasons")
         return base_item
@@ -589,6 +591,10 @@ class ContentServiceV2:
                     "status": parsed.get("status"),
                 }
             )
+            if content_type == "movies":
+                result["stream_options"] = ContentServiceV2._resolve_stream_options(
+                    parsed.get("stream_options", []), username, password
+                )
         return result
 
     def _to_android_series_from_catalog(
