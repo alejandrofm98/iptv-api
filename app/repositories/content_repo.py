@@ -113,11 +113,16 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         if group:
             filters.append(MovieCatalog.group_normalizado.ilike(f"%{group}%"))
 
+        has_streams_filter = text(
+            "EXISTS (SELECT 1 FROM movie_streams ms WHERE ms.movie_id = movies_catalog.id)"
+        )
+
         needs_metadata_join = genre is not None
 
         count_stmt = select(func.count()).select_from(MovieCatalog)
         if needs_metadata_join:
             count_stmt = count_stmt.outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
+        count_stmt = count_stmt.where(has_streams_filter)
         if filters:
             count_stmt = count_stmt.where(and_(*filters))
         total = self.session.execute(count_stmt).scalar() or 0
@@ -168,11 +173,9 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                     FROM movie_streams ms
                     WHERE ms.movie_id = movies_catalog.id
                 )""").label("stream_options"),
-                literal_column("""(
-                    SELECT COUNT(ms.id) FROM movie_streams ms WHERE ms.movie_id = movies_catalog.id
-                )""").label("stream_count"),
             )
             .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
+            .where(has_streams_filter)
             .order_by(desc(MovieMetadata.release_date).nullslast(), MovieCatalog.title)
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -284,7 +287,10 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         if genre:
             filters.append("mm.genres @> ARRAY[:genre]::text[]")
             params["genre"] = genre
-        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+        has_streams_filter = "EXISTS (SELECT 1 FROM movie_streams ms WHERE ms.movie_id = mc.id)"
+        base_where = f"{' AND '.join(filters)}" if filters else "TRUE"
+        where_clause = f"WHERE {base_where} AND {has_streams_filter}"
 
         count_join = "LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id" if genre else ""
         count_sql = f"SELECT COUNT(DISTINCT mc.tmdb_id) AS total FROM movies_catalog mc {count_join} {where_clause}"

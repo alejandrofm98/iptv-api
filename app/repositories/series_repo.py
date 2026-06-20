@@ -348,7 +348,12 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         if genre:
             filters.append("sm.genres @> ARRAY[:genre]::text[]")
             params["genre"] = genre
-        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+        has_streams_filter = (
+            "EXISTS (SELECT 1 FROM series_episodes se JOIN series_streams ss ON ss.episode_id = se.id WHERE se.catalog_id = sc.id)"
+        )
+        base_where = f"{' AND '.join(filters)}" if filters else "TRUE"
+        where_clause = f"WHERE {base_where} AND {has_streams_filter}"
 
         count_join = "LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id" if genre else ""
         count_sql = f"SELECT COUNT(DISTINCT COALESCE(sc.tmdb_id, sc.id::text)) AS total FROM series_catalog sc {count_join} {where_clause}"
