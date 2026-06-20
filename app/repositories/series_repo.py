@@ -355,24 +355,27 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         total = self.session.execute(text(count_sql), params).scalar() or 0
 
         data_sql = f"""
-            SELECT DISTINCT ON (COALESCE(sc.tmdb_id, sc.id::text))
-                sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.countries,
-                sc.group_normalizado, sc.logo, sc.provider_id,
-                sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
-                sm.genres, sm.backdrop_path, sm.poster_path,
-                sm.title AS tmdb_title, sm.release_date, sm.popularity, sm.status,
-                COALESCE(
-                    (SELECT COUNT(DISTINCT se.id) FROM series_episodes se WHERE se.catalog_id = sc.id),
-                    0
-                ) AS total_episodes,
-                COALESCE(
-                    (SELECT COUNT(DISTINCT se.season_number) FROM series_episodes se WHERE se.catalog_id = sc.id),
-                    0
-                ) AS total_seasons
-            FROM series_catalog sc
-            LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
-            {where_clause}
-            ORDER BY COALESCE(sc.tmdb_id, sc.id::text) NULLS LAST, sc.created_at DESC
+            SELECT * FROM (
+                SELECT DISTINCT ON (COALESCE(sc.tmdb_id, sc.id::text))
+                    sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.countries,
+                    sc.group_normalizado, sc.logo, sc.provider_id,
+                    sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
+                    sm.genres, sm.backdrop_path, sm.poster_path,
+                    sm.title AS tmdb_title, sm.release_date, sm.popularity, sm.status,
+                    COALESCE(
+                        (SELECT COUNT(DISTINCT se.id) FROM series_episodes se WHERE se.catalog_id = sc.id),
+                        0
+                    ) AS total_episodes,
+                    COALESCE(
+                        (SELECT COUNT(DISTINCT se.season_number) FROM series_episodes se WHERE se.catalog_id = sc.id),
+                        0
+                    ) AS total_seasons
+                FROM series_catalog sc
+                LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
+                {where_clause}
+                ORDER BY COALESCE(sc.tmdb_id, sc.id::text) NULLS LAST, sc.created_at DESC
+            ) sub
+            ORDER BY sub.release_date DESC NULLS LAST
             LIMIT :limit OFFSET :offset
         """
         rows = self.session.execute(text(data_sql), params).mappings().all()

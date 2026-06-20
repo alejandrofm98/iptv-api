@@ -148,7 +148,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 MovieMetadata.title.label("tmdb_title"),
             )
             .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
-            .order_by(desc(MovieCatalog.year).nullslast(), MovieCatalog.title)
+            .order_by(desc(MovieMetadata.release_date).nullslast(), MovieCatalog.title)
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
