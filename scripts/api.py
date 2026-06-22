@@ -1326,10 +1326,25 @@ async def delete_watch_progress(
     auth: AuthDep = Depends(require_auth_with_jwt),
     wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
-    """Elimina el progreso de visualización de un item. Requiere Bearer Token."""
+    """Elimina el progreso de visualización de un item (todos los episodios si es serie). Requiere Bearer Token."""
     deleted = wp_svc.delete_progress(auth.user_id, content_id)
     if not deleted:
         raise NotFoundException("WatchProgress", content_id)
+    return {"deleted": True}
+
+
+@app.delete("/api/watch-progress/{content_id}/episode", tags=["Watch Progress"])
+async def delete_watch_progress_episode(
+    content_id: str,
+    season: int = Query(..., ge=0, description="Temporada"),
+    episode: int = Query(..., ge=0, description="Episodio"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
+):
+    """Elimina el progreso de un episodio específico. Requiere Bearer Token."""
+    deleted = wp_svc.delete_episode_progress(auth.user_id, content_id, season, episode)
+    if not deleted:
+        raise NotFoundException("WatchProgress", f"{content_id} S{season}E{episode}")
     return {"deleted": True}
 
 

@@ -69,14 +69,10 @@ class WatchProgressServiceV2:
         return self._normalize(row)
 
     def delete_progress(self, user_id: str, content_id: str) -> bool:
-        rows = self._lookup_rows(user_id, content_id)
-        if not rows:
-            return False
-        deleted = False
-        for row in rows:
-            if self.wp_repo.delete_by_user_and_content(user_id, row.content_id):
-                deleted = True
-        return deleted
+        return self.wp_repo.delete_by_user_and_content_id(user_id, content_id)
+
+    def delete_episode_progress(self, user_id: str, content_id: str, season: int, episode: int) -> bool:
+        return self.wp_repo.delete_episode(user_id, content_id, season, episode)
 
     def set_is_watched(self, user_id: str, content_id: str, is_watched: bool) -> bool:
         rows = self._lookup_rows(user_id, content_id)
@@ -95,13 +91,8 @@ class WatchProgressServiceV2:
 
     def _normalize(self, row) -> dict:
         content_type = row.content_type
-        lookup_id = self._lookup_id(row.content_id)
         content_row = self._find_content_row(content_type, row.content_id)
-
-        if content_row:
-            canonical_id = str(content_row.get("provider_id") or lookup_id or row.content_id or "")
-        else:
-            canonical_id = str(lookup_id or row.content_id or "")
+        canonical_id = str(row.content_id or "")
 
         normalized = {
             "id": str(row.id),
@@ -144,9 +135,9 @@ class WatchProgressServiceV2:
             if content_type == "series" and row.series_name:
                 twin = self.series_repo.find_canonical_by_title(row.series_name)
                 if twin:
-                    canonical_id = str(twin.get("provider_id") or canonical_id)
+                    canonical_id = str(twin.get("id") or canonical_id)
                     normalized["content_id"] = canonical_id
-                    normalized["series_provider_id"] = canonical_id
+                    normalized["series_provider_id"] = str(twin.get("provider_id") or "")
                     self._apply_metadata(normalized, content_type, twin)
                     normalized["series_name"] = twin.get("serie_name") or row.series_name
 
@@ -231,8 +222,8 @@ class WatchProgressServiceV2:
 
     def _canonical_content_id(self, content_type: str | None, content_id: str) -> str:
         content_row = self._find_content_row(content_type, content_id)
-        if content_row and content_row.get("provider_id"):
-            return str(content_row["provider_id"])
+        if content_row and content_row.get("id"):
+            return str(content_row["id"])
         return self._lookup_id(content_id)
 
     def _lookup_rows(self, user_id: str, content_id: str) -> list:
