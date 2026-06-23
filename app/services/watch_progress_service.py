@@ -277,6 +277,9 @@ class WatchProgressServiceV2:
             result = self.series_repo.get_catalog_by_episode_provider_id(lookup_id)
             if result:
                 return result
+            result = self.series_repo.get_catalog_by_episode_id(lookup_id)
+            if result:
+                return result
 
         return None
 

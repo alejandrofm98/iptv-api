@@ -59,6 +59,36 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         result.update(episode_counts)
         return result
 
+    def get_catalog_by_episode_id(self, episode_id: str) -> dict | None:
+        stmt = (
+            select(
+                SeriesCatalog,
+                SeriesMetadata.overview_es,
+                SeriesMetadata.overview_en,
+                SeriesMetadata.vote_average,
+                SeriesMetadata.vote_count,
+                SeriesMetadata.genres,
+                SeriesMetadata.backdrop_path,
+                SeriesMetadata.poster_path.label("tmdb_poster_path"),
+                SeriesMetadata.tagline,
+                SeriesMetadata.title.label("tmdb_title"),
+                SeriesMetadata.release_date,
+                SeriesMetadata.popularity,
+                SeriesMetadata.status,
+            )
+            .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
+            .join(SeriesEpisode, SeriesEpisode.catalog_id == SeriesCatalog.id)
+            .where(SeriesEpisode.id.cast(String) == episode_id)
+            .limit(1)
+        )
+        row = self.session.execute(stmt).mappings().first()
+        if not row:
+            return None
+        result = self._flatten_row(dict(row))
+        episode_counts = self._get_episode_counts(result["id"])
+        result.update(episode_counts)
+        return result
+
     def get_catalog_by_episode_provider_id(self, episode_provider_id: str) -> dict | None:
         stmt = (
             select(
