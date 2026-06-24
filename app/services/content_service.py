@@ -965,9 +965,7 @@ class ContentServiceV2:
         if not countries or not isinstance(countries, list):
             return ""
         valid = [c for c in countries if c and isinstance(c, str) and c != "UNKNOWN"]
-        return ", ".join(
-            sorted(self.COUNTRY_NAMES.get(c, c) for c in valid)
-        )
+        return ", ".join(sorted(self.COUNTRY_NAMES.get(c, c) for c in valid))
 
     def _countries_detail(self, countries: Any) -> list[dict[str, str]]:
         if not countries or not isinstance(countries, list):
@@ -1054,7 +1052,9 @@ class ContentServiceV2:
         if not raw_url:
             return
         if username and password:
-            row["stream_url"] = raw_url.replace("{{USERNAME}}", username).replace("{{PASSWORD}}", password)
+            row["stream_url"] = raw_url.replace("{{USERNAME}}", username).replace(
+                "{{PASSWORD}}", password
+            )
         else:
             row["stream_url"] = raw_url
 
@@ -1068,7 +1068,9 @@ class ContentServiceV2:
         genre: str | None = None,
         group: str | None = None,
     ) -> tuple[list[dict], int]:
-        return self.content_repo.get_movies_paginated(page, page_size, country, search, year, genre, group)
+        return self.content_repo.get_movies_paginated(
+            page, page_size, country, search, year, genre, group
+        )
 
     @staticmethod
     def _resolve_stream_url(stream_options: list[dict], username: str, password: str) -> str:
@@ -1255,13 +1257,15 @@ class ContentServiceV2:
         return payload
 
     def _find_series_catalog(self, identifier: str) -> dict | None:
+        catalog = self.series_repo.get_with_metadata(identifier)
+        if catalog:
+            return catalog
         catalog = self.series_repo.get_by_title(identifier)
         if catalog:
             return catalog
-        if identifier.isdigit():
-            catalog = self.series_repo.get_catalog_by_provider_id(identifier)
-            if catalog:
-                return catalog
+        catalog = self.series_repo.find_canonical_by_title(identifier)
+        if catalog:
+            return catalog
         return None
 
     def get_episodes_by_serie_name(
@@ -1279,7 +1283,9 @@ class ContentServiceV2:
             catalog_id, page=1, page_size=1000
         )
         return [
-            self._to_android_episode(row, series_title, catalog_id, username, password, base_url=self._https_base_url)
+            self._to_android_episode(
+                row, series_title, catalog_id, username, password, base_url=self._https_base_url
+            )
             for row in (items or [])
         ]
 
@@ -1301,7 +1307,9 @@ class ContentServiceV2:
         )
         return self._build_paginated_payload(
             [
-                self._to_android_episode(row, series_title, catalog_id, username, password, base_url=self._https_base_url)
+                self._to_android_episode(
+                    row, series_title, catalog_id, username, password, base_url=self._https_base_url
+                )
                 for row in (items or [])
             ],
             total or 0,
@@ -1418,8 +1426,8 @@ class ContentServiceV2:
                     "country": r.country or "",
                     "countries": r.countries,
                     "year": r.year,
-                    "poster_path": getattr(r, 'poster_path', None) or "",
-                    "backdrop_path": getattr(r, 'backdrop_path', None) or "",
+                    "poster_path": getattr(r, "poster_path", None) or "",
+                    "backdrop_path": getattr(r, "backdrop_path", None) or "",
                 }
             )
         return {"items": items, "total": len(items)}
@@ -1436,12 +1444,12 @@ class ContentServiceV2:
                     "id": r.provider_id or str(r.id) if r.id else "",
                     "provider_id": r.provider_id or "",
                     "title": r.title or "",
-                    "nombre_normalizado": getattr(r, 'nombre_normalizado', None) or "",
+                    "nombre_normalizado": getattr(r, "nombre_normalizado", None) or "",
                     "country": r.country or "",
                     "countries": r.countries,
                     "year": r.year,
-                    "poster_path": getattr(r, 'poster_path', None) or "",
-                    "backdrop_path": getattr(r, 'backdrop_path', None) or "",
+                    "poster_path": getattr(r, "poster_path", None) or "",
+                    "backdrop_path": getattr(r, "backdrop_path", None) or "",
                     "group_normalizado": r.group_normalizado or "",
                 }
             )
@@ -1478,7 +1486,9 @@ class ContentServiceV2:
             return self._build_paginated_payload(parsed_items, total, page, page_size)
         if content_type in ("movies", "channels"):
             if content_type == "movies":
-                rows, total = self.get_movies_paginated(page, page_size, country, search, year, genre, group)
+                rows, total = self.get_movies_paginated(
+                    page, page_size, country, search, year, genre, group
+                )
             else:
                 channels, total = self.get_channels_paginated(
                     page, page_size, country, group, search
@@ -1577,7 +1587,9 @@ class ContentServiceV2:
         merged_items: list[dict] = []
         for content_type in requested_types:
             if content_type == "movies":
-                rows, _ = self._get_movies_catalog_page_raw(1, 1000, search=query, country=country, genre=genre)
+                rows, _ = self._get_movies_catalog_page_raw(
+                    1, 1000, search=query, country=country, genre=genre
+                )
                 merged_items.extend(
                     self._to_android_movie_from_catalog(row, username, password) for row in rows
                 )
@@ -1590,7 +1602,9 @@ class ContentServiceV2:
                     for row in (result.get("items") or [])
                 )
             elif content_type == "channels":
-                channels, _ = self.channel_repo.get_paginated(1, 1000, search=query, country=country)
+                channels, _ = self.channel_repo.get_paginated(
+                    1, 1000, search=query, country=country
+                )
                 rows = [
                     {
                         "id": str(c.id),
@@ -1612,9 +1626,7 @@ class ContentServiceV2:
                     for row in rows
                 )
             elif content_type == "events":
-                merged_items.extend(
-                    self._search_events(query, username, password)
-                )
+                merged_items.extend(self._search_events(query, username, password))
         merged_items.sort(key=lambda item: item.get("title") or "")
         total = len(merged_items)
         offset = (page - 1) * page_size
@@ -1670,10 +1682,7 @@ class ContentServiceV2:
                 seen_ids.add(eid)
                 unique_events.append(evento)
 
-        return [
-            self._to_android_event(evento, username, password)
-            for evento in unique_events
-        ]
+        return [self._to_android_event(evento, username, password) for evento in unique_events]
 
     def _to_android_event(
         self, evento: dict[str, Any], username: str = "", password: str = ""
@@ -1699,9 +1708,7 @@ class ContentServiceV2:
 
         stream_url_raw = first_channel.get("stream_url") or ""
         if stream_url_raw and username and password:
-            stream_url = self._interpolate_stream_url_template(
-                stream_url_raw, username, password
-            )
+            stream_url = self._interpolate_stream_url_template(stream_url_raw, username, password)
         elif not stream_url_raw and provider_id and username and password:
             base_url = self._https_base_url
             stream_url = f"{base_url}/{username}/{password}/{provider_id}"
@@ -1798,34 +1805,102 @@ class ContentServiceV2:
         return self._build_paginated_payload(items, total, page, page_size, extra)
 
     COUNTRY_NAMES: dict[str, str] = {
-        "AD": "Andorra", "AE": "Emiratos Árabes Unidos", "AF": "Afganistán",
-        "AL": "Albania", "AM": "Armenia", "AR": "Argentina", "AT": "Austria",
-        "AU": "Australia", "AZ": "Azerbaiyán", "BE": "Bélgica", "BG": "Bulgaria",
-        "BH": "Baréin", "BR": "Brasil", "BY": "Bielorrusia", "CA": "Canadá",
-        "CG": "República del Congo", "CH": "Suiza", "CY": "Chipre",
-        "CZ": "República Checa", "DE": "Alemania", "DK": "Dinamarca",
-        "DO": "República Dominicana", "DZ": "Argelia", "EC": "Ecuador",
-        "EG": "Egipto", "ES": "España", "FI": "Finlandia", "FR": "Francia",
-        "GB": "Reino Unido", "GR": "Grecia", "GT": "Guatemala", "HK": "Hong Kong",
+        "AD": "Andorra",
+        "AE": "Emiratos Árabes Unidos",
+        "AF": "Afganistán",
+        "AL": "Albania",
+        "AM": "Armenia",
+        "AR": "Argentina",
+        "AT": "Austria",
+        "AU": "Australia",
+        "AZ": "Azerbaiyán",
+        "BE": "Bélgica",
+        "BG": "Bulgaria",
+        "BH": "Baréin",
+        "BR": "Brasil",
+        "BY": "Bielorrusia",
+        "CA": "Canadá",
+        "CG": "República del Congo",
+        "CH": "Suiza",
+        "CY": "Chipre",
+        "CZ": "República Checa",
+        "DE": "Alemania",
+        "DK": "Dinamarca",
+        "DO": "República Dominicana",
+        "DZ": "Argelia",
+        "EC": "Ecuador",
+        "EG": "Egipto",
+        "ES": "España",
+        "FI": "Finlandia",
+        "FR": "Francia",
+        "GB": "Reino Unido",
+        "GR": "Grecia",
+        "GT": "Guatemala",
+        "HK": "Hong Kong",
         "EN": "Inglés",
-        "HN": "Honduras", "HR": "Croacia", "HU": "Hungría", "ID": "Indonesia",
-        "IE": "Irlanda", "IL": "Israel", "IN": "India", "IQ": "Irak",
-        "IR": "Irán", "IS": "Islandia", "IT": "Italia", "JM": "Jamaica",
-        "JO": "Jordania", "JP": "Japón", "KE": "Kenia", "KH": "Camboya",
-        "KR": "Corea del Sur", "KW": "Kuwait", "KZ": "Kazajistán",
-        "LB": "Líbano", "LT": "Lituania", "LU": "Luxemburgo", "LV": "Letonia",
-        "MA": "Marruecos", "MK": "Macedonia del Norte", "MT": "Malta",
-        "MX": "México", "MY": "Malasia", "NG": "Nigeria", "NL": "Países Bajos",
-        "NO": "Noruega", "NP": "Nepal", "NZ": "Nueva Zelanda", "PE": "Perú",
-        "PH": "Filipinas", "PK": "Pakistán", "PL": "Polonia", "PT": "Portugal",
-        "RO": "Rumania", "RS": "Serbia", "RU": "Rusia", "SA": "Arabia Saudita",
-        "SE": "Suecia", "SG": "Singapur", "SI": "Eslovenia", "SK": "Eslovaquia",
-        "SV": "El Salvador", "TH": "Tailandia", "TN": "Túnez", "TR": "Turquía",
-        "TW": "Taiwán", "UA": "Ucrania", "UK": "Reino Unido", "US": "Estados Unidos",
-        "UY": "Uruguay", "VE": "Venezuela", "VN": "Vietnam", "ZA": "Sudáfrica",
+        "HN": "Honduras",
+        "HR": "Croacia",
+        "HU": "Hungría",
+        "ID": "Indonesia",
+        "IE": "Irlanda",
+        "IL": "Israel",
+        "IN": "India",
+        "IQ": "Irak",
+        "IR": "Irán",
+        "IS": "Islandia",
+        "IT": "Italia",
+        "JM": "Jamaica",
+        "JO": "Jordania",
+        "JP": "Japón",
+        "KE": "Kenia",
+        "KH": "Camboya",
+        "KR": "Corea del Sur",
+        "KW": "Kuwait",
+        "KZ": "Kazajistán",
+        "LB": "Líbano",
+        "LT": "Lituania",
+        "LU": "Luxemburgo",
+        "LV": "Letonia",
+        "MA": "Marruecos",
+        "MK": "Macedonia del Norte",
+        "MT": "Malta",
+        "MX": "México",
+        "MY": "Malasia",
+        "NG": "Nigeria",
+        "NL": "Países Bajos",
+        "NO": "Noruega",
+        "NP": "Nepal",
+        "NZ": "Nueva Zelanda",
+        "PE": "Perú",
+        "PH": "Filipinas",
+        "PK": "Pakistán",
+        "PL": "Polonia",
+        "PT": "Portugal",
+        "RO": "Rumania",
+        "RS": "Serbia",
+        "RU": "Rusia",
+        "SA": "Arabia Saudita",
+        "SE": "Suecia",
+        "SG": "Singapur",
+        "SI": "Eslovenia",
+        "SK": "Eslovaquia",
+        "SV": "El Salvador",
+        "TH": "Tailandia",
+        "TN": "Túnez",
+        "TR": "Turquía",
+        "TW": "Taiwán",
+        "UA": "Ucrania",
+        "UK": "Reino Unido",
+        "US": "Estados Unidos",
+        "UY": "Uruguay",
+        "VE": "Venezuela",
+        "VN": "Vietnam",
+        "ZA": "Sudáfrica",
     }
 
-    def get_groups(self, content_type: str, country_list: list[str] | None = None) -> list[dict[str, str]]:
+    def get_groups(
+        self, content_type: str, country_list: list[str] | None = None
+    ) -> list[dict[str, str]]:
         raw = self.content_repo.get_distinct_groups(content_type, country_list)
         return [{"value": g, "label": g} for g in raw]
 
@@ -1873,7 +1948,9 @@ class ContentServiceV2:
             total = self.session.execute(select(sa_func.count()).select_from(model)).scalar() or 0
         from datetime import datetime, timezone
 
-        return {content_type: {"total": total, "generatedAt": datetime.now(timezone.utc).isoformat()}}
+        return {
+            content_type: {"total": total, "generatedAt": datetime.now(timezone.utc).isoformat()}
+        }
 
     def get_catalog_filters(self, content_type: str, country: str | None = None) -> dict:
         countries = self.get_countries(content_type)

@@ -267,7 +267,12 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                     func.lower(func.trim(SeriesCatalog.title)).like(
                         f"%{stripped.lower().strip()}%"
                     ),
+                    func.lower(func.trim(SeriesMetadata.title)).like(f"%{title.lower().strip()}%"),
                 )
+            )
+            .order_by(
+                SeriesMetadata.tmdb_id.isnot(None).desc(),
+                SeriesCatalog.last_sync_at.desc(),
             )
             .limit(1)
         )
@@ -281,20 +286,44 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         import re
 
         _STOP_WORDS = {
-            "the", "los", "las", "les", "der", "die", "das", "les", "el", "la",
-            "le", "un", "una", "uno", "unos", "unas", "de", "del", "des", "du",
-            "do", "da", "di", "al", "an", "en", "and", "or", "for", "with",
+            "the",
+            "los",
+            "las",
+            "les",
+            "der",
+            "die",
+            "das",
+            "les",
+            "el",
+            "la",
+            "le",
+            "un",
+            "una",
+            "uno",
+            "unos",
+            "unas",
+            "de",
+            "del",
+            "des",
+            "du",
+            "do",
+            "da",
+            "di",
+            "al",
+            "an",
+            "en",
+            "and",
+            "or",
+            "for",
+            "with",
         }
         stripped = re.sub(r"^[a-z]{2,5}\s*[-–]\s*", "", title, flags=re.IGNORECASE).strip()
         words = [
-            w for w in re.split(r"\W+", stripped.lower())
-            if len(w) > 2 and w not in _STOP_WORDS
+            w for w in re.split(r"\W+", stripped.lower()) if len(w) > 2 and w not in _STOP_WORDS
         ]
         if not words:
             return None
-        like_conditions = [
-            func.lower(func.trim(SeriesCatalog.title)).like(f"%{w}%") for w in words
-        ]
+        like_conditions = [func.lower(func.trim(SeriesCatalog.title)).like(f"%{w}%") for w in words]
         match_score = sum(
             func.cast(
                 func.lower(func.trim(SeriesCatalog.title)).like(f"%{w}%"),
@@ -379,9 +408,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             filters.append("sm.genres @> ARRAY[:genre]::text[]")
             params["genre"] = genre
 
-        has_streams_filter = (
-            "EXISTS (SELECT 1 FROM series_episodes se JOIN series_streams ss ON ss.episode_id = se.id WHERE se.catalog_id = sc.id)"
-        )
+        has_streams_filter = "EXISTS (SELECT 1 FROM series_episodes se JOIN series_streams ss ON ss.episode_id = se.id WHERE se.catalog_id = sc.id)"
         base_where = f"{' AND '.join(filters)}" if filters else "TRUE"
         where_clause = f"WHERE {base_where} AND {has_streams_filter}"
 
