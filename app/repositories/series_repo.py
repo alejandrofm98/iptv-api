@@ -39,6 +39,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 SeriesMetadata.release_date,
                 SeriesMetadata.popularity,
                 SeriesMetadata.status,
+                SeriesMetadata.imdb_id,
             )
             .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
             .where(
@@ -75,6 +76,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 SeriesMetadata.release_date,
                 SeriesMetadata.popularity,
                 SeriesMetadata.status,
+                SeriesMetadata.imdb_id,
             )
             .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
             .join(SeriesEpisode, SeriesEpisode.catalog_id == SeriesCatalog.id)
@@ -105,6 +107,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 SeriesMetadata.release_date,
                 SeriesMetadata.popularity,
                 SeriesMetadata.status,
+                SeriesMetadata.imdb_id,
             )
             .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
             .join(SeriesEpisode, SeriesEpisode.catalog_id == SeriesCatalog.id)
@@ -176,6 +179,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                     se.vote_count,
                     se.episode_type,
                     se.tmdb_checked,
+                    sm.imdb_id AS series_imdb_id,
                     jsonb_agg(
                         jsonb_build_object(
                             'url', ss.stream_url,
@@ -192,12 +196,15 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                             ss.numero ASC
                     ) AS stream_options
                 FROM series_episodes se
+                JOIN series_catalog sc ON se.catalog_id = sc.id
+                LEFT JOIN series_metadata sm ON sc.tmdb_id = sm.tmdb_id
                 LEFT JOIN series_streams ss ON ss.episode_id = se.id
                 WHERE se.catalog_id = :cid
                 GROUP BY se.id, se.season_number, se.episode_number, se.numero,
                          se.title, se.title_en, se.overview, se.overview_en,
                          se.air_date, se.still_path, se.runtime, se.vote_average,
-                         se.vote_count, se.episode_type, se.tmdb_checked
+                         se.vote_count, se.episode_type, se.tmdb_checked,
+                         sm.imdb_id
             )
             SELECT *
             FROM episode_streams
@@ -231,6 +238,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 SeriesMetadata.release_date,
                 SeriesMetadata.popularity,
                 SeriesMetadata.status,
+                SeriesMetadata.imdb_id,
             )
             .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
             .where(SeriesCatalog.provider_id == provider_id)
@@ -257,6 +265,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 SeriesMetadata.release_date,
                 SeriesMetadata.popularity,
                 SeriesMetadata.status,
+                SeriesMetadata.imdb_id,
             )
             .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
             .where(
@@ -347,6 +356,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 SeriesMetadata.release_date,
                 SeriesMetadata.popularity,
                 SeriesMetadata.status,
+                SeriesMetadata.imdb_id,
             )
             .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
             .where(
@@ -423,7 +433,8 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                     sc.group_normalizado, sc.logo, sc.provider_id,
                     sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
                     sm.genres, sm.backdrop_path, sm.poster_path,
-                    sm.title AS tmdb_title, sm.release_date, sm.popularity, sm.status,
+                    sm.title AS tmdb_title, sm.release_date, sm.popularity,
+                    sm.status, sm.imdb_id,
                     COALESCE(
                         (SELECT COUNT(DISTINCT se.id) FROM series_episodes se WHERE se.catalog_id = sc.id),
                         0

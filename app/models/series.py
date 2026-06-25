@@ -38,6 +38,7 @@ class SeriesMetadata(Base):
     tagline = Column(String(500), nullable=True)
     popularity = Column(Float, nullable=True)
     status = Column(String(50), nullable=True)
+    imdb_id = Column(String(20), nullable=True)
     tmdb_data = Column(JSONB, nullable=True)
     scraped_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column(DateTime(timezone=True), nullable=True)

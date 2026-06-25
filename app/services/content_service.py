@@ -519,6 +519,7 @@ class ContentServiceV2:
             base_item["release_date"] = row.get("release_date")
             base_item["year"] = row.get("year")
             base_item["tmdb_id"] = row.get("tmdb_id")
+            base_item["imdb_id"] = row.get("imdb_id")
             base_item["tmdb_title"] = row.get("tmdb_title")
             base_item["popularity"] = row.get("popularity")
             base_item["status"] = row.get("status")
@@ -644,6 +645,7 @@ class ContentServiceV2:
             "tagline": row.get("tagline"),
             "release_date": str(row.get("release_date") or ""),
             "tmdb_id": row.get("tmdb_id"),
+            "imdb_id": row.get("imdb_id"),
             "tmdb_title": row.get("tmdb_title") or serie_name,
             "popularity": row.get("popularity"),
             "status": row.get("status"),
@@ -697,6 +699,7 @@ class ContentServiceV2:
             "year": row.get("year"),
             "runtime_minutes": row.get("runtime_minutes"),
             "tmdb_id": row.get("tmdb_id"),
+            "imdb_id": row.get("imdb_id"),
             "tmdb_title": tmdb_title,
             "popularity": row.get("popularity"),
             "status": row.get("status"),
@@ -756,6 +759,7 @@ class ContentServiceV2:
             "tagline": row.get("tagline"),
             "release_date": row.get("release_date"),
             "tmdb_id": row.get("tmdb_id"),
+            "imdb_id": row.get("imdb_id"),
             "tmdb_title": tmdb_title,
             "popularity": row.get("popularity"),
             "status": row.get("status"),
@@ -1166,6 +1170,7 @@ class ContentServiceV2:
             "vote_average": row.get("vote_average"),
             "vote_count": row.get("vote_count"),
             "episode_type": row.get("episode_type", ""),
+            "imdb_id": row.get("series_imdb_id"),
         }
 
     def get_replays(

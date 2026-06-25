@@ -39,6 +39,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 MovieMetadata.popularity,
                 MovieMetadata.status,
                 MovieMetadata.tagline,
+                MovieMetadata.imdb_id,
             )
             .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
             .where(
@@ -151,6 +152,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 MovieMetadata.status,
                 MovieMetadata.tagline,
                 MovieMetadata.title.label("tmdb_title"),
+                MovieMetadata.imdb_id,
                 literal_column("""(
                     SELECT COALESCE(
                         jsonb_agg(
@@ -303,7 +305,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
                 mm.genres, mm.backdrop_path, mm.poster_path,
                 mm.title AS tmdb_title, mm.release_date, mm.runtime_minutes,
-                mm.popularity, mm.status, mm.tagline,
+                mm.popularity, mm.status, mm.tagline, mm.imdb_id,
                 COALESCE(
                     (
                         SELECT jsonb_agg(
