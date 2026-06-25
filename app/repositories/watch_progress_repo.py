@@ -32,6 +32,7 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
                 and_(
                     WatchProgress.user_id == user_id,
                     WatchProgress.position_ms > 0,
+                    WatchProgress.is_watched.is_(False),
                 )
             )
             .order_by(desc(WatchProgress.last_watched_at))

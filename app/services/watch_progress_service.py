@@ -36,7 +36,7 @@ class WatchProgressServiceV2:
             if duration <= 0:
                 continue
             progress = position / duration
-            if 0.05 < progress < 0.95:
+            if progress < 0.95:
                 incomplete.append(self._normalize(item))
                 if len(incomplete) >= limit:
                     break
@@ -66,6 +66,11 @@ class WatchProgressServiceV2:
             "last_watched_at": datetime.now(timezone.utc),
         }
         row = self.wp_repo.upsert(user_id, canonical, payload)
+        duration_ms = row.duration_ms or 0
+        position_ms = row.position_ms or 0
+        if duration_ms > 0 and (position_ms / duration_ms) >= 0.95 and not row.is_watched:
+            row.is_watched = True
+            self.session.flush()
         return self._normalize(row)
 
     def delete_progress(self, user_id: str, content_id: str) -> bool:
