@@ -1278,8 +1278,8 @@ async def get_serie_episodes_by_id(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
-    """Get episodes for a series by its ID (UUID, tmdb_id, or provider_id)."""
-    row = content_svc.series_repo.get_with_metadata(series_id)
+    """Get episodes for a series by any identifier (UUID, tmdb_id, provider_id, or name)."""
+    row = content_svc._find_series_catalog(series_id)
     if not row:
         raise NotFoundException("Serie", series_id)
 
