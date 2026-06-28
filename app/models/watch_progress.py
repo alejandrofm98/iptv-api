@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     BigInteger,
@@ -26,11 +26,19 @@ class WatchProgress(Base):
     position_ms = Column(BigInteger, default=0, nullable=False)
     duration_ms = Column(BigInteger, default=0, nullable=False)
     series_name = Column(String(255), nullable=True)
-    season_number = Column(Integer, nullable=False, default=0)
-    episode_number = Column(Integer, nullable=False, default=0)
+    season_number = Column(Integer, nullable=True, default=0)
+    episode_number = Column(Integer, nullable=True, default=0)
     title = Column(String(255), nullable=False, default="")
     image_url = Column(String, nullable=False, default="")
-    last_watched_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_watched_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     is_watched = Column(Boolean, nullable=False, default=False)
 
-    __table_args__ = (UniqueConstraint("user_id", "content_id", "season_number", "episode_number"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "content_id",
+            "season_number",
+            "episode_number",
+            name="watch_progress_user_content_unique",
+        ),
+    )

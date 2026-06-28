@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import and_, delete, desc, select
+from sqlalchemy import and_, delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.models.watch_progress import WatchProgress
@@ -12,33 +12,54 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         super().__init__(WatchProgress, session)
 
     def get_by_user_and_content(
-        self, user_id: str, content_id: str,
-        season: int | None = None, episode: int | None = None,
+        self,
+        user_id: str,
+        content_id: str,
+        season: int | None = None,
+        episode: int | None = None,
     ) -> WatchProgress | None:
         stmt = select(WatchProgress).where(
             and_(
                 WatchProgress.user_id == user_id,
                 WatchProgress.content_id == content_id,
-                WatchProgress.season_number == (season if season is not None else 0),
-                WatchProgress.episode_number == (episode if episode is not None else 0),
+                func.coalesce(WatchProgress.season_number, 0) == func.coalesce(season, 0),
+                func.coalesce(WatchProgress.episode_number, 0) == func.coalesce(episode, 0),
             )
         )
         return self.session.execute(stmt).scalars().first()
 
     def get_continue_watching(self, user_id: str, limit: int = 60) -> list[WatchProgress]:
-        stmt = (
-            select(WatchProgress)
-            .where(
-                and_(
-                    WatchProgress.user_id == user_id,
-                    WatchProgress.position_ms > 0,
-                    WatchProgress.is_watched.is_(False),
-                )
-            )
-            .order_by(desc(WatchProgress.last_watched_at))
-            .limit(limit)
+        from sqlalchemy import text
+
+        rows = self.session.execute(
+            text(
+                "SELECT DISTINCT ON (content_id, COALESCE(season_number, 0), COALESCE(episode_number, 0)) * "
+                "FROM watch_progress "
+                "WHERE user_id = :user_id AND position_ms > 0 AND is_watched = FALSE "
+                "ORDER BY content_id, COALESCE(season_number, 0), COALESCE(episode_number, 0), last_watched_at DESC "
+                "LIMIT :limit"
+            ),
+            {"user_id": user_id, "limit": limit},
+        ).all()
+        return [self._row_to_model(r) for r in rows]
+
+    @staticmethod
+    def _row_to_model(row) -> WatchProgress:
+        return WatchProgress(
+            id=row.id,
+            user_id=row.user_id,
+            content_id=row.content_id,
+            content_type=row.content_type,
+            position_ms=row.position_ms,
+            duration_ms=row.duration_ms,
+            series_name=row.series_name,
+            season_number=row.season_number,
+            episode_number=row.episode_number,
+            title=row.title,
+            image_url=row.image_url,
+            last_watched_at=row.last_watched_at,
+            is_watched=row.is_watched,
         )
-        return list(self.session.execute(stmt).scalars().all())
 
     def get_watched_items(self, user_id: str, limit: int = 100) -> list[WatchProgress]:
         stmt = (
@@ -56,8 +77,10 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
 
     def upsert(self, user_id: str, content_id: str, data: dict[str, Any]) -> WatchProgress:
         existing = self.get_by_user_and_content(
-            user_id, content_id,
-            season=data.get("season_number"), episode=data.get("episode_number"),
+            user_id,
+            content_id,
+            season=data.get("season_number"),
+            episode=data.get("episode_number"),
         )
         if existing:
             for key, value in data.items():

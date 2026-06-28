@@ -1,7 +1,7 @@
 """Watch Progress Service v2 — uses SQLAlchemy repositories."""
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -63,7 +63,7 @@ class WatchProgressServiceV2:
             "episode_number": data.get("episode_number"),
             "title": data.get("title", ""),
             "image_url": data.get("image_url", ""),
-            "last_watched_at": datetime.now(timezone.utc),
+            "last_watched_at": datetime.now(UTC),
         }
         row = self.wp_repo.upsert(user_id, canonical, payload)
         duration_ms = row.duration_ms or 0
@@ -76,7 +76,9 @@ class WatchProgressServiceV2:
     def delete_progress(self, user_id: str, content_id: str) -> bool:
         return self.wp_repo.delete_by_user_and_content_id(user_id, content_id)
 
-    def delete_episode_progress(self, user_id: str, content_id: str, season: int, episode: int) -> bool:
+    def delete_episode_progress(
+        self, user_id: str, content_id: str, season: int, episode: int
+    ) -> bool:
         return self.wp_repo.delete_episode(user_id, content_id, season, episode)
 
     def set_is_watched(self, user_id: str, content_id: str, is_watched: bool) -> bool:
