@@ -189,23 +189,19 @@ class StreamProxyServiceV2:
             if c:
                 return {"stream_url": c.url, "url": c.url}
         elif table == "movie_streams":
-            m = self.content_repo.search_by_provider_id(pid)
-            if m:
-                from sqlalchemy import select as sa_select
+            from app.models.content import MovieStream
 
-                from app.models.content import MovieStream
-
-                stmt = (
-                    sa_select(MovieStream.url, MovieStream.stream_url)
-                    .where(MovieStream.movie_id == m.id)
-                    .limit(1)
-                )
-                row_ms = self.content_repo.session.execute(stmt).mappings().first()
-                if row_ms:
-                    return {
-                        "stream_url": row_ms.get("stream_url"),
-                        "url": row_ms.get("url") or row_ms.get("stream_url"),
-                    }
+            stmt = (
+                select(MovieStream.stream_url, MovieStream.url)
+                .where(MovieStream.provider_id == pid)
+                .limit(1)
+            )
+            row_ms = self.content_repo.session.execute(stmt).mappings().first()
+            if row_ms:
+                return {
+                    "stream_url": row_ms.get("stream_url"),
+                    "url": row_ms.get("url") or row_ms.get("stream_url"),
+                }
         elif table == "series_streams":
             from app.models.series import SeriesStream
 

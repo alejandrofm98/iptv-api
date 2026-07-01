@@ -19,6 +19,7 @@ def test_android_catalog_item_prefers_normalized_fields_for_display():
         "logo": "https://img.test/channel.png",
         "url": "https://provider.test/live/user/pass/7.ts",
         "country": "ES",
+        "countries": ["ES"],
     }
 
     item = service._to_android_catalog_item(row, "channels")
@@ -26,7 +27,7 @@ def test_android_catalog_item_prefers_normalized_fields_for_display():
     assert item["title"] == "Canal Demo HD"
     assert item["subtitle"] == "Noticias"
     assert item["group"] == "Noticias"
-    assert item["language_label"] == "ES"
+    assert item["language_label"] == "España"
     assert item["original_title"] == "ES - Canal Demo HD"
     assert item["original_group"] == "ES - Noticias"
 
@@ -143,6 +144,7 @@ def test_android_series_group_item_no_tmdb_fallback():
         "total_episodes": 3,
         "year": 2020,
         "country": "MX",
+        "countries": ["MX"],
     }
 
     item = service._to_android_series_group_item(row)
@@ -154,7 +156,7 @@ def test_android_series_group_item_no_tmdb_fallback():
     assert item["normalized_group"] == "Accion"
     assert item["original_group"] == "Accion"
     assert item["year"] == 2020
-    assert item["language_label"] == "MX"
+    assert item["language_label"] == "México"
     assert item["tmdb_title"] == ""
     assert item["tmdb_id"] is None
     assert item["overview"] is None

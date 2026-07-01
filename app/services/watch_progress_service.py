@@ -99,7 +99,7 @@ class WatchProgressServiceV2:
     def _normalize(self, row) -> dict:
         content_type = row.content_type
         content_row = self._find_content_row(content_type, row.content_id)
-        canonical_id = str(row.content_id or "")
+        canonical_id = self._lookup_id(row.content_id)
 
         normalized = {
             "id": str(row.id),

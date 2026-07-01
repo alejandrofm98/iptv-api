@@ -26,9 +26,11 @@ class StubContentService:
         }
 
     def get_home_catalog_new(
-        self, username: str, country: str | None = None, password: str = ""
+        self, username: str, country: str | None = None, password: str = "", page_size: int = 24
     ) -> dict:
-        return self.get_home_catalog(username=username, country=country, password=password)
+        return self.get_home_catalog(
+            username=username, country=country, password=password, page_size=page_size
+        )
 
     def search_catalog(
         self,
@@ -66,6 +68,7 @@ class StubContentService:
         username: str,
         year: int | None = None,
         password: str = "",
+        genre: str | None = None,
     ) -> dict:
         return {
             "items": [
@@ -96,12 +99,18 @@ class StubContentService:
 
     def get_catalog_filters(self, content_type: str, country: str | None = None) -> dict:
         return {
-            "languages": [country or "ES", "EN"],
-            "groups": ["Noticias", "Drama"],
+            "countries": [
+                {"value": country or "ES", "label": country or "ES"},
+                {"value": "EN", "label": "EN"},
+            ],
+            "groups": [
+                {"value": "Noticias", "label": "Noticias"},
+                {"value": "Drama", "label": "Drama"},
+            ],
         }
 
-    def get_groups(self, content_type: str, countries: list[str] | None = None) -> list[str]:
-        return ["Noticias", "Drama"]
+    def get_groups(self, content_type: str, countries: list[str] | None = None) -> list[dict]:
+        return [{"value": "Noticias", "label": "Noticias"}, {"value": "Drama", "label": "Drama"}]
 
     def get_episodes_by_serie_name_paginated(
         self,
@@ -357,9 +366,9 @@ def test_content_filters_returns_languages_and_groups() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["languages"][0] == "ES"
-    assert payload["groups"][0] == "Favorites"
-    assert "Drama" in payload["groups"]
+    assert payload["countries"][0]["value"] == "ES"
+    assert payload["groups"][0]["value"] == "Favorites"
+    assert any(g["value"] == "Drama" for g in payload["groups"])
 
 
 def test_content_groups_prepends_favorites_for_channels() -> None:
@@ -369,7 +378,7 @@ def test_content_groups_prepends_favorites_for_channels() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["groups"][0] == "Favorites"
+    assert payload["groups"][0]["value"] == "Favorites"
 
 
 def test_content_favorites_group_uses_channel_favorites_service() -> None:
