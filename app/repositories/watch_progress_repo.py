@@ -116,12 +116,36 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         self.session.flush()
         return result.rowcount > 0
 
-    def mark_watched(self, user_id: str, content_id: str, is_watched: bool) -> WatchProgress | None:
-        wp = self.get_by_user_and_content(user_id, content_id)
+    def mark_watched(self, user_id: str, content_id: str, is_watched: bool, season: int | None = None, episode: int | None = None) -> WatchProgress | None:
+        wp = self.get_by_user_and_content(user_id, content_id, season=season, episode=episode)
         if wp:
             wp.is_watched = is_watched  # type: ignore[assignment]
             self.session.flush()
         return wp
+
+    def get_all_for_user_and_series(
+        self, user_id: str, series_name: str | None = None, catalog_id: str | None = None
+    ) -> list[WatchProgress]:
+        """Todas las filas de watch_progress de un usuario para una serie dada."""
+        conditions = [
+            WatchProgress.user_id == user_id,
+            WatchProgress.content_type == "series",
+        ]
+        if catalog_id:
+            conditions.append(WatchProgress.content_id == catalog_id)
+        elif series_name:
+            conditions.append(WatchProgress.series_name == series_name)
+        else:
+            return []
+        stmt = (
+            select(WatchProgress)
+            .where(and_(*conditions))
+            .order_by(
+                desc(WatchProgress.season_number).nullslast(),
+                desc(WatchProgress.episode_number).nullslast(),
+            )
+        )
+        return list(self.session.execute(stmt).scalars().all())
 
     def get_series_last_episode(self, user_id: str, series_name: str) -> WatchProgress | None:
         stmt = (

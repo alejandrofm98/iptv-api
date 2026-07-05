@@ -152,3 +152,30 @@ def test_continue_watching_series_includes_tmdb_metadata():
     assert item["backdrop_path"] == "/serie-backdrop.jpg"
     assert item["tmdb_title"] == "Serie Rica TMDB"
     assert item["total_seasons"] == 4
+
+
+def test_set_is_watched_with_season_episode_calls_repo_with_params():
+    """mark-watched with season/episode should call repo.mark_watched with those params."""
+    service = WatchProgressServiceV2(MagicMock())
+    service.wp_repo.mark_watched = MagicMock(return_value=True)
+    service._canonical_content_id = MagicMock(return_value="series:777")
+
+    result = service.set_is_watched("user-1", "series:777", True, season=1, episode=2)
+
+    assert result is True
+    service._canonical_content_id.assert_called_once_with(None, "series:777")
+    service.wp_repo.mark_watched.assert_called_once_with("user-1", "series:777", True, season=1, episode=2)
+
+
+def test_set_is_watched_without_season_episode_uses_lookup_rows():
+    """mark-watched without season/episode should use _lookup_rows (backward compat for movies)."""
+    progress_row = make_progress_row()
+    service = WatchProgressServiceV2(MagicMock())
+    service._lookup_rows = MagicMock(return_value=[progress_row])
+    service.wp_repo.mark_watched = MagicMock(return_value=True)
+
+    result = service.set_is_watched("user-1", "movie:2053693", True)
+
+    assert result is True
+    service._lookup_rows.assert_called_once_with("user-1", "movie:2053693")
+    service.wp_repo.mark_watched.assert_called_once_with("user-1", progress_row.content_id, True)

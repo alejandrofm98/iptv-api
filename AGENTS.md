@@ -162,6 +162,8 @@ Lista exhaustiva (verificada contra el cliente Kotlin):
 - `POST /api/auth/login`
 - `GET /api/watch-progress`
 - `PUT /api/watch-progress/{id}`
+- `POST /api/watch-progress/{content_id}/mark-watched?season=&episode=` (params opcionales para series)
+- `POST /api/watch-progress/{content_id}/mark-unwatched?season=&episode=` (params opcionales para series)
 - `GET /api/content/stats?content_type={channels|movies|series}`
 - `GET /api/full/{channels|movies|series}`
 - `GET /api/content/channels/all`
@@ -172,6 +174,8 @@ Lista exhaustiva (verificada contra el cliente Kotlin):
 - `GET /api/search?q=...&page=1&page_size=60`
 - `GET /api/content/{kind}/{id}`
 - `GET /api/series/{name}/episodes?page=...&page_size=100`
+  - `GET /api/series/by-id/{id}/episodes` retorna campo opcional `is_watched` por episodio (requiere auth). Backward-compatible: campo ausente si no hay datos de visionado.
+
 - `GET /api/content?...&country=...&page=...&page_size=...`
 - `GET /api/home?country=...`
 - `GET /api/calendar/{today}?client=android`

@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from datetime import UTC
 from typing import Any
 from urllib.parse import urlparse
 
@@ -1113,6 +1114,7 @@ class ContentServiceV2:
         username: str = "",
         password: str = "",
         base_url: str = "",
+        watched_map: dict[tuple[int, int], bool] | None = None,
     ) -> dict:
         stream_options = row.get("stream_options") or []
         first_stream = stream_options[0] if stream_options else {}
@@ -1140,13 +1142,17 @@ class ContentServiceV2:
                     opt_ext = raw_url.split("/")[-1].rsplit(".", 1)[-1]
                 opt["url"] = f"{base_url}/series/{username}/{password}/{opt_pid}.{opt_ext}"
 
+        season_num = row.get("season_number")
+        episode_num = row.get("episode_number")
+        is_watched = watched_map.get((season_num, episode_num)) if watched_map and season_num is not None and episode_num is not None else None
+
         return {
             "id": episode_id or provider_id,
             "provider_id": episode_id or provider_id,
             "type": "series",
             "title": row.get("title") or series_title,
             "normalized_title": row.get("title") or series_title,
-            "subtitle": f"S{row.get('season_number', 0)} · E{row.get('episode_number', 0)}",
+            "subtitle": f"S{season_num or 0} · E{episode_num or 0}",
             "description": "",
             "image_url": "",
             "group": "",
@@ -1154,8 +1160,8 @@ class ContentServiceV2:
             "badge_text": "SERIE",
             "series_name": series_title,
             "series_key": series_catalog_id,
-            "season_number": row.get("season_number"),
-            "episode_number": row.get("episode_number"),
+            "season_number": season_num,
+            "episode_number": episode_num,
             "stream_url": stream_url,
             "stream_options": resolved_options,
             "stream_label": first_stream.get("label", "Ver"),
@@ -1171,6 +1177,7 @@ class ContentServiceV2:
             "vote_count": row.get("vote_count"),
             "episode_type": row.get("episode_type", ""),
             "imdb_id": row.get("series_imdb_id"),
+            **({"is_watched": is_watched} if is_watched is not None else {}),
         }
 
     def get_replays(
@@ -1951,10 +1958,10 @@ class ContentServiceV2:
             from sqlalchemy import select
 
             total = self.session.execute(select(sa_func.count()).select_from(model)).scalar() or 0
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         return {
-            content_type: {"total": total, "generatedAt": datetime.now(timezone.utc).isoformat()}
+            content_type: {"total": total, "generatedAt": datetime.now(UTC).isoformat()}
         }
 
     def get_catalog_filters(self, content_type: str, country: str | None = None) -> dict:

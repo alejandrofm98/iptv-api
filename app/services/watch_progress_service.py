@@ -81,7 +81,10 @@ class WatchProgressServiceV2:
     ) -> bool:
         return self.wp_repo.delete_episode(user_id, content_id, season, episode)
 
-    def set_is_watched(self, user_id: str, content_id: str, is_watched: bool) -> bool:
+    def set_is_watched(self, user_id: str, content_id: str, is_watched: bool, season: int | None = None, episode: int | None = None) -> bool:
+        if season is not None or episode is not None:
+            canonical = self._canonical_content_id(None, content_id)
+            return self.wp_repo.mark_watched(user_id, canonical, is_watched, season=season, episode=episode) is not None
         rows = self._lookup_rows(user_id, content_id)
         if not rows:
             canonical = self._canonical_content_id(None, content_id)
