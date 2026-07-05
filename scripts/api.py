@@ -174,17 +174,26 @@ async def lifespan(app: FastAPI):
         import utils.dependencies as deps
 
         deps.transcode_service = TranscodeService()
-        background_tasks = []
-        background_tasks.append(asyncio.create_task(cleanup_sessions_task()))
-        background_tasks.append(asyncio.create_task(cleanup_hls_task()))
+        app.state.background_tasks = [
+            asyncio.create_task(cleanup_sessions_task()),
+            asyncio.create_task(cleanup_hls_task()),
+        ]
         print("✅ IPTV API iniciada correctamente")
 
     yield
 
     print("🛑 Cerrando IPTV API...")
+    for task in getattr(app.state, "background_tasks", []):
+        task.cancel()
     try:
         transcode_svc = get_transcode_service()
         await transcode_svc.stop_all()
+    except Exception:
+        pass
+    try:
+        from app.services.stream_service import StreamProxyServiceV2
+
+        await StreamProxyServiceV2.close_all_clients()
     except Exception:
         pass
 
@@ -681,15 +690,16 @@ async def get_content_filters(
 ):
     payload = content_svc.get_catalog_filters(content_type=content_type, country=country)
     if content_type == "channels" and not any(g["value"] == "Favorites" for g in payload["groups"]):
-        payload = {**payload, "groups": [{"value": "Favorites", "label": "Favoritos"}, *payload["groups"]]}
+        payload = {
+            **payload,
+            "groups": [{"value": "Favorites", "label": "Favoritos"}, *payload["groups"]],
+        }
     return payload
 
 
 @app.get("/api/content/genres", tags=["Content"])
 async def get_content_genres(
-    content_type: str = Query(
-        ..., enum=["movies", "series"], description="Tipo de contenido"
-    ),
+    content_type: str = Query(..., enum=["movies", "series"], description="Tipo de contenido"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
@@ -974,7 +984,9 @@ async def delete_channel_favorite(
 @app.get("/api/search", tags=["Content"])
 async def search_content(
     q: str = Query(..., min_length=1, description="Texto de búsqueda"),
-    types: str | None = Query(None, description="Tipos separados por coma: channels,movies,series,events"),
+    types: str | None = Query(
+        None, description="Tipos separados por coma: channels,movies,series,events"
+    ),
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(50, ge=1, le=100, description="Items por página"),
     country: str | None = Query(None, description="Filtrar por país (codigo ISO)"),
@@ -1303,7 +1315,11 @@ async def get_serie_episodes_by_id(
         )
         mapped = [
             content_svc._to_android_episode(
-                r, series_title, catalog_id, auth.username, password or "",
+                r,
+                series_title,
+                catalog_id,
+                auth.username,
+                password or "",
                 base_url=content_svc._https_base_url,
                 watched_map=watched_map,
             )
@@ -1321,7 +1337,11 @@ async def get_serie_episodes_by_id(
     )
     mapped = [
         content_svc._to_android_episode(
-            r, series_title, catalog_id, auth.username, password or "",
+            r,
+            series_title,
+            catalog_id,
+            auth.username,
+            password or "",
             base_url=content_svc._https_base_url,
             watched_map=watched_map,
         )

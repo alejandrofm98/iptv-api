@@ -38,6 +38,8 @@ class ContentServiceV2:
 
     _cache: dict[str, tuple[Any, float]] = {}
     _CACHE_TTL_SECONDS = 300
+    _cache_eviction_counter: int = 0
+    _CACHE_EVICTION_INTERVAL: int = 100
 
     DEDUP_BUFFER_MULTIPLIER = 2.5
     MAX_FETCH_ROUNDS = 2
@@ -335,7 +337,22 @@ class ContentServiceV2:
         return None
 
     @classmethod
+    def _evict_expired_cache(cls) -> None:
+        now = time.time()
+        expired = [
+            k
+            for k, (_, cached_at) in cls._cache.items()
+            if (now - cached_at) > cls._CACHE_TTL_SECONDS
+        ]
+        for k in expired:
+            del cls._cache[k]
+
+    @classmethod
     def _set_cached(cls, key: str, value: Any):
+        cls._cache_eviction_counter += 1
+        if cls._cache_eviction_counter >= cls._CACHE_EVICTION_INTERVAL:
+            cls._cache_eviction_counter = 0
+            cls._evict_expired_cache()
         cls._cache[key] = (value, time.time())
 
     @property
@@ -1144,7 +1161,11 @@ class ContentServiceV2:
 
         season_num = row.get("season_number")
         episode_num = row.get("episode_number")
-        is_watched = watched_map.get((season_num, episode_num)) if watched_map and season_num is not None and episode_num is not None else None
+        is_watched = (
+            watched_map.get((season_num, episode_num))
+            if watched_map and season_num is not None and episode_num is not None
+            else None
+        )
 
         return {
             "id": episode_id or provider_id,
@@ -1960,9 +1981,7 @@ class ContentServiceV2:
             total = self.session.execute(select(sa_func.count()).select_from(model)).scalar() or 0
         from datetime import datetime
 
-        return {
-            content_type: {"total": total, "generatedAt": datetime.now(UTC).isoformat()}
-        }
+        return {content_type: {"total": total, "generatedAt": datetime.now(UTC).isoformat()}}
 
     def get_catalog_filters(self, content_type: str, country: str | None = None) -> dict:
         countries = self.get_countries(content_type)

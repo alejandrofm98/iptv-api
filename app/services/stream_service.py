@@ -21,6 +21,8 @@ from services.resilience_service import ResilienceService
 
 logger = logging.getLogger("stream_service_v2")
 
+_active_clients: set[httpx.AsyncClient] = set()
+
 
 class StreamProxyServiceV2:
     _redirect_cache: dict[str, tuple[str, float]] = {}
@@ -28,6 +30,8 @@ class StreamProxyServiceV2:
     _DNS_ERROR_CACHE_TTL: float = 60.0
     _proxy_bootstrap_cache: tuple[str | None, float] | None = None
     _PROXY_BOOTSTRAP_CACHE_TTL: float = 60.0
+    _cache_eviction_counter: int = 0
+    _CACHE_EVICTION_INTERVAL: int = 100
 
     def __init__(
         self,
@@ -56,6 +60,27 @@ class StreamProxyServiceV2:
             return proxy_url
         except Exception:
             return "invalid-proxy-url"
+
+    @classmethod
+    def _evict_expired_redirects(cls) -> None:
+        now = time.time()
+        expired = [
+            k
+            for k, (_, cached_at) in cls._redirect_cache.items()
+            if (now - cached_at) > cls._REDIRECT_CACHE_TTL
+        ]
+        for k in expired:
+            del cls._redirect_cache[k]
+
+    def _maybe_evict_caches(self) -> None:
+        StreamProxyServiceV2._cache_eviction_counter += 1
+        if StreamProxyServiceV2._cache_eviction_counter >= self._CACHE_EVICTION_INTERVAL:
+            StreamProxyServiceV2._cache_eviction_counter = 0
+            before = len(StreamProxyServiceV2._redirect_cache)
+            self._evict_expired_redirects()
+            evicted = before - len(StreamProxyServiceV2._redirect_cache)
+            if evicted > 0:
+                logger.info(f"Cache eviction: {evicted} expired redirect entries removed")
 
     def _get_bootstrap_proxy_url(self, use_cache: bool = True) -> str | None:
         cached = StreamProxyServiceV2._proxy_bootstrap_cache
@@ -97,6 +122,8 @@ class StreamProxyServiceV2:
         self, url: str, use_cache: bool = True, use_proxy: bool = False
     ) -> str:
         import urllib.parse
+
+        self._maybe_evict_caches()
 
         if use_cache:
             cached = self._redirect_cache.get(url)
@@ -220,6 +247,7 @@ class StreamProxyServiceV2:
 
     def get_original_url(self, provider_id: str, content_type: str = "live") -> str | None:
         cache_key = f"{content_type}:{provider_id}"
+        self._maybe_evict_caches()
         if cache_key in self._url_cache:
             return self._url_cache[cache_key]
         table_map = {
@@ -348,6 +376,7 @@ class StreamProxyServiceV2:
                         "Keep-Alive": "timeout=300, max=100",
                     },
                 )
+                _active_clients.add(client)
                 response = await client.send(
                     client.build_request("GET", original_url, headers=default_headers),
                     stream=True,
@@ -366,6 +395,7 @@ class StreamProxyServiceV2:
                     524,
                 }
                 if response.status_code >= 500 or response.status_code in retryable_codes:
+                    _active_clients.discard(client)
                     await client.aclose()
                     error_msg = f"HTTP {response.status_code} from provider"
                     logger.warning(f"Server error {response.status_code}, will retry...")
@@ -407,6 +437,7 @@ class StreamProxyServiceV2:
                 )
                 if is_m3u8:
                     content = await response.aread()
+                    _active_clients.discard(client)
                     await client.aclose()
                     try:
                         m3u8_text = content.decode("utf-8")
@@ -430,6 +461,7 @@ class StreamProxyServiceV2:
                     finally:
                         await response.aclose()
                         if client:
+                            _active_clients.discard(client)
                             await client.aclose()
 
                 return (response.status_code, pass_headers, body_iterator())
@@ -438,6 +470,7 @@ class StreamProxyServiceV2:
                 if use_resilience:
                     await self._resilience.circuit_breaker.record_failure(original_url)
                 if client:
+                    _active_clients.discard(client)
                     try:
                         await client.aclose()
                     except Exception:
@@ -487,3 +520,12 @@ class StreamProxyServiceV2:
 
     def get_resilience_status(self) -> dict[str, Any]:
         return self._resilience.get_status()
+
+    @staticmethod
+    async def close_all_clients() -> None:
+        for client in list(_active_clients):
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+        _active_clients.clear()
