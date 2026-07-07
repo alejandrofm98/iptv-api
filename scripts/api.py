@@ -660,6 +660,7 @@ async def get_content(
             username=auth.username,
             password=password or "",
             country=country,
+            user_id=auth.user_id,
         )
         if result is None:
             raise NotFoundException("Sección", section_title)
@@ -676,6 +677,7 @@ async def get_content(
         username=auth.username,
         password=password or "",
         genre=genre,
+        user_id=auth.user_id,
     )
 
 
@@ -884,7 +886,8 @@ async def get_home(
 ):
     """Obtiene bloques ligeros para la home de clientes TV."""
     payload = content_svc.get_home_catalog_new(
-        username=auth.username, country=country, password=password or "", page_size=page_size
+        username=auth.username, country=country, password=password or "", page_size=page_size,
+        user_id=auth.user_id,
     )
     payload["favorites"] = favorites_svc.get_favorite_channels(
         user_id=auth.user_id,
@@ -1008,6 +1011,7 @@ async def search_content(
         password=password or "",
         country=country,
         genre=genre,
+        user_id=auth.user_id,
     )
 
 

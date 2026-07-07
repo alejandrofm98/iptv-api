@@ -164,3 +164,48 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
             .limit(1)
         )
         return self.session.execute(stmt).scalar_one_or_none()
+
+    def get_watched_movie_content_ids(self, user_id: str) -> set[str]:
+        """Content IDs de peliculas marcadas como vistas por el usuario."""
+        stmt = (
+            select(WatchProgress.content_id)
+            .where(
+                and_(
+                    WatchProgress.user_id == user_id,
+                    WatchProgress.content_type == "movie",
+                    WatchProgress.is_watched.is_(True),
+                )
+            )
+        )
+        return {str(row) for row in self.session.execute(stmt).scalars().all()}
+
+    def get_completed_series_names(self, user_id: str) -> set[str]:
+        """Series donde todos los episodios iniciados estan vistos:
+        tiene al menos un episodio visto y ninguno sin ver."""
+        watched_stmt = (
+            select(WatchProgress.series_name)
+            .where(
+                and_(
+                    WatchProgress.user_id == user_id,
+                    WatchProgress.content_type == "series",
+                    WatchProgress.is_watched.is_(True),
+                    WatchProgress.series_name.isnot(None),
+                )
+            )
+            .distinct()
+        )
+        unwatched_stmt = (
+            select(WatchProgress.series_name)
+            .where(
+                and_(
+                    WatchProgress.user_id == user_id,
+                    WatchProgress.content_type == "series",
+                    WatchProgress.is_watched.is_(False),
+                    WatchProgress.series_name.isnot(None),
+                )
+            )
+            .distinct()
+        )
+        watched = {str(r) for r in self.session.execute(watched_stmt).scalars().all()}
+        unwatched = {str(r) for r in self.session.execute(unwatched_stmt).scalars().all()}
+        return watched - unwatched

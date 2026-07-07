@@ -19,6 +19,7 @@ from app.repositories.config_repo import SyncMetadataRepository
 from app.repositories.content_repo import ContentRepository
 from app.repositories.replay_repo import ReplayRepository
 from app.repositories.series_repo import SeriesRepository
+from app.repositories.watch_progress_repo import WatchProgressRepository
 from utils.config import get_settings
 
 logger = logging.getLogger("iptv-api")
@@ -326,6 +327,7 @@ class ContentServiceV2:
         self.channel_repo = ChannelRepository(session)
         self.replay_repo = ReplayRepository(session)
         self.sync_meta_repo = SyncMetadataRepository(session)
+        self.wp_repo = WatchProgressRepository(session)
         self.settings = get_settings()
 
     @classmethod
@@ -553,6 +555,7 @@ class ContentServiceV2:
         content_type: str,
         username: str = "",
         password: str = "",
+        watched_movie_ids: set[str] | None = None,
     ) -> dict[str, Any]:
         parsed = self._parse_content_item(row, content_type, username, password)
         original_title = parsed.get("nombre") or ""
@@ -614,10 +617,14 @@ class ContentServiceV2:
                 result["stream_options"] = ContentServiceV2._resolve_stream_options(
                     parsed.get("stream_options", []), username, password
                 )
+        if content_type == "movies" and watched_movie_ids is not None:
+            movie_id = parsed.get("provider_id") or parsed.get("id") or ""
+            result["is_watched"] = movie_id in watched_movie_ids
         return result
 
     def _to_android_series_from_catalog(
-        self, row: dict[str, Any], username: str = "", password: str = ""
+        self, row: dict[str, Any], username: str = "", password: str = "",
+        watched_series_names: set[str] | None = None,
     ) -> dict[str, Any]:
         serie_name = row.get("title", "")
         normalized_title = serie_name.lower().strip() if serie_name else ""
@@ -667,10 +674,12 @@ class ContentServiceV2:
             "tmdb_title": row.get("tmdb_title") or serie_name,
             "popularity": row.get("popularity"),
             "status": row.get("status"),
+            **({"is_watched": serie_name in watched_series_names} if watched_series_names is not None else {}),
         }
 
     def _to_android_movie_from_catalog(
-        self, row: dict[str, Any], username: str = "", password: str = ""
+        self, row: dict[str, Any], username: str = "", password: str = "",
+        watched_movie_ids: set[str] | None = None,
     ) -> dict[str, Any]:
         stream_options = row.get("stream_options") or []
         first_stream = stream_options[0] if stream_options else {}
@@ -721,10 +730,12 @@ class ContentServiceV2:
             "tmdb_title": tmdb_title,
             "popularity": row.get("popularity"),
             "status": row.get("status"),
+            **({"is_watched": (row.get("provider_id") or str(row.get("id", ""))) in watched_movie_ids} if watched_movie_ids is not None else {}),
         }
 
     def _to_android_series_group_item(
-        self, row: dict[str, Any], username: str = "", password: str = ""
+        self, row: dict[str, Any], username: str = "", password: str = "",
+        watched_series_names: set[str] | None = None,
     ) -> dict[str, Any]:
         catalog_title = row.get("title", "")
         tmdb_title = row.get("tmdb_title") or ""
@@ -782,6 +793,7 @@ class ContentServiceV2:
             "popularity": row.get("popularity"),
             "status": row.get("status"),
             "total_seasons": row.get("total_seasons"),
+            **({"is_watched": serie_name in watched_series_names} if watched_series_names is not None else {}),
         }
 
     def _get_movies_catalog_page_raw(
@@ -862,6 +874,8 @@ class ContentServiceV2:
         username: str,
         password: str,
         country: str | None,
+        watched_movie_ids: set[str] | None = None,
+        watched_series_names: set[str] | None = None,
     ) -> tuple[list[dict], int]:
         use_upper_group = "group" in gp
         group_filter = gp.get("pattern") if not use_upper_group else None
@@ -881,7 +895,7 @@ class ContentServiceV2:
             raw_items = result.get("items") or []
             total = result.get("total", 0)
             items = [
-                self._to_android_series_group_item(row, username, password) for row in raw_items
+                self._to_android_series_group_item(row, username, password, watched_series_names=watched_series_names) for row in raw_items
             ]
             return items, total
         elif content_type == "movies":
@@ -896,7 +910,7 @@ class ContentServiceV2:
             )
             if items_cat:
                 return [
-                    self._to_android_movie_from_catalog(row, username, password)
+                    self._to_android_movie_from_catalog(row, username, password, watched_movie_ids=watched_movie_ids)
                     for row in items_cat
                 ], total_cat
             return [], 0
@@ -910,6 +924,8 @@ class ContentServiceV2:
         username: str,
         password: str,
         country: str | None,
+        watched_movie_ids: set[str] | None = None,
+        watched_series_names: set[str] | None = None,
     ) -> list[dict]:
         sections = []
         for gp in self.SECTION_PATTERNS.get(content_type, []):
@@ -921,6 +937,8 @@ class ContentServiceV2:
                 username=username,
                 password=password,
                 country=country,
+                watched_movie_ids=watched_movie_ids,
+                watched_series_names=watched_series_names,
             )
             if items:
                 pages = (total + page_size - 1) // page_size if total > 0 else 0
@@ -1500,7 +1518,13 @@ class ContentServiceV2:
         username: str = "",
         password: str = "",
         genre: str | None = None,
+        user_id: str | None = None,
     ) -> dict:
+        watched_movie_ids: set[str] | None = None
+        watched_series_names: set[str] | None = None
+        if user_id:
+            watched_movie_ids = self.wp_repo.get_watched_movie_content_ids(user_id)
+            watched_series_names = self.wp_repo.get_completed_series_names(user_id)
         if content_type == "series":
             result = self._get_distinct_series_groups_catalog_raw(
                 page=page,
@@ -1514,7 +1538,7 @@ class ContentServiceV2:
             items = result.get("items") or []
             total = result.get("total", 0)
             parsed_items = [
-                self._to_android_series_from_catalog(row, username, password) for row in items
+                self._to_android_series_from_catalog(row, username, password, watched_series_names=watched_series_names) for row in items
             ]
             return self._build_paginated_payload(parsed_items, total, page, page_size)
         if content_type in ("movies", "channels"):
@@ -1528,7 +1552,7 @@ class ContentServiceV2:
                 )
                 rows = [dict(c) for c in channels]
             android_items = [
-                self._to_android_catalog_item(row, content_type, username, password) for row in rows
+                self._to_android_catalog_item(row, content_type, username, password, watched_movie_ids=watched_movie_ids) for row in rows
             ]
             return self._build_paginated_payload(android_items, total, page, page_size)
         return self._build_paginated_payload([], 0, page, page_size)
@@ -1542,7 +1566,13 @@ class ContentServiceV2:
         username: str = "",
         password: str = "",
         country: str | None = None,
+        user_id: str | None = None,
     ) -> dict | None:
+        watched_movie_ids: set[str] | None = None
+        watched_series_names: set[str] | None = None
+        if user_id:
+            watched_movie_ids = self.wp_repo.get_watched_movie_content_ids(user_id)
+            watched_series_names = self.wp_repo.get_completed_series_names(user_id)
         patterns = self.SECTION_PATTERNS.get(content_type, [])
         gp = next((p for p in patterns if p["title"].upper() == section_title.upper()), None)
         if not gp:
@@ -1555,6 +1585,8 @@ class ContentServiceV2:
             username=username,
             password=password,
             country=country,
+            watched_movie_ids=watched_movie_ids,
+            watched_series_names=watched_series_names,
         )
         pages = (total + page_size - 1) // page_size if total > 0 else 0
         return {
@@ -1575,7 +1607,13 @@ class ContentServiceV2:
         country: str | None = None,
         password: str = "",
         page_size: int = 24,
+        user_id: str | None = None,
     ) -> dict:
+        watched_movie_ids: set[str] | None = None
+        watched_series_names: set[str] | None = None
+        if user_id:
+            watched_movie_ids = self.wp_repo.get_watched_movie_content_ids(user_id)
+            watched_series_names = self.wp_repo.get_completed_series_names(user_id)
         counts = self.get_content_stats("channels")
         counts.update(self.get_content_stats("movies"))
         counts.update(self.get_content_stats("series"))
@@ -1587,6 +1625,8 @@ class ContentServiceV2:
                 username=username,
                 password=password,
                 country=country,
+                watched_movie_ids=watched_movie_ids,
+                watched_series_names=watched_series_names,
             ),
             "series_sections": self._build_home_sections(
                 "series",
@@ -1595,6 +1635,8 @@ class ContentServiceV2:
                 username=username,
                 password=password,
                 country=country,
+                watched_movie_ids=watched_movie_ids,
+                watched_series_names=watched_series_names,
             ),
             "stats": {
                 "channels": counts.get("channels", {}).get("total", 0),
@@ -1613,7 +1655,13 @@ class ContentServiceV2:
         password: str = "",
         country: str | None = None,
         genre: str | None = None,
+        user_id: str | None = None,
     ) -> dict:
+        watched_movie_ids: set[str] | None = None
+        watched_series_names: set[str] | None = None
+        if user_id:
+            watched_movie_ids = self.wp_repo.get_watched_movie_content_ids(user_id)
+            watched_series_names = self.wp_repo.get_completed_series_names(user_id)
         requested_types = [ct for ct in types if ct in ("channels", "movies", "series", "events")]
         if not requested_types:
             requested_types = ["channels", "movies", "series"]
@@ -1624,14 +1672,14 @@ class ContentServiceV2:
                     1, 1000, search=query, country=country, genre=genre
                 )
                 merged_items.extend(
-                    self._to_android_movie_from_catalog(row, username, password) for row in rows
+                    self._to_android_movie_from_catalog(row, username, password, watched_movie_ids=watched_movie_ids) for row in rows
                 )
             elif content_type == "series":
                 result = self._get_distinct_series_groups_catalog_raw(
                     page=1, page_size=1000, search=query, country=country, genre=genre
                 )
                 merged_items.extend(
-                    self._to_android_series_from_catalog(row, username, password)
+                    self._to_android_series_from_catalog(row, username, password, watched_series_names=watched_series_names)
                     for row in (result.get("items") or [])
                 )
             elif content_type == "channels":
