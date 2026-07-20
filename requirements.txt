@@ -15,5 +15,5 @@ yt-dlp
 curl_cffi
 sqlalchemy==2.0.50
 alembic==1.18.4
-# iptv-db: shared ORM models, schemas, and Alembic migrations (editable install)
--e /home/alejandro/PycharmProjects/iptv-db
+# iptv-db: shared ORM models, schemas, and Alembic migrations
+iptv-db @ git+https://github.com/alejandrofm98/iptv-db.git@b4e6c268eb6002d933b36ba57d726b09260aa646
