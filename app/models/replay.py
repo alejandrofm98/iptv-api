@@ -1,25 +1,5 @@
-import uuid
+"""Shim: re-exports models from iptv-db. Source of truth is iptv_db.models."""
 
-from sqlalchemy import Column, Date, DateTime, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from iptv_db.models.replay import Replay
 
-from app.database import Base
-
-
-class Replay(Base):
-    __tablename__ = "replays"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    slug = Column(Text, nullable=False, unique=True)
-    source_site = Column(Text, nullable=False)
-    title = Column(Text, nullable=False)
-    event_name = Column(Text, nullable=True)
-    event_type = Column(Text, nullable=True)
-    event_date = Column(Date, nullable=True)
-    post_url = Column(Text, nullable=False)
-    featured_image_url = Column(Text, nullable=True)
-    description = Column(Text, nullable=True)
-    video_sources = Column(JSONB, nullable=False)
-    match_card = Column(JSONB, nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+__all__ = ["Replay"]

@@ -1,5 +1,6 @@
+from iptv_db.models.base import Base  # noqa: F401 — re-export, used by alembic & repos
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from utils.config import get_settings
 
@@ -16,5 +17,3 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
