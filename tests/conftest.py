@@ -10,20 +10,19 @@ from __future__ import annotations
 import sys
 import types
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
+# Add src/ directory to sys.path for true src/ layout
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 
 @pytest.fixture(autouse=True)
 def _install_psycopg2_stub() -> Iterator[None]:
-    """Stub de psycopg2 para que ``utils.config`` se pueda importar en tests.
-
-    Antes este hack vivia en cada archivo de test. Ahora vive aqui y se
-    aplica automaticamente antes de cualquier import que dispare
-    ``utils.config``. El stub es minimo: solo expone ``connect``.
-    """
+    """Stub de psycopg2 para que ``iptv_api.core.config`` se pueda importar."""
     fake = types.ModuleType("psycopg2")
     fake.connect = MagicMock(return_value=MagicMock())  # type: ignore[attr-defined]
     fake.extras = MagicMock()  # type: ignore[attr-defined]
