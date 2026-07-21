@@ -31,7 +31,7 @@ from app.routers import (
     video_extractor,
     watch_progress,
 )
-from services.transcode_service import TranscodeService
+from app.services.transcode_service import TranscodeService
 from utils.config import get_settings
 from utils.dependencies import get_transcode_service
 

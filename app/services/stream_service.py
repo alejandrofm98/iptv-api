@@ -17,7 +17,7 @@ from app.repositories.channel_repo import ChannelRepository
 from app.repositories.config_repo import ConfigRepository
 from app.repositories.content_repo import ContentRepository
 from app.repositories.series_repo import SeriesRepository
-from services.resilience_service import ResilienceService
+from app.services.resilience_service import ResilienceService
 
 logger = logging.getLogger("stream_service_v2")
 

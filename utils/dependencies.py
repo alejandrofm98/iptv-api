@@ -19,9 +19,9 @@ from app.services.content_service import ContentServiceV2  # noqa: E402
 from app.services.device_service import DeviceServiceV2  # noqa: E402
 from app.services.playlist_service import PlaylistServiceV2  # noqa: E402
 from app.services.stream_service import StreamProxyServiceV2  # noqa: E402
+from app.services.transcode_service import TranscodeService  # noqa: E402
 from app.services.user_service import UserServiceV2  # noqa: E402
 from app.services.watch_progress_service import WatchProgressServiceV2  # noqa: E402
-from services.transcode_service import TranscodeService  # noqa: E402
 from utils.config import get_settings  # noqa: E402
 from utils.exceptions import (  # noqa: E402
     ForbiddenException,

@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-07-20T00:00:00.000Z",
+  "lanes": [
+    {
+      "slug": "imdb-ratings-import",
+      "branch": "omos/imdb-ratings-import",
+      "path": ".slim/worktrees/imdb-ratings-import",
+      "base": "33d34a4",
+      "purpose": "Add imdb_rating/imdb_votes columns to metadata tables, import from title.ratings.tsv.gz, expose in API, schedule via Dokploy",
+      "owner": "orchestrator",
+      "status": "active",
+      "areas": [
+        "alembic/versions",
+        "app/models",
+        "app/repositories",
+        "app/services/content_service.py",
+        "scripts/import_imdb_ratings.py",
+        "docker/docker-compose.yml",
+        "tests/test_content_service_normalized.py",
+        "AGENTS.md",
+        "README.md"
+      ],
+      "createdAt": "2026-07-20T00:00:00.000Z"
+    }
+  ]
+}

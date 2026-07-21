@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from app.services.device_service import DeviceServiceV2
 from app.services.stream_service import StreamProxyServiceV2
 from app.services.user_service import UserServiceV2
-from services.video_extractor_service import VideoExtractorService
+from app.services.video_extractor_service import VideoExtractorService
 from utils.dependencies import AuthResult as AuthDep
 from utils.dependencies import (
     get_device_service_v2,

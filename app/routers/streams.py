@@ -9,8 +9,8 @@ from starlette.responses import RedirectResponse
 from app.services.device_service import DeviceServiceV2
 from app.services.playlist_service import PlaylistServiceV2
 from app.services.stream_service import StreamProxyServiceV2
+from app.services.transcode_service import TranscodeService
 from app.services.user_service import UserServiceV2
-from services.transcode_service import TranscodeService
 from utils.dependencies import (
     get_device_service_v2,
     get_playlist_service_v2,
