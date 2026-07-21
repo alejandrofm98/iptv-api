@@ -480,3 +480,38 @@ Si queres que el orquestador verifique el deploy por vos:
 NO dar acceso automatico al orquestador sin autorizacion explicita. El orquestador solo
 actua cuando se le pide.
 ```
+
+## 15. Microservicio video-extractor-service
+
+`video-extractor-service/` es un **microservicio peer** de iptv-api, NO un sub-componente:
+
+- **Stack**: Python 3.12, Playwright, FastAPI
+- **Puerto**: 8001 (interno en la red Docker)
+- **Endpoint**: `/api/video-extract` (proxy), `/api/video-extract/multi`
+- **Despliegue**: contenedor Docker separado `video-extractor` en docker-compose.yml
+- **Uso desde iptv-api**: via `VIDEO_EXTRACTOR_URL` env var + `iptv_api/routers/video_extractor.py`
+
+### Estructura
+
+```
+video-extractor-service/
+├── Dockerfile           # su propio build
+├── main.py              # FastAPI entry point (puerto 8001)
+├── extractors.py        # logica de extraccion con Playwright
+├── requirements.txt     # deps separadas
+└── .dockerignore
+```
+
+### Desarrollo local
+
+```bash
+cd video-extractor-service
+pip install -r requirements.txt
+python main.py  # http://localhost:8001
+```
+
+### Cuando cambiar
+
+- Si modificas extractors.py o main.py, el cambio va en este directorio
+- No mezcles codigo de video-extractor-service con codigo de iptv-api
+- Si necesitas compartir modelos o schemas, movelos a iptv-db/

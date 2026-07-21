@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copiar código fuente
 # Copiamos desde el contexto raíz del proyecto
-COPY src/ /app/
+COPY iptv_api/ /app/iptv_api/
 COPY resources/ /app/resources/
 
 # Crear directorios necesarios

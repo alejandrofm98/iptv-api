@@ -6,13 +6,12 @@ requires-python = ">=3.12"
 readme = "README.md"
 
 [tool.setuptools.packages.find]
-where = ["src"]
 include = ["iptv_api*"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["src", "tests"]
+src = ["iptv_api", "tests"]
 extend-exclude = [
     "data/m3u",
     ".venv",
@@ -35,7 +34,7 @@ ignore = [
 unfixable = ["B"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/iptv_api/main.py" = ["B008", "E402", "F401", "F811"]
+"iptv_api/main.py" = ["B008", "E402", "F401", "F811"]
 "tests/*" = ["B011", "B017", "E402"]
 "video-extractor-service/*" = ["ALL"]
 
@@ -73,11 +72,11 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = ["iptv_api.services.*"]
 ignore_errors = true
-# Services migrated to src/iptv_api/services/ in F5c
+# Services migrated to iptv_api/services/ in F5c
 
 [tool.vulture]
 min_confidence = 80
-paths = ["src/iptv_api"]
+paths = ["iptv_api"]
 sort_by_size = true
 
 [tool.pytest.ini_options]
@@ -98,13 +97,13 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src"]
+source = ["iptv_api"]
 omit = [
     "*/__pycache__/*",
     "*/tests/*",
     "*/.venv/*",
     "video-extractor-service/*",
-    "src/iptv_api/main.py",  # F6a: entry point
+    "iptv_api/main.py",  # F6b: entry point at root
 ]
 
 [tool.coverage.report]
