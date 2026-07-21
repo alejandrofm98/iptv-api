@@ -58,7 +58,7 @@ iptv-api es el nodo central de un ecosistema de 4 proyectos hermanos del mismo o
   y arranca background tasks de cleanup.
 - **BD**: Postgres directo via SQLAlchemy 2.0. Los modelos ORM viven
   en `iptv_db` (paquete instalado). `app/models/` contiene shims que
-  re-exportan desde `iptv_db.models.*`. Migraciones en `iptv-db/alembic/versions/`.
+  re-exportan desde `iptv_db.models.*`. Migraciones en `iptv-db/src/iptv_db/migrations/versions/`.
 - **Auth**: JWT propio (`API_SECRET_KEY`, `JWT_SECRET`) + bcrypt para
   passwords. Dispositivos y sesiones viven en `app/services/`.
 
@@ -213,9 +213,9 @@ El scrapper es upstream. iptv-api consume su output.
   health-checks mutuos.
 - **Variables de entorno comunes**: `IPTV_API_URL=http://localhost:3010`,
   `API_SECRET_KEY` (mismo valor en ambos lados).
-- **Schema de BD**: La fuente unica de verdad para el schema es `iptv-db/alembic/versions/`.
+- **Schema de BD**: La fuente unica de verdad para el schema es `iptv-db/src/iptv_db/migrations/versions/`.
   iptv-api NO mantiene sus propias migraciones. Las migraciones legacy
-  en `iptv-api/alembic/versions/` (3 archivos) son solo referencia
+  en `iptv-api/alembic/versions/` (3 archivos, eliminados en cleanup F3d4a) son solo referencia
   historica — eliminarlas despues de verificar F1.5 en staging.
 
 ### 4.4 Checklist de breaking change
