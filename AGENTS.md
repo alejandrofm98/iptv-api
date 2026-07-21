@@ -52,53 +52,54 @@ iptv-api es el nodo central de un ecosistema de 4 proyectos hermanos del mismo o
 
 - **Stack**: FastAPI 0.128, Pydantic 2.12, SQLAlchemy 2.0, alembic,
   `iptv-db @ git+https://...` (instalado via pip), bcrypt, httpx, yt-dlp, curl_cffi.
-- **Puerto local**: `3010`. **Entry point**: `scripts/api.py` (209
-  lineas). El grueso de los routers esta en `app/routers/` (12 archivos, F0).
-- **Lifespan**: `scripts/api.py:138-175` — pre-carga cache de streams
+- **Puerto local**: `3010`. **Entry point**: `src/iptv_api/main.py` (209
+  lineas). El grueso de los routers esta en `src/iptv_api/routers/` (12 archivos, F0).
+- **Lifespan**: `src/iptv_api/main.py:138-175` — pre-carga cache de streams
   y arranca background tasks de cleanup.
 - **BD**: Postgres directo via SQLAlchemy 2.0. Los modelos ORM viven
-  en `iptv_db` (paquete instalado). `app/models/` contiene shims que
+  en `iptv_db` (paquete instalado). `src/iptv_api/models/` contiene shims que
   re-exportan desde `iptv_db.models.*`. Migraciones en `iptv-db/src/iptv_db/migrations/versions/`.
 - **Auth**: JWT propio (`API_SECRET_KEY`, `JWT_SECRET`) + bcrypt para
-  passwords. Dispositivos y sesiones viven en `app/services/`.
+  passwords. Dispositivos y sesiones viven en `src/iptv_api/services/`.
 
 ```bash
-python -m uvicorn scripts.api:app --reload --host 0.0.0.0 --port 3010
+python -m uvicorn iptv_api.main:app --reload --host 0.0.0.0 --port 3010
 curl http://localhost:3010/health
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 ## 2. Arquitectura
 
-### 2.1 Capas (`app/`)
+### 2.1 Capas (`src/iptv_api/`)
 
 ```
-app/
+src/iptv_api/
+  main.py        # Entry point (FastAPI app, lifespan)
+  database.py    # Engine + session factory (usa iptv_db internamente)
+  core/          # Config, dependencies, exceptions, models
   models/        # Shims que re-exportan desde iptv_db.models
   routers/       # 12 archivos de routers (F0)
   repositories/  # Acceso a datos por entidad
   services/      # Logica de negocio
   schemas/       # DTOs Pydantic (request/response API)
-  database.py    # Engine + session factory (usa iptv_db internamente)
-  core/          # (en construccion) config, security, exceptions
 ```
 
 Regla: router importa `services` (no repos directo). Service compone repos. Repo solo toca SQLAlchemy.
 
 ### 2.2 `services/` legacy (primer nivel)
 
-Convive con `app/services/` por migracion gradual. Contiene piezas anteriores al corte a capas:
+Convive con `src/iptv_api/services/` por migracion gradual. Contiene piezas anteriores al corte a capas:
 
 - `services/bulk_insert.py` — carga masiva de catalogos desde JSONs del scrapper.
 - `services/video_extractor_service.py` — extraccion de streams via yt-dlp / curl_cffi.
 - `services/transcode_service.py` — transcoding HLS.
 - `services/resilience_service.py` — reintentos y circuit breakers.
 
-Regla: NO anadir logica nueva aqui. Si necesitas tocar estas piezas, migralas a `app/services/` primero.
+Regla: NO anadir logica nueva aqui. Si necesitas tocar estas piezas, migralas a `src/iptv_api/services/` primero.
 
 ### 2.3 Wiring de servicios
 
-`utils/dependencies.py` expone factories `Depends(...)`:
+`src/iptv_api/core/dependencies.py` expone factories `Depends(...)`:
 
 | Factory                       | Devuelve                  | Uso                                  |
 | ----------------------------- | ------------------------- | ------------------------------------ |
@@ -114,10 +115,10 @@ Regla: NO anadir logica nueva aqui. Si necesitas tocar estas piezas, migralas a 
 Cadena (3 niveles de indireccion, intencional):
 
 ```
-ruta -> utils/dependencies.get_xxx_service
-       -> app/services/xxx_service
-       -> app/repositories/xxx_repo
-       -> app/database.py (Session)
+ruta -> src/iptv_api/core/dependencies.get_xxx_service
+       -> src/iptv_api/services/xxx_service
+       -> src/iptv_api/repositories/xxx_repo
+       -> src/iptv_api/database.py (Session)
 ```
 
 ### 2.4 Convenciones de codigo
@@ -130,8 +131,8 @@ ruta -> utils/dependencies.get_xxx_service
 
 ## 3. Patrones obligatorios
 
-1. Inyectar servicios via `Depends(...)` desde `utils/dependencies.py`.
-2. Para errores de negocio, usar excepciones de `utils/exceptions.py`
+1. Inyectar servicios via `Depends(...)` desde `src/iptv_api/core/dependencies.py`.
+2. Para errores de negocio, usar excepciones de `src/iptv_api/core/exceptions.py`
    (no levantar `HTTPException` directo). Disponibles:
    `BadRequestException` (400), `UnauthorizedException` (401),
    `ForbiddenException` (403), `NotFoundException` (404),
@@ -143,10 +144,10 @@ ruta -> utils/dependencies.get_xxx_service
    validacion por credenciales en path + registro de sesion.
 6. Paginacion: `page` / `page_size` (nunca `skip` / `limit`).
 7. Para consultas complejas de contenido, preferir `PostgresService`
-   (en `app/services/`) antes que N+1 en repos.
+   (en `src/iptv_api/services/`) antes que N+1 en repos.
 8. **Endpoints consumidos por Android**: aceptar parametro
    `client=android` y aplicar helpers `_to_android_*` de
-   `app/services/content_service.py` para normalizar respuesta.
+   `src/iptv_api/services/content_service.py` para normalizar respuesta.
 9. **Listados grandes**: usar repos + paginacion obligatoria (sin
    `all()` ni `.to_list()` sin limite explicito).
 10. **Ruta nueva expuesta a Android/Web**: registrarla en 4.1 o 4.2 en
@@ -202,10 +203,10 @@ Reutiliza el grueso de 4.1 (mismo backend). Ademas:
 El scrapper es upstream. iptv-api consume su output.
 
 - **JSONs de catalogo**: `../walactv-scrapper/data/json/`. Lectura en
-  `scripts/api.py:710`, `scripts/api.py:744`, `scripts/api.py:778` y
-  `app/services/content_service.py:1251`.
-- **Tabla `scraper_failures`**: modelo en `app/models/scraper.py:11`.
-  El scrapper escribe filas; `app/repositories/scraper_repo.py` las
+  `src/iptv_api/main.py:710`, `src/iptv_api/main.py:744`, `src/iptv_api/main.py:778` y
+  `src/iptv_api/services/content_service.py:1251`.
+- **Tabla `scraper_failures`**: modelo en `src/iptv_api/models/scraper.py:11`.
+  El scrapper escribe filas; `src/iptv_api/repositories/scraper_repo.py` las
   lee para alertas.
 - **Volumen compartido**: `iptv-data` (Docker volume / NFS). Mismo
   path desde ambos contenedores.
@@ -230,10 +231,10 @@ Si tocas un endpoint listado en 4.1, 4.2 o un path de 4.3:
 
 ## 5. Configuracion y secretos
 
-`utils/config.py:18-22` carga `.env` en este orden (el primero que
+`src/iptv_api/core/config.py:18-22` carga `.env` en este orden (el primero que
 existe gana):
 
-1. `utils/.env`
+1. `src/iptv_api/core/.env`
 2. `docker/.env`
 3. `.env` (raiz)
 
@@ -259,10 +260,10 @@ Toda la config vive en `pyproject.toml`.
 ### 6.1 Comandos
 
 ```bash
-ruff format scripts services utils app tests
-ruff check scripts services utils app tests --fix
-mypy scripts services utils app
-vulture scripts services utils app --min-confidence 80
+ruff format src tests
+ruff check src tests --fix
+mypy src/iptv_api
+vulture src/iptv_api --min-confidence 80
 pytest tests/
 ```
 
@@ -281,10 +282,10 @@ Configurados en F4a. Instalar local: `pre-commit install`. CI: ver `.github/work
 ### 6.4 Como correr TODO
 
 ```bash
-ruff format scripts services utils app tests && \
-  ruff check scripts services utils app tests --fix && \
-  mypy scripts services utils app && \
-  vulture scripts services utils app --min-confidence 80 && \
+ruff format src tests && \
+  ruff check src tests --fix && \
+  mypy src/iptv_api && \
+  vulture src/iptv_api --min-confidence 80 && \
   pytest tests/
 ```
 
@@ -312,7 +313,7 @@ ruff format scripts services utils app tests && \
 ## 9. Roadmap (no en esta iteracion)
 
 ### Completado
-- F0: routers modulares extraidos de scripts/api.py
+- F0: routers modulares extraidos de src/iptv_api/main.py
 - F1: paquete iptv-db creado
 - F2: iptv-api importa modelos de iptv-db via shims
 - F4a: pre-commit + GitHub Actions CI
@@ -321,9 +322,9 @@ ruff format scripts services utils app tests && \
 ### Pendiente
 1. ~~Activar pre-commit~~ (hecho en F4a)
 2. ~~CI en GitHub Actions~~ (hecho en F4a)
-3. Migrar los 4 modulos de `services/` legacy a `app/services/`.
-4. Crear `app/core/` y mover `utils/config.py`, `utils/exceptions.py`
-   y un futuro `utils/security.py`.
+3. Migrar los 4 modulos de `services/` legacy a `src/iptv_api/services/`.
+4. ~~Crear `src/iptv_api/core/` y mover `src/iptv_api/core/config.py`, `src/iptv_api/core/exceptions.py`~~ (hecho en F6a)
+   y un futuro `src/iptv_api/core/security.py`.
 5. Versionado explicito de API (`/api/v1/...`, `/api/v2/...`) antes
    del siguiente breaking change.
 
