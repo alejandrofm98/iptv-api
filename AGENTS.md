@@ -2,7 +2,7 @@
 
 > Guia para agentes de codigo que trabajen en iptv-api y en su ecosistema
 > de proyectos hermanos (scrapper, Android, web). Secciones 0-3 son
-> contexto obligatorio antes de tocar nada. Secciones 4-13 son referencia
+> contexto obligatorio antes de tocar nada. Secciones 4-14 son referencia
 > operativa.
 
 ## 0. Ecosistema y posicion del proyecto
@@ -356,6 +356,7 @@ despliega automaticamente el nuevo codigo en produccion.
 6. Probaste el endpoint afectado con `curl` o Postman (minimo: 200/401/403/404 segun aplique).
 7. Sin secretos en el diff (`git diff --staged | grep -iE 'key|secret|token|password'`).
 8. Sin emojis en codigo, comentarios ni docs.
+9. Verificar deploy post-push (ver seccion 14).
 
 ## 12. Acceso a base de datos
 
@@ -411,4 +412,70 @@ TOKEN=$(curl -s -X POST "$Test_API_BASE_URL/api/auth/login" \
 # Home catalog
 curl -s "$API_BASE_URL/api/home?country=ES&page_size=3" \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+
+## 14. Verificacion de deploy post-push
+
+Dokploy detecta pushes y redesplega automaticamente. Despues de cada push a la branch
+principal, verificar que el deploy fue exitoso.
+
+### Acceso al server de Dokploy
+
+El server de Dokploy es accesible via SSH usando un alias configurado en `~/.ssh/config`
+(alias: `pro`). El orquestador puede acceder cuando se lo pidas explicitamente.
+
+**No commitees** informacion sensible sobre el server (IPs, paths de claves, etc.) en este
+AGENTS.md. Si necesitas ver que comandos usar, consulta la config SSH local o pregunta al
+orquestador.
+
+### Checklist post-push
+
+Despues de hacer push a la branch principal (`master` o `migracion-sqlalchemy-v2` segun
+el caso):
+
+- [ ] Esperar 1-2 minutos para que Dokploy detecte el push
+- [ ] Verificar que el deploy fue exitoso (ver "Comandos utiles" abajo)
+- [ ] Si hay errores, pedirle al orquestador que investigue via SSH y proponga un fix
+- [ ] Si el fix es trivial, aplicarlo, commitear, pushear
+- [ ] Verificar que el siguiente deploy (triggered por el push del fix) ahora funcione
+
+### Comandos utiles (via SSH como `pro`)
+
+```bash
+# Ver el ultimo log de deploy de una app
+ssh pro "ls -t /etc/dokploy/logs/<app-name>/ | head -1 | xargs -I {} cat /etc/dokploy/logs/<app-name>/{}"
+
+# Ver el estado actual de los containers
+ssh pro "docker ps -a --format 'table {{.Names}}\t{{.Status}}' | grep iptv-api"
+
+# Ver logs en vivo de un container
+ssh pro "docker logs --tail 50 <container-name>"
+
+# Ver logs de un cron especifico (Ofelia, si aplica)
+ssh pro "journalctl -u ofelia-scheduler --since '10 minutes ago'"
+```
+
+Reemplazar `<app-name>` y `<container-name>` segun corresponda:
+- **App name en Dokploy**: `walactv-iptv-dybukd`
+- **Containers**: `iptv-api`, `iptv-nginx`, `video-extractor`
+
+### Errores comunes en deploys
+
+| Error | Causa | Fix |
+|-------|-------|-----|
+| `ModuleNotFoundError: No module named 'iptv_db'` | Falta `iptv-db` en requirements | Agregar `iptv-db @ git+https://...` a `requirements.txt` |
+| `fatal: remote error: upload-pack: not our ref <hash>` | Hash de iptv-db incorrecto | Verificar hash via `git ls-remote origin main` en iptv-db y corregir |
+| `Cannot find command 'git'` en Docker | Falta `git` en el Dockerfile | Agregar `git` al `apt-get install -y` (Debian) o `apk add --no-cache` (Alpine) |
+| Container `Up` pero endpoints devuelven 500 | Variable de entorno faltante o BD no accesible | Verificar `docker logs` del container y env vars en Dokploy |
+
+### Auto-correccion via orquestador
+
+Si queres que el orquestador verifique el deploy por vos:
+1. Decile "verifica el deploy de iptv-api"
+2. El orquestador se conecta via SSH y lee los logs
+3. Si hay errores, los analiza y propone un fix
+4. Vos decis si aplicar el fix o no
+5. El orquestador commitearia y pushearia solo si vos lo autorizas
+
+NO dar acceso automatico al orquestador sin autorizacion explicita. El orquestador solo
+actua cuando se le pide.
 ```
