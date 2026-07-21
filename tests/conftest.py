@@ -40,7 +40,7 @@ def app_settings(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     Devuelve un MagicMock que se puede pasar a servicios que esperan
     ``Settings``. Cada test puede sobreescribir atributos especificos.
     """
-    from utils.config import Settings
+    from iptv_api.core.config import Settings
 
     settings = MagicMock(spec=Settings)
     settings.SUPABASE_URL = "https://test.supabase.co"
@@ -74,8 +74,8 @@ def client(db_session: MagicMock, app_settings: MagicMock) -> Iterator[Any]:
     """
     from fastapi.testclient import TestClient
 
-    from scripts.api import app
-    from utils import dependencies
+    from iptv_api.core import dependencies
+    from iptv_api.main import app
 
     def _override_get_db() -> Iterator[MagicMock]:
         try:
@@ -98,7 +98,7 @@ def stub_content_service() -> Any:
     Replica exactamente el ``StubContentService`` que vivia dentro de
     ``test_android_catalog_api.py``. Muevelo aqui para reutilizar.
     """
-    from app.services.content_service import ContentServiceV2  # noqa: F401
+    from iptv_api.services.content_service import ContentServiceV2  # noqa: F401
 
     class StubContentService:
         """Devuelve datos fijos sin tocar DB."""
@@ -116,7 +116,7 @@ def stub_content_service() -> Any:
                 "total": 0,
             }
 
-    from utils import dependencies as _dep
+    from iptv_api.core import dependencies as _dep
 
     app = _get_app()
     app.dependency_overrides[_dep.get_content_service_v2] = lambda: StubContentService()
@@ -124,6 +124,6 @@ def stub_content_service() -> Any:
 
 
 def _get_app() -> Any:
-    from scripts.api import app
+    from iptv_api.main import app
 
     return app

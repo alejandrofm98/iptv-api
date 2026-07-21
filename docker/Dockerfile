@@ -27,10 +27,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copiar código fuente
 # Copiamos desde el contexto raíz del proyecto
-COPY app/ /app/app/
-COPY services/ /app/services/
-COPY utils/ /app/utils/
-COPY scripts/ /app/scripts/
+COPY src/ /app/
 COPY resources/ /app/resources/
 
 # Crear directorios necesarios
@@ -44,4 +41,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=5 \
     CMD curl -f http://localhost:3010/health || exit 1
 
 # Comando por defecto
-CMD ["uvicorn", "scripts.api:app", "--host", "0.0.0.0", "--port", "3010"]
+CMD ["uvicorn", "iptv_api.main:app", "--host", "0.0.0.0", "--port", "3010"]

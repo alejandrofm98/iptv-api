@@ -1,13 +1,13 @@
 from fastapi.testclient import TestClient
 
-from scripts.api import app
-from utils.dependencies import (
+from iptv_api.core.dependencies import (
     get_calendar_service_v2,
     get_channel_favorites_service_v2,
     get_content_service_v2,
     require_auth_with_jwt,
 )
-from utils.models import AuthResult
+from iptv_api.core.models import AuthResult
+from iptv_api.main import app
 
 
 class StubContentService:

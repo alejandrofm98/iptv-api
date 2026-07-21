@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from app.services.watch_progress_service import WatchProgressServiceV2
+from iptv_api.services.watch_progress_service import WatchProgressServiceV2
 
 
 def make_progress_row(

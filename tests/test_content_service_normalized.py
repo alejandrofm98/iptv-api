@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from app.services.content_service import ContentServiceV2
+from iptv_api.services.content_service import ContentServiceV2
 
 
 def make_service() -> ContentServiceV2:

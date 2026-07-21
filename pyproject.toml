@@ -5,10 +5,14 @@ description = "IPTV API: users, devices, content catalog, HLS stream proxy"
 requires-python = ">=3.12"
 readme = "README.md"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["iptv_api*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["scripts", "services", "utils", "app", "tests"]
+src = ["src", "tests"]
 extend-exclude = [
     "data/m3u",
     ".venv",
@@ -31,12 +35,12 @@ ignore = [
 unfixable = ["B"]
 
 [tool.ruff.lint.per-file-ignores]
-"scripts/api.py" = ["B008", "E402", "F401", "F811"]
+"src/iptv_api/main.py" = ["B008", "E402", "F401", "F811"]
 "tests/*" = ["B011", "B017", "E402"]
 "video-extractor-service/*" = ["ALL"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "services", "utils", "scripts"]
+known-first-party = ["iptv_api"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -58,22 +62,22 @@ exclude = [
 ]
 
 [[tool.mypy.overrides]]
-module = "scripts.api"
+module = "iptv_api.main"
 ignore_errors = true
-# Monolito de 2256 lineas, se migrara a app/routers/ en roadmap
+# F6a: entry point moved from scripts/api.py
 
 [[tool.mypy.overrides]]
 module = "tests.*"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = ["services.bulk_insert", "services.transcode_service", "services.video_extractor_service", "services.resilience_service"]
+module = ["iptv_api.services.*"]
 ignore_errors = true
-# Legacy services, se migran a app/services/ en roadmap
+# Services migrated to src/iptv_api/services/ in F5c
 
 [tool.vulture]
 min_confidence = 80
-paths = ["scripts", "services", "utils", "app"]
+paths = ["src/iptv_api"]
 sort_by_size = true
 
 [tool.pytest.ini_options]
@@ -94,13 +98,13 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["scripts", "services", "utils", "app"]
+source = ["src"]
 omit = [
     "*/__pycache__/*",
     "*/tests/*",
     "*/.venv/*",
     "video-extractor-service/*",
-    "scripts/api.py",  # monolito cubierto por tests de integracion
+    "src/iptv_api/main.py",  # F6a: entry point
 ]
 
 [tool.coverage.report]
