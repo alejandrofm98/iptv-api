@@ -2,12 +2,12 @@
 
 > Guia para agentes de codigo que trabajen en iptv-api y en su ecosistema
 > de proyectos hermanos (scrapper, Android, web). Secciones 0-3 son
-> contexto obligatorio antes de tocar nada. Secciones 4-10 son referencia
+> contexto obligatorio antes de tocar nada. Secciones 4-13 son referencia
 > operativa.
 
 ## 0. Ecosistema y posicion del proyecto
 
-iptv-api es el nodo central de un ecosistema de 3 proyectos hermanos del mismo owner (`alejandrofm98`).
+iptv-api es el nodo central de un ecosistema de 4 proyectos hermanos del mismo owner (`alejandrofm98`).
 
 ```
    +-------------+        +-------------+
@@ -39,7 +39,8 @@ iptv-api es el nodo central de un ecosistema de 3 proyectos hermanos del mismo o
 
 | Proyecto           | Rol                  | Stack                                | Repo                                                 | Relacion con iptv-api                                              |
 | ------------------ | -------------------- | ------------------------------------ | ---------------------------------------------------- | ----------------------------------------------------------------- |
-| walactv-scrapper   | Productor catalogos  | Python 3.12, asyncpg, Ofelia, Ansible| `github.com/alejandrofm98/walactv-scrapper`         | Escribe JSONs en `../walactv-scrapper/data/json/` y en `scraper_failures` (ver 4.3) |
+| walactv-scrapper   | Productor catalogos  | Python 3.12, SQLAlchemy 2.0, Ofelia, Ansible| `github.com/alejandrofm98/walactv-scrapper`         | Escribe JSONs en `../walactv-scrapper/data/json/` y en `scraper_failures` (ver 4.3) |
+| iptv-db            | ORM compartido       | Python 3.12, SQLAlchemy 2.0, Alembic | `github.com/alejandrofm98/iptv-db`                   | iptv-api y scrapper importan sus modelos                          |
 | WalacTV (Android)  | Cliente TV           | Kotlin, Android TV                   | `github.com/alejandrofm98/WalacTV`                   | Consume endpoints REST de 4.1 + HLS con perfil `chromecast`       |
 | walactvWeb         | Cliente web          | Angular 20                           | `github.com/alejandrofm98/walactvWeb`                | Consume endpoints REST + HLS con perfil `web`                     |
 
@@ -50,14 +51,14 @@ iptv-api es el nodo central de un ecosistema de 3 proyectos hermanos del mismo o
 ## 1. Contexto rapido
 
 - **Stack**: FastAPI 0.128, Pydantic 2.12, SQLAlchemy 2.0, alembic,
-  psycopg2-binary, bcrypt, httpx, yt-dlp, curl_cffi.
-- **Puerto local**: `3010`. **Entry point**: `scripts/api.py` (2256
-  lineas, monolito legacy que monta routers y lifespan).
+  `iptv-db @ git+https://...` (instalado via pip), bcrypt, httpx, yt-dlp, curl_cffi.
+- **Puerto local**: `3010`. **Entry point**: `scripts/api.py` (209
+  lineas). El grueso de los routers esta en `app/routers/` (12 archivos, F0).
 - **Lifespan**: `scripts/api.py:138-175` — pre-carga cache de streams
   y arranca background tasks de cleanup.
-- **BD**: Postgres directo (psycopg2) o Supabase (cliente HTTP). Modelos
-  en `app/models/`, esquema en `app/schemas/`, migraciones en
-  `alembic/versions/`.
+- **BD**: Postgres directo via SQLAlchemy 2.0. Los modelos ORM viven
+  en `iptv_db` (paquete instalado). `app/models/` contiene shims que
+  re-exportan desde `iptv_db.models.*`. Migraciones en `iptv-db/alembic/versions/`.
 - **Auth**: JWT propio (`API_SECRET_KEY`, `JWT_SECRET`) + bcrypt para
   passwords. Dispositivos y sesiones viven en `app/services/`.
 
@@ -73,11 +74,12 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 ```
 app/
-  models/        # ORM SQLAlchemy 2.0
+  models/        # Shims que re-exportan desde iptv_db.models
+  routers/       # 12 archivos de routers (F0)
   repositories/  # Acceso a datos por entidad
   services/      # Logica de negocio
-  schemas/       # DTOs Pydantic (request/response)
-  database.py    # Engine + session factory
+  schemas/       # DTOs Pydantic (request/response API)
+  database.py    # Engine + session factory (usa iptv_db internamente)
   core/          # (en construccion) config, security, exceptions
 ```
 
@@ -211,6 +213,10 @@ El scrapper es upstream. iptv-api consume su output.
   health-checks mutuos.
 - **Variables de entorno comunes**: `IPTV_API_URL=http://localhost:3010`,
   `API_SECRET_KEY` (mismo valor en ambos lados).
+- **Schema de BD**: La fuente unica de verdad para el schema es `iptv-db/alembic/versions/`.
+  iptv-api NO mantiene sus propias migraciones. Las migraciones legacy
+  en `iptv-api/alembic/versions/` (3 archivos) son solo referencia
+  historica — eliminarlas despues de verificar F1.5 en staging.
 
 ### 4.4 Checklist de breaking change
 
@@ -270,8 +276,7 @@ pytest tests/
 
 ### 6.3 Pre-commit y CI
 
-NO estan configurados todavia. Roadmap en 9. Mientras tanto: correr
-los comandos de 6.1 manualmente antes de cada PR.
+Configurados en F4a. Instalar local: `pre-commit install`. CI: ver `.github/workflows/ci.yml`.
 
 ### 6.4 Como correr TODO
 
@@ -306,18 +311,35 @@ ruff format scripts services utils app tests && \
 
 ## 9. Roadmap (no en esta iteracion)
 
-1. Activar pre-commit (`pre-commit install`) con ruff + mypy + vulture.
-2. CI en GitHub Actions corriendo 6.4 en cada PR.
+### Completado
+- F0: routers modulares extraidos de scripts/api.py
+- F1: paquete iptv-db creado
+- F2: iptv-api importa modelos de iptv-db via shims
+- F4a: pre-commit + GitHub Actions CI
+- F1.5: Alembic unificado en iptv-db
+
+### Pendiente
+1. ~~Activar pre-commit~~ (hecho en F4a)
+2. ~~CI en GitHub Actions~~ (hecho en F4a)
 3. Migrar los 4 modulos de `services/` legacy a `app/services/`.
 4. Crear `app/core/` y mover `utils/config.py`, `utils/exceptions.py`
    y un futuro `utils/security.py`.
 5. Versionado explicito de API (`/api/v1/...`, `/api/v2/...`) antes
    del siguiente breaking change.
 
+### Cancelado
+- F4b: tests con testcontainers (no aportaba valor al refactor)
+
 ## 10. Despliegue (Dokploy)
 
 Este proyecto usa **Dokploy** para despliegue continuo. Cada `git push` a `master`
 despliega automaticamente el nuevo codigo en produccion.
+
+- **Branch principal**: `master` (codigo legacy, asyncpg)
+- **Branch de migracion**: `migracion-sqlalchemy-v2` (codigo nuevo, usa iptv-db)
+- **Dokploy esta configurado en `master`** — el codigo de `migracion-sqlalchemy-v2`
+  se pushea pero NO se deploya automaticamente. Para activarlo: mergear a `master`
+  despues de validar en staging.
 
 - **NO es necesario** hacer deploy manual, SSH al servidor, docker compose, etc.
 - **Solo hacer `git push`** — Dokploy detecta el push y reconstruye + reinicia el contenedor.
@@ -336,6 +358,9 @@ despliega automaticamente el nuevo codigo en produccion.
 8. Sin emojis en codigo, comentarios ni docs.
 
 ## 12. Acceso a base de datos
+
+Los modelos ORM y las migraciones viven en `iptv-db/`. Ver `iptv-db/AGENTS.md`
+para detalles sobre como agregar columnas, generar migraciones, etc.
 
 Para verificar datos en Postgres, usar `pgcli` (instalado en el sistema).
 
