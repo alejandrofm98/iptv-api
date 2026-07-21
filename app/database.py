@@ -1,4 +1,4 @@
-from iptv_db.models.base import Base  # noqa: F401 — re-export, used by alembic & repos
+from iptv_db.models.base import Base  # noqa: F401 — re-export, used by repos
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 

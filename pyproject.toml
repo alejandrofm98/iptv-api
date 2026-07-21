@@ -11,7 +11,6 @@ target-version = "py312"
 src = ["scripts", "services", "utils", "app", "tests"]
 extend-exclude = [
     "data/m3u",
-    "alembic/versions",
     ".venv",
     "video-extractor-service",
 ]
@@ -33,7 +32,6 @@ unfixable = ["B"]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/api.py" = ["B008", "E402", "F401", "F811"]
-"alembic/env.py" = ["E402", "F401"]
 "tests/*" = ["B011", "B017", "E402"]
 "video-extractor-service/*" = ["ALL"]
 
@@ -54,7 +52,6 @@ disallow_untyped_defs = false
 no_implicit_optional = true
 show_error_codes = true
 exclude = [
-    "alembic/versions/",
     "video-extractor-service/",
     ".venv/",
     "data/m3u/",
@@ -102,7 +99,6 @@ omit = [
     "*/__pycache__/*",
     "*/tests/*",
     "*/.venv/*",
-    "alembic/*",
     "video-extractor-service/*",
     "scripts/api.py",  # monolito cubierto por tests de integracion
 ]
