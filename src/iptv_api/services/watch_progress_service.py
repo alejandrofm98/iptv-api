@@ -82,18 +82,31 @@ class WatchProgressServiceV2:
         return self.wp_repo.delete_episode(user_id, content_id, season, episode)
 
     def set_is_watched(self, user_id: str, content_id: str, is_watched: bool, season: int | None = None, episode: int | None = None) -> bool:
+        content_type = self._extract_content_type_prefix(content_id)
         if season is not None or episode is not None:
             canonical = self._canonical_content_id(None, content_id)
-            return self.wp_repo.mark_watched(user_id, canonical, is_watched, season=season, episode=episode) is not None
+            return self.wp_repo.mark_watched(
+                user_id, canonical, is_watched, season=season, episode=episode, content_type=content_type
+            ) is not None
         rows = self._lookup_rows(user_id, content_id)
         if not rows:
             canonical = self._canonical_content_id(None, content_id)
-            return self.wp_repo.mark_watched(user_id, canonical, is_watched) is not None
+            return self.wp_repo.mark_watched(user_id, canonical, is_watched, content_type=content_type) is not None
         result = False
         for row in rows:
-            if self.wp_repo.mark_watched(user_id, row.content_id, is_watched):
+            if self.wp_repo.mark_watched(
+                user_id, row.content_id, is_watched, content_type=row.content_type
+            ):
                 result = True
         return result
+
+    @staticmethod
+    def _extract_content_type_prefix(content_id: str) -> str | None:
+        if ":" in content_id:
+            prefix = content_id.split(":", 1)[0]
+            if prefix in ("movie", "series"):
+                return prefix
+        return None
 
     def is_series_complete(self, user_id: str, series_name: str) -> bool:
         last = self.wp_repo.get_series_last_episode(user_id, series_name)

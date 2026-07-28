@@ -164,7 +164,7 @@ def test_set_is_watched_with_season_episode_calls_repo_with_params():
 
     assert result is True
     service._canonical_content_id.assert_called_once_with(None, "series:777")
-    service.wp_repo.mark_watched.assert_called_once_with("user-1", "series:777", True, season=1, episode=2)
+    service.wp_repo.mark_watched.assert_called_once_with("user-1", "series:777", True, season=1, episode=2, content_type="series")
 
 
 def test_set_is_watched_without_season_episode_uses_lookup_rows():
@@ -178,4 +178,4 @@ def test_set_is_watched_without_season_episode_uses_lookup_rows():
 
     assert result is True
     service._lookup_rows.assert_called_once_with("user-1", "movie:2053693")
-    service.wp_repo.mark_watched.assert_called_once_with("user-1", progress_row.content_id, True)
+    service.wp_repo.mark_watched.assert_called_once_with("user-1", progress_row.content_id, True, content_type="movie")

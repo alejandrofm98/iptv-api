@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import and_, delete, desc, func, select
@@ -116,11 +117,38 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         self.session.flush()
         return result.rowcount > 0
 
-    def mark_watched(self, user_id: str, content_id: str, is_watched: bool, season: int | None = None, episode: int | None = None) -> WatchProgress | None:
+    def mark_watched(
+        self,
+        user_id: str,
+        content_id: str,
+        is_watched: bool,
+        season: int | None = None,
+        episode: int | None = None,
+        content_type: str | None = None,
+    ) -> WatchProgress | None:
         wp = self.get_by_user_and_content(user_id, content_id, season=season, episode=episode)
         if wp:
             wp.is_watched = is_watched  # type: ignore[assignment]
             self.session.flush()
+            return wp
+        if not is_watched:
+            return None
+        # No row exists — create one with is_watched=True
+        wp = WatchProgress(
+            user_id=user_id,
+            content_id=content_id,
+            content_type=content_type or "movie",
+            is_watched=True,
+            position_ms=0,
+            duration_ms=0,
+            title="",
+            image_url="",
+            season_number=season,
+            episode_number=episode,
+            last_watched_at=datetime.now(UTC),
+        )
+        self.session.add(wp)
+        self.session.flush()
         return wp
 
     def get_all_for_user_and_series(
