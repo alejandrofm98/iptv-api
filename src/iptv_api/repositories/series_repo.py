@@ -396,6 +396,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         search: str | None = None,
         year: int | None = None,
         genre: str | None = None,
+        sort_by: str | None = None,
     ) -> dict[str, Any]:
         filters: list[str] = []
         params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
@@ -426,6 +427,11 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         count_sql = f"SELECT COUNT(DISTINCT COALESCE(sc.tmdb_id, sc.id::text)) AS total FROM series_catalog sc {count_join} {where_clause}"
         total = self.session.execute(text(count_sql), params).scalar() or 0
 
+        inner_order = (
+            "sm.release_date DESC NULLS LAST, sc.created_at DESC"
+            if sort_by == "release_date"
+            else "COALESCE(sc.tmdb_id, sc.id::text) NULLS LAST, sc.created_at DESC"
+        )
         data_sql = f"""
             SELECT * FROM (
                 SELECT DISTINCT ON (COALESCE(sc.tmdb_id, sc.id::text))
@@ -446,7 +452,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 FROM series_catalog sc
                 LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
                 {where_clause}
-                ORDER BY COALESCE(sc.tmdb_id, sc.id::text) NULLS LAST, sc.created_at DESC
+                ORDER BY {inner_order}
             ) sub
             ORDER BY sub.release_date DESC NULLS LAST
             LIMIT :limit OFFSET :offset
@@ -458,3 +464,56 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             "page": page,
             "page_size": page_size,
         }
+
+    def get_trending_series(
+        self,
+        page: int = 1,
+        page_size: int = 24,
+        country: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Get series that are trending, cross-referenced with catalog."""
+        params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+
+        conditions: list[str] = [
+            "tr.trending_window = 'week'",
+            "tr.media_type = 'tv'",
+        ]
+        if country:
+            conditions.append(":country = ANY(sc.countries)")
+            params["country"] = country
+        where_clause = "WHERE " + " AND ".join(conditions)
+
+        count_sql = f"""
+            SELECT COUNT(*) AS total
+            FROM trending_rankings tr
+            JOIN series_catalog sc ON sc.tmdb_id = tr.tmdb_id
+            {where_clause}
+        """
+        total = self.session.execute(text(count_sql), params).scalar() or 0
+
+        data_sql = f"""
+            SELECT DISTINCT ON (sc.tmdb_id)
+                sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.countries,
+                sc.group_normalizado, sc.logo, sc.provider_id,
+                sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
+                sm.genres, sm.backdrop_path, sm.poster_path,
+                sm.title AS tmdb_title, sm.release_date, sm.popularity,
+                sm.status, sm.imdb_id,
+                tr.rank AS trending_rank,
+                COALESCE(
+                    (SELECT COUNT(DISTINCT se.id) FROM series_episodes se WHERE se.catalog_id = sc.id),
+                    0
+                ) AS total_episodes,
+                COALESCE(
+                    (SELECT COUNT(DISTINCT se.season_number) FROM series_episodes se WHERE se.catalog_id = sc.id),
+                    0
+                ) AS total_seasons
+            FROM trending_rankings tr
+            JOIN series_catalog sc ON sc.tmdb_id = tr.tmdb_id
+            LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
+            {where_clause}
+            ORDER BY sc.tmdb_id NULLS LAST, tr.rank ASC
+            LIMIT :limit OFFSET :offset
+        """
+        rows = self.session.execute(text(data_sql), params).mappings().all()
+        return [dict(r) for r in rows], total

@@ -14,13 +14,13 @@ import requests
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from iptv_api.core.config import get_settings
 from iptv_api.repositories.channel_repo import ChannelRepository
 from iptv_api.repositories.config_repo import SyncMetadataRepository
 from iptv_api.repositories.content_repo import ContentRepository
 from iptv_api.repositories.replay_repo import ReplayRepository
 from iptv_api.repositories.series_repo import SeriesRepository
 from iptv_api.repositories.watch_progress_repo import WatchProgressRepository
-from iptv_api.core.config import get_settings
 
 logger = logging.getLogger("iptv-api")
 
@@ -56,7 +56,8 @@ class ContentServiceV2:
 
     SECTION_PATTERNS: dict[str, list[dict[str, Any]]] = {
         "movies": [
-            {"title": "2026 ESTRENOS", "year": 2026},
+            {"title": "TENDENCIAS", "type": "trending", "language_country": True},
+            {"title": "2026 ESTRENOS", "year": 2026, "sort_by": "release_date", "language_country": True},
             {"title": "2025 ESTRENOS", "year": 2025},
             {"title": "PRIME", "group": "PRIME", "country": "ES"},
             {"title": "NETFLIX", "pattern": "NETFLIX"},
@@ -64,6 +65,8 @@ class ContentServiceV2:
             {"title": "DISNEY+", "pattern": "DISNEY"},
         ],
         "series": [
+            {"title": "TENDENCIAS", "type": "trending", "language_country": True},
+            {"title": "2026 ESTRENOS", "year": 2026, "sort_by": "release_date", "language_country": True},
             {"title": "PRIME", "group": "PRIME", "country": "ES"},
             {"title": "DISNEY+", "pattern": "DISNEY"},
             {"title": "NETFLIX", "pattern": "NETFLIX"},
@@ -806,6 +809,7 @@ class ContentServiceV2:
         search: str | None = None,
         year: int | None = None,
         genre: str | None = None,
+        sort_by: str | None = None,
     ) -> tuple[list[dict], int]:
         rows, total = self.content_repo.get_movies_catalog_page(
             page=page,
@@ -816,6 +820,7 @@ class ContentServiceV2:
             search=search,
             year=year,
             genre=genre,
+            sort_by=sort_by,
         )
         # Ensure countries field is populated from stream data if missing
         for row in rows:
@@ -848,6 +853,7 @@ class ContentServiceV2:
         search: str | None = None,
         year: int | None = None,
         genre: str | None = None,
+        sort_by: str | None = None,
     ) -> dict:
         result = self.series_repo.get_distinct_series_groups_catalog(
             page=page,
@@ -858,6 +864,7 @@ class ContentServiceV2:
             search=search,
             year=year,
             genre=genre,
+            sort_by=sort_by,
         )
         items = result.get("items") or []
         for row in items:
@@ -876,12 +883,24 @@ class ContentServiceV2:
         country: str | None,
         watched_movie_ids: set[str] | None = None,
         watched_series_names: set[str] | None = None,
+        sort_by: str | None = None,
     ) -> tuple[list[dict], int]:
         use_upper_group = "group" in gp
         group_filter = gp.get("pattern") if not use_upper_group else None
         upper_group = gp.get("group") if use_upper_group else None
-        effective_country = country or gp.get("country")
+        effective_country = country if gp.get("language_country") else (country or gp.get("country"))
         year = gp.get("year")
+        sort_by = sort_by or gp.get("sort_by")
+        if gp.get("type") == "trending":
+            if content_type == "series":
+                items, total = self.series_repo.get_trending_series(
+                    page=page, page_size=page_size, country=effective_country,
+                )
+            else:
+                items, total = self.content_repo.get_trending_movies(
+                    page=page, page_size=page_size, country=effective_country,
+                )
+            return items, total
         if content_type == "series":
             result = self._get_distinct_series_groups_catalog_raw(
                 page=page,
@@ -891,6 +910,7 @@ class ContentServiceV2:
                 country=effective_country,
                 search=None,
                 year=year,
+                sort_by=sort_by,
             )
             raw_items = result.get("items") or []
             total = result.get("total", 0)
@@ -907,6 +927,7 @@ class ContentServiceV2:
                 country=effective_country,
                 search=None,
                 year=year,
+                sort_by=sort_by,
             )
             if items_cat:
                 return [
@@ -939,6 +960,7 @@ class ContentServiceV2:
                 country=country,
                 watched_movie_ids=watched_movie_ids,
                 watched_series_names=watched_series_names,
+                sort_by=gp.get("sort_by"),
             )
             if items:
                 pages = (total + page_size - 1) // page_size if total > 0 else 0
@@ -1581,6 +1603,7 @@ class ContentServiceV2:
         gp = next((p for p in patterns if p["title"].upper() == section_title.upper()), None)
         if not gp:
             return None
+        sort_by = gp.get("sort_by")
         items, total = self._fetch_section_page(
             content_type=content_type,
             gp=gp,
@@ -1591,6 +1614,7 @@ class ContentServiceV2:
             country=country,
             watched_movie_ids=watched_movie_ids,
             watched_series_names=watched_series_names,
+            sort_by=sort_by,
         )
         pages = (total + page_size - 1) // page_size if total > 0 else 0
         return {

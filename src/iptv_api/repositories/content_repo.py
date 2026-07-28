@@ -268,6 +268,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         search: str | None = None,
         year: int | None = None,
         genre: str | None = None,
+        sort_by: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         filters: list[str] = []
         params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
@@ -297,6 +298,12 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         count_join = "LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id" if genre else ""
         count_sql = f"SELECT COUNT(DISTINCT mc.tmdb_id) AS total FROM movies_catalog mc {count_join} {where_clause}"
         total = self.session.execute(text(count_sql), params).scalar() or 0
+
+        order_clause = (
+            "ORDER BY mm.release_date DESC NULLS LAST, mc.created_at DESC"
+            if sort_by == "release_date"
+            else "ORDER BY mc.tmdb_id NULLS LAST, mc.created_at DESC"
+        )
 
         data_sql = f"""
             SELECT DISTINCT ON (mc.tmdb_id)
@@ -334,7 +341,68 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             FROM movies_catalog mc
             LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
             {where_clause}
-            ORDER BY mc.tmdb_id NULLS LAST, mc.created_at DESC
+            {order_clause}
+            LIMIT :limit OFFSET :offset
+        """
+        rows = self.session.execute(text(data_sql), params).mappings().all()
+        return [dict(r) for r in rows], total
+
+    def get_trending_movies(
+        self,
+        page: int = 1,
+        page_size: int = 24,
+        country: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Get movies that are trending, cross-referenced with catalog."""
+        params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+
+        conditions: list[str] = [
+            "tr.trending_window = 'week'",
+            "tr.media_type = 'movie'",
+        ]
+        if country:
+            conditions.append(":country = ANY(mc.countries)")
+            params["country"] = country
+        where_clause = "WHERE " + " AND ".join(conditions)
+
+        count_sql = f"""
+            SELECT COUNT(*) AS total
+            FROM trending_rankings tr
+            JOIN movies_catalog mc ON mc.tmdb_id = tr.tmdb_id
+            {where_clause}
+        """
+        total = self.session.execute(text(count_sql), params).scalar() or 0
+
+        data_sql = f"""
+            SELECT DISTINCT ON (mc.tmdb_id)
+                mc.id, mc.title, mc.tmdb_id, mc.year, mc.countries,
+                mc.group_normalizado, mc.logo, mc.provider_id,
+                mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
+                mm.genres, mm.backdrop_path, mm.poster_path,
+                mm.title AS tmdb_title, mm.release_date, mm.runtime_minutes,
+                mm.popularity, mm.status, mm.tagline, mm.imdb_id,
+                tr.rank AS trending_rank,
+                COALESCE(
+                    (SELECT jsonb_agg(
+                        jsonb_build_object(
+                            'url', ms.stream_url, 'label', COALESCE(ms.label, ms.country, 'Ver'),
+                            'country', ms.country, 'quality', ms.quality,
+                            'provider_id', ms.provider_id, 'numero', ms.numero
+                        ) ORDER BY
+                            CASE WHEN ms.country = 'ES' THEN 0
+                                 WHEN ms.country = 'EN' THEN 1
+                                 WHEN ms.country = 'LATAM' THEN 2
+                                 ELSE 3 END,
+                            ms.numero ASC
+                    ) FROM movie_streams ms WHERE ms.movie_id = mc.id),
+                    '[]'::jsonb
+                ) AS stream_options,
+                (SELECT COUNT(ms.id) FROM movie_streams ms WHERE ms.movie_id = mc.id) AS stream_count
+            FROM trending_rankings tr
+            JOIN movies_catalog mc ON mc.tmdb_id = tr.tmdb_id
+            LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
+            {where_clause}
+            ORDER BY mc.tmdb_id NULLS LAST, tr.rank ASC
             LIMIT :limit OFFSET :offset
         """
         rows = self.session.execute(text(data_sql), params).mappings().all()

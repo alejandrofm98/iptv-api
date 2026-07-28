@@ -180,7 +180,7 @@ Lista exhaustiva (verificada contra el cliente Kotlin):
   - `GET /api/series/by-id/{id}/episodes` retorna campo opcional `is_watched` por episodio (requiere auth). Backward-compatible: campo ausente si no hay datos de visionado.
 
 - `GET /api/content?...&country=...&page=...&page_size=...`
-- `GET /api/home?country=...`
+- `GET /api/home?country=...` (TENDENCIAS = trending TMDB cross-referenced con catálogo, filtrado por country)
 - `GET /api/calendar/{today}?client=android`
 - `GET /live/{username}/{password}/{channelId}`
 - `GET /movie/{username}/{password}/{providerId}`
@@ -208,6 +208,11 @@ El scrapper es upstream. iptv-api consume su output.
 - **Tabla `scraper_failures`**: modelo en `src/iptv_api/models/scraper.py:11`.
   El scrapper escribe filas; `src/iptv_api/repositories/scraper_repo.py` las
   lee para alertas.
+- **Tabla `trending_rankings`**: modelo en `iptv-db/src/iptv_db/models/trending.py`.
+  El scrapper escribe filas de rankings de TMDB (`/trending/{movie|tv}/week`);
+  `src/iptv_api/repositories/content_repo.py:get_trending_movies` y
+  `src/iptv_api/repositories/series_repo.py:get_trending_series` las leen para
+  alimentar la sección "TENDENCIAS" del home.
 - **Volumen compartido**: `iptv-data` (Docker volume / NFS). Mismo
   path desde ambos contenedores.
 - **Red compartida**: `dokploy-network`. Reservada para futuros
@@ -391,6 +396,7 @@ pgcli -h $PG_HOST -p $PG_PORT -U $PG_USER -d $PG_DATABASE
 | `channels` | Canales en vivo |
 | `watch_progress` | Progreso de visionado por usuario |
 | `scraper_failures` | Fallos del scraper |
+| `trending_rankings` | Rankings TMDB trending (tmdb_id, media_type, rank, trending_window, scraped_at) |
 
 ### Cuidado con IDs
 
