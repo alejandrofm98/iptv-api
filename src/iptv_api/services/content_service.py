@@ -1232,7 +1232,11 @@ class ContentServiceV2:
 
         filters = []
         if event_type:
-            filters.append(Replay.event_type == event_type)
+            # "UFC" es un alias amigable para la union de todos los tipos de evento UFC
+            if event_type.upper() == "UFC":
+                filters.append(Replay.event_type.in_(["fight_night", "numbered", "other"]))
+            else:
+                filters.append(Replay.event_type == event_type)
         if search:
             filters.append(
                 or_(
