@@ -58,19 +58,19 @@ class ContentServiceV2:
         "movies": [
             {"title": "TENDENCIAS", "type": "trending", "language_country": True},
             {"title": "2026 ESTRENOS", "year": 2026, "sort_by": "release_date", "language_country": True},
-            {"title": "2025 ESTRENOS", "year": 2025},
-            {"title": "PRIME", "group": "PRIME", "country": "ES"},
-            {"title": "NETFLIX", "pattern": "NETFLIX"},
-            {"title": "HBO MAX", "pattern": "HBO MAX"},
-            {"title": "DISNEY+", "pattern": "DISNEY"},
+            {"title": "2025 ESTRENOS", "year": 2025, "sort_by": "release_date"},
+            {"title": "PRIME", "group": "PRIME", "country": "ES", "sort_by": "release_date"},
+            {"title": "NETFLIX", "pattern": "NETFLIX", "sort_by": "release_date"},
+            {"title": "HBO MAX", "pattern": "HBO MAX", "sort_by": "release_date"},
+            {"title": "DISNEY+", "pattern": "DISNEY", "sort_by": "release_date"},
         ],
         "series": [
             {"title": "TENDENCIAS", "type": "trending", "language_country": True},
             {"title": "2026 ESTRENOS", "year": 2026, "sort_by": "release_date", "language_country": True},
-            {"title": "PRIME", "group": "PRIME", "country": "ES"},
-            {"title": "DISNEY+", "pattern": "DISNEY"},
-            {"title": "NETFLIX", "pattern": "NETFLIX"},
-            {"title": "HBO", "pattern": "HBO"},
+            {"title": "PRIME", "group": "PRIME", "country": "ES", "sort_by": "release_date"},
+            {"title": "DISNEY+", "pattern": "DISNEY", "sort_by": "release_date"},
+            {"title": "NETFLIX", "pattern": "NETFLIX", "sort_by": "release_date"},
+            {"title": "HBO", "pattern": "HBO", "sort_by": "release_date"},
         ],
     }
 
