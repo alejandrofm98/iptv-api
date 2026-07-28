@@ -300,7 +300,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         total = self.session.execute(text(count_sql), params).scalar() or 0
 
         order_clause = (
-            "ORDER BY mm.release_date DESC NULLS LAST, mc.created_at DESC"
+            "ORDER BY mc.tmdb_id, mm.release_date DESC NULLS LAST, mc.created_at DESC"
             if sort_by == "release_date"
             else "ORDER BY mc.tmdb_id NULLS LAST, mc.created_at DESC"
         )

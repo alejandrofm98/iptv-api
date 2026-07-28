@@ -428,7 +428,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         total = self.session.execute(text(count_sql), params).scalar() or 0
 
         inner_order = (
-            "sm.release_date DESC NULLS LAST, sc.created_at DESC"
+            "sc.tmdb_id, sm.release_date DESC NULLS LAST, sc.created_at DESC"
             if sort_by == "release_date"
             else "COALESCE(sc.tmdb_id, sc.id::text) NULLS LAST, sc.created_at DESC"
         )
