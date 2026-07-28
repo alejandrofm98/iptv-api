@@ -30,6 +30,13 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY src/iptv_api/ /app/iptv_api/
 COPY resources/ /app/resources/
 
+# Clonar iptv-db para migraciones automáticas
+RUN git clone https://github.com/alejandrofm98/iptv-db.git /opt/iptv-db
+
+# Entrypoint con migración automática
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Crear directorios necesarios
 RUN mkdir -p /app/data/m3u
 
@@ -41,4 +48,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=5 \
     CMD curl -f http://localhost:3010/health || exit 1
 
 # Comando por defecto
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "iptv_api.main:app", "--host", "0.0.0.0", "--port", "3010"]
