@@ -163,8 +163,31 @@ def test_set_is_watched_with_season_episode_calls_repo_with_params():
     result = service.set_is_watched("user-1", "series:777", True, season=1, episode=2)
 
     assert result is True
-    service._canonical_content_id.assert_called_once_with(None, "series:777")
-    service.wp_repo.mark_watched.assert_called_once_with("user-1", "series:777", True, season=1, episode=2, content_type="series")
+    service._canonical_content_id.assert_called_once_with("series", "series:777")
+    service.wp_repo.mark_watched.assert_called_once_with(
+        "user-1", "series:777", True, season=1, episode=2, content_type="series"
+    )
+
+
+def test_natural_completion_triggers_preference_cleanup():
+    service = WatchProgressServiceV2(MagicMock())
+    service.wp_repo.mark_watched = MagicMock(return_value=True)
+    service._canonical_content_id = MagicMock(return_value="catalog-id")
+    service._delete_completed_playback_preference = MagicMock()
+
+    result = service.set_is_watched(
+        "user-1",
+        "series:777",
+        True,
+        season=1,
+        episode=2,
+        completed=True,
+    )
+
+    assert result is True
+    service._delete_completed_playback_preference.assert_called_once_with(
+        "user-1", "series", "catalog-id"
+    )
 
 
 def test_set_is_watched_without_season_episode_uses_lookup_rows():
@@ -178,4 +201,6 @@ def test_set_is_watched_without_season_episode_uses_lookup_rows():
 
     assert result is True
     service._lookup_rows.assert_called_once_with("user-1", "movie:2053693")
-    service.wp_repo.mark_watched.assert_called_once_with("user-1", progress_row.content_id, True, content_type="movie")
+    service.wp_repo.mark_watched.assert_called_once_with(
+        "user-1", progress_row.content_id, True, content_type="movie"
+    )

@@ -164,8 +164,11 @@ Lista exhaustiva (verificada contra el cliente Kotlin):
 
 - `POST /api/auth/login`
 - `GET /api/watch-progress`
+- `GET /api/playback-preferences/{movie|series}/{catalog_id}`
+- `PUT /api/playback-preferences/{movie|series}/{catalog_id}`
+- `DELETE /api/playback-preferences/{movie|series}/{catalog_id}`
 - `PUT /api/watch-progress/{id}`
-- `POST /api/watch-progress/{content_id}/mark-watched?season=&episode=` (params opcionales para series)
+- `POST /api/watch-progress/{content_id}/mark-watched?season=&episode=&completed=` (`completed=true` solo al finalizar naturalmente)
 - `POST /api/watch-progress/{content_id}/mark-unwatched?season=&episode=` (params opcionales para series)
 - `GET /api/content/stats?content_type={channels|movies|series}`
 - `GET /api/full/{channels|movies|series}`

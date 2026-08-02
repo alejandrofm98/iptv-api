@@ -142,6 +142,15 @@ curl http://localhost:3010/api/admin/users \
 - `GET /api/calendar/{fecha}`
 - `GET /api/calendar/event/{event_id}`
 
+### Preferencias de reproducción (Bearer)
+
+- `GET /api/playback-preferences/{movie|series}/{catalog_id}`
+- `PUT /api/playback-preferences/{movie|series}/{catalog_id}`
+- `DELETE /api/playback-preferences/{movie|series}/{catalog_id}`
+
+Las preferencias de audio y subtítulos se comparten entre clientes. En series,
+`catalog_id` identifica la serie completa, no un episodio.
+
 ### Streaming
 
 - `GET /get.php`

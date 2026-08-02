@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Query
 
-from iptv_api.services.watch_progress_service import WatchProgressServiceV2
 from iptv_api.core.dependencies import AuthResult as AuthDep
 from iptv_api.core.dependencies import (
     get_watch_progress_service_v2,
@@ -8,6 +7,7 @@ from iptv_api.core.dependencies import (
 )
 from iptv_api.core.exceptions import NotFoundException
 from iptv_api.core.models import WatchProgressUpsert
+from iptv_api.services.watch_progress_service import WatchProgressServiceV2
 
 router = APIRouter()
 
@@ -92,11 +92,19 @@ async def mark_watched(
     content_id: str,
     season: int | None = Query(None, ge=0),
     episode: int | None = Query(None, ge=0),
+    completed: bool = Query(False),
     auth: AuthDep = Depends(require_auth_with_jwt),
     wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Marca un contenido como visto. Requiere Bearer Token."""
-    result = wp_svc.set_is_watched(auth.user_id, content_id, True, season=season, episode=episode)
+    result = wp_svc.set_is_watched(
+        auth.user_id,
+        content_id,
+        True,
+        season=season,
+        episode=episode,
+        completed=completed,
+    )
     return {"content_id": content_id, "is_watched": True, "result": result}
 
 

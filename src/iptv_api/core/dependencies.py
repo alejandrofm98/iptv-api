@@ -12,16 +12,6 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger("iptv-api")
 
 # Imports de app/services deben ir después del logger para configuración temprana
-from iptv_api.database import SessionLocal  # noqa: E402
-from iptv_api.services.calendar_service import CalendarServiceV2  # noqa: E402
-from iptv_api.services.channel_favorites_service import ChannelFavoritesServiceV2  # noqa: E402
-from iptv_api.services.content_service import ContentServiceV2  # noqa: E402
-from iptv_api.services.device_service import DeviceServiceV2  # noqa: E402
-from iptv_api.services.playlist_service import PlaylistServiceV2  # noqa: E402
-from iptv_api.services.stream_service import StreamProxyServiceV2  # noqa: E402
-from iptv_api.services.transcode_service import TranscodeService  # noqa: E402
-from iptv_api.services.user_service import UserServiceV2  # noqa: E402
-from iptv_api.services.watch_progress_service import WatchProgressServiceV2  # noqa: E402
 from iptv_api.core.config import get_settings  # noqa: E402
 from iptv_api.core.exceptions import (  # noqa: E402
     ForbiddenException,
@@ -29,6 +19,17 @@ from iptv_api.core.exceptions import (  # noqa: E402
     UnauthorizedException,
 )
 from iptv_api.core.models import AuthResult  # noqa: E402
+from iptv_api.database import SessionLocal  # noqa: E402
+from iptv_api.services.calendar_service import CalendarServiceV2  # noqa: E402
+from iptv_api.services.channel_favorites_service import ChannelFavoritesServiceV2  # noqa: E402
+from iptv_api.services.content_service import ContentServiceV2  # noqa: E402
+from iptv_api.services.device_service import DeviceServiceV2  # noqa: E402
+from iptv_api.services.playback_preference_service import PlaybackPreferenceService  # noqa: E402
+from iptv_api.services.playlist_service import PlaylistServiceV2  # noqa: E402
+from iptv_api.services.stream_service import StreamProxyServiceV2  # noqa: E402
+from iptv_api.services.transcode_service import TranscodeService  # noqa: E402
+from iptv_api.services.user_service import UserServiceV2  # noqa: E402
+from iptv_api.services.watch_progress_service import WatchProgressServiceV2  # noqa: E402
 
 # Configuración JWT
 settings = get_settings()
@@ -75,6 +76,12 @@ def get_watch_progress_service_v2(
     session: Session = Depends(get_db),
 ) -> WatchProgressServiceV2:
     return WatchProgressServiceV2(session)
+
+
+def get_playback_preference_service(
+    session: Session = Depends(get_db),
+) -> PlaybackPreferenceService:
+    return PlaybackPreferenceService(session)
 
 
 def get_user_service_v2(

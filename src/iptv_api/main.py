@@ -17,6 +17,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from iptv_api.core.config import get_settings
+from iptv_api.core.dependencies import get_transcode_service
 from iptv_api.routers import (
     admin,
     auth,
@@ -25,6 +27,7 @@ from iptv_api.routers import (
     content,
     health,
     logo,
+    playback_preferences,
     replays,
     series,
     streams,
@@ -32,8 +35,6 @@ from iptv_api.routers import (
     watch_progress,
 )
 from iptv_api.services.transcode_service import TranscodeService
-from iptv_api.core.config import get_settings
-from iptv_api.core.dependencies import get_transcode_service
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -194,6 +195,7 @@ app.include_router(content.router)
 app.include_router(channel_favorites.router)
 app.include_router(series.router)
 app.include_router(watch_progress.router)
+app.include_router(playback_preferences.router)
 app.include_router(calendar.router)
 app.include_router(replays.router)
 app.include_router(streams.router)

@@ -7,6 +7,10 @@ from iptv_api.schemas.content import (
     SeriesEpisodeItem,
     SeriesWithMetadata,
 )
+from iptv_api.schemas.playback_preference import (
+    PlaybackPreferenceResponse,
+    PlaybackPreferenceUpdate,
+)
 from iptv_api.schemas.user import UserCreate, UserResponse, UserUpdate
 from iptv_api.schemas.watch_progress import (
     ContinueWatchingItem,
@@ -22,6 +26,8 @@ __all__ = [
     "MovieWithMetadata",
     "PaginatedResponse",
     "PaginationParams",
+    "PlaybackPreferenceResponse",
+    "PlaybackPreferenceUpdate",
     "SeriesCatalogItem",
     "SeriesEpisodeItem",
     "SeriesWithMetadata",

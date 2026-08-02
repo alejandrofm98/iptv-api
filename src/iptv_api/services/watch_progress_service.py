@@ -2,10 +2,12 @@
 
 import re
 from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from iptv_api.repositories.content_repo import ContentRepository
+from iptv_api.repositories.playback_preference_repo import PlaybackPreferenceRepository
 from iptv_api.repositories.series_repo import SeriesRepository
 from iptv_api.repositories.watch_progress_repo import WatchProgressRepository
 
@@ -22,6 +24,7 @@ class WatchProgressServiceV2:
         self.wp_repo = WatchProgressRepository(session)
         self.content_repo = ContentRepository(session)
         self.series_repo = SeriesRepository(session)
+        self.playback_preference_repo = PlaybackPreferenceRepository(session)
 
     def get_continue_watching(self, user_id: str, limit: int = 20) -> list[dict]:
 
@@ -81,24 +84,90 @@ class WatchProgressServiceV2:
     ) -> bool:
         return self.wp_repo.delete_episode(user_id, content_id, season, episode)
 
-    def set_is_watched(self, user_id: str, content_id: str, is_watched: bool, season: int | None = None, episode: int | None = None) -> bool:
+    def set_is_watched(
+        self,
+        user_id: str,
+        content_id: str,
+        is_watched: bool,
+        season: int | None = None,
+        episode: int | None = None,
+        completed: bool = False,
+    ) -> bool:
         content_type = self._extract_content_type_prefix(content_id)
         if season is not None or episode is not None:
-            canonical = self._canonical_content_id(None, content_id)
-            return self.wp_repo.mark_watched(
-                user_id, canonical, is_watched, season=season, episode=episode, content_type=content_type
-            ) is not None
+            content_type = content_type or "series"
+            canonical = self._canonical_content_id(content_type, content_id)
+            result = (
+                self.wp_repo.mark_watched(
+                    user_id,
+                    canonical,
+                    is_watched,
+                    season=season,
+                    episode=episode,
+                    content_type=content_type,
+                )
+                is not None
+            )
+            if result and is_watched and completed:
+                self._delete_completed_playback_preference(user_id, content_type, canonical)
+            return result
         rows = self._lookup_rows(user_id, content_id)
-        if not rows:
-            canonical = self._canonical_content_id(None, content_id)
-            return self.wp_repo.mark_watched(user_id, canonical, is_watched, content_type=content_type) is not None
-        result = False
-        for row in rows:
-            if self.wp_repo.mark_watched(
-                user_id, row.content_id, is_watched, content_type=row.content_type
-            ):
-                result = True
+        if rows:
+            content_type = content_type or rows[0].content_type
+            result = False
+            for row in rows:
+                if self.wp_repo.mark_watched(
+                    user_id, row.content_id, is_watched, content_type=row.content_type
+                ):
+                    result = True
+            if result and is_watched and completed:
+                self._delete_preference_for_identifier(user_id, content_type, content_id)
+            return result
+        if content_type is None:
+            content_type = "movie" if self._find_content_row("movie", content_id) else "series"
+        canonical = self._canonical_content_id(content_type, content_id)
+        result = (
+            self.wp_repo.mark_watched(user_id, canonical, is_watched, content_type=content_type)
+            is not None
+        )
+        if result and is_watched and completed:
+            self._delete_completed_playback_preference(user_id, content_type, canonical)
         return result
+
+    def _delete_preference_for_identifier(
+        self, user_id: str, content_type: str, content_id: str
+    ) -> None:
+        try:
+            row = self._find_content_row(content_type, content_id)
+            if row and row.get("id"):
+                self._delete_completed_playback_preference(user_id, content_type, str(row["id"]))
+        except Exception:
+            return
+
+    def _delete_completed_playback_preference(
+        self, user_id: str, content_type: str, catalog_id: str
+    ) -> None:
+        try:
+            canonical_uuid = UUID(catalog_id)
+        except ValueError:
+            return
+        if content_type == "movie":
+            self.playback_preference_repo.delete_for_content(user_id, "movie", canonical_uuid)
+            return
+        if content_type != "series":
+            return
+        counts = self.series_repo._get_episode_counts(canonical_uuid)
+        total_episodes = int(counts.get("total_episodes") or 0)
+        if total_episodes <= 0:
+            return
+        rows = self.wp_repo.get_all_for_user_and_series(user_id, catalog_id=catalog_id)
+        watched_episodes = {
+            (row.season_number, row.episode_number)
+            for row in rows
+            if row.is_watched and row.season_number is not None and row.episode_number is not None
+        }
+        if len(watched_episodes) >= total_episodes:
+            self.playback_preference_repo.delete_for_content(user_id, "series", canonical_uuid)
 
     @staticmethod
     def _extract_content_type_prefix(content_id: str) -> str | None:

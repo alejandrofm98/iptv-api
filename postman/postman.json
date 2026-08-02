@@ -45,6 +45,12 @@
       "description": "ID de contenido (canal, película o serie)"
     },
     {
+      "key": "catalog_id",
+      "value": "",
+      "type": "text",
+      "description": "UUID de catálogo de película o serie"
+    },
+    {
       "key": "serie_name",
       "value": "",
       "type": "text",
@@ -1620,6 +1626,54 @@
               "raw": "{\n  \"urls\": [\n    \"https://streamtape.com/e/abc123\",\n    \"https://netu.ac/e/def456\"\n  ]\n}"
             },
             "description": "Extrae múltiples URLs en paralelo (máximo 10).\nÚtil cuando un episodio tiene varios espejos/proveedores.\n\nBody: { \"urls\": [\"https://streamtape.com/e/...\", \"https://netu.ac/e/...\"] }\n\nRequiere Bearer Token."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Playback Preferences",
+      "item": [
+        {
+          "name": "Obtener preferencias",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/playback-preferences/movie/{{catalog_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback-preferences", "movie", "{{catalog_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Guardar preferencias",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_language\": \"EN\",\n  \"subtitle_language\": \"EN\",\n  \"subtitles_disabled\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/playback-preferences/movie/{{catalog_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback-preferences", "movie", "{{catalog_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Eliminar preferencias",
+          "request": {
+            "method": "DELETE",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/playback-preferences/movie/{{catalog_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback-preferences", "movie", "{{catalog_id}}"]
+            }
           }
         }
       ]
