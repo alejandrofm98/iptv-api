@@ -626,14 +626,20 @@ class ContentServiceV2:
         return result
 
     def _to_android_series_from_catalog(
-        self, row: dict[str, Any], username: str = "", password: str = "",
+        self,
+        row: dict[str, Any],
+        username: str = "",
+        password: str = "",
         watched_series_names: set[str] | None = None,
+        allow_english_overview: bool = True,
     ) -> dict[str, Any]:
         serie_name = row.get("title", "")
         normalized_title = serie_name.lower().strip() if serie_name else ""
         original_group = row.get("group_normalizado") or ""
         group = original_group
-        overview = row.get("overview_es") or row.get("overview_en") or ""
+        overview = row.get("overview_es") or (
+            row.get("overview_en") if allow_english_overview else ""
+        )
         poster = row.get("poster_path") or ""
         backdrop = row.get("backdrop_path") or ""
         return {
@@ -681,12 +687,18 @@ class ContentServiceV2:
         }
 
     def _to_android_movie_from_catalog(
-        self, row: dict[str, Any], username: str = "", password: str = "",
+        self,
+        row: dict[str, Any],
+        username: str = "",
+        password: str = "",
         watched_movie_ids: set[str] | None = None,
+        allow_english_overview: bool = True,
     ) -> dict[str, Any]:
         stream_options = row.get("stream_options") or []
         first_stream = stream_options[0] if stream_options else {}
-        overview = row.get("overview_es") or row.get("overview_en") or ""
+        overview = row.get("overview_es") or (
+            row.get("overview_en") if allow_english_overview else ""
+        )
         overview_es = row.get("overview_es") or ""
         poster = row.get("poster_path") or ""
         backdrop = row.get("backdrop_path") or ""
@@ -896,10 +908,30 @@ class ContentServiceV2:
                 items, total = self.series_repo.get_trending_series(
                     page=page, page_size=page_size, country=effective_country,
                 )
+                items = [
+                    self._to_android_series_from_catalog(
+                        item,
+                        username,
+                        password,
+                        watched_series_names=watched_series_names,
+                        allow_english_overview=False,
+                    )
+                    for item in items
+                ]
             else:
                 items, total = self.content_repo.get_trending_movies(
                     page=page, page_size=page_size, country=effective_country,
                 )
+                items = [
+                    self._to_android_movie_from_catalog(
+                        item,
+                        username,
+                        password,
+                        watched_movie_ids=watched_movie_ids,
+                        allow_english_overview=False,
+                    )
+                    for item in items
+                ]
             return items, total
         if content_type == "series":
             result = self._get_distinct_series_groups_catalog_raw(

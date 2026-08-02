@@ -184,6 +184,39 @@ def test_android_movie_item_includes_tmdb_title():
     assert item["tmdb_title"] == "TMDB Movie Uno"
 
 
+def test_trending_movie_without_spanish_overview_uses_home_default_description():
+    service = make_service()
+    service.content_repo.get_trending_movies = MagicMock(
+        return_value=(
+            [
+                {
+                    "id": "movie-1",
+                    "provider_id": "100",
+                    "title": "Movie Uno",
+                    "overview_en": "English description",
+                    "group_normalizado": "Cine",
+                }
+            ],
+            1,
+        )
+    )
+
+    items, total = service._fetch_section_page(
+        content_type="movies",
+        gp={"type": "trending"},
+        page=1,
+        page_size=24,
+        username="",
+        password="",
+        country=None,
+    )
+
+    assert total == 1
+    assert items[0]["description"] == ""
+    assert items[0]["overview"] == ""
+    assert items[0]["overview_en"] == "English description"
+
+
 def test_android_movie_item_uses_tmdb_poster_when_logo_is_placeholder():
     service = make_service()
 
