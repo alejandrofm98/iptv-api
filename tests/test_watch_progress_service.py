@@ -154,6 +154,121 @@ def test_continue_watching_series_includes_tmdb_metadata():
     assert item["total_seasons"] == 4
 
 
+def test_continue_watching_dedupes_series_episodes_to_one_entry():
+    """Varios episodios de la misma serie no deben generar entradas duplicadas."""
+    rows = [
+        make_progress_row(
+            content_id="645757c6-d3bd-4dfa-a6a0-adabf9e640fc",
+            content_type="series",
+            position_ms=616_421,
+            duration_ms=2_583_648,
+            series_name="The Rookie (2018)",
+            season_number=5,
+            episode_number=17,
+        ),
+        make_progress_row(
+            content_id="645757c6-d3bd-4dfa-a6a0-adabf9e640fc",
+            content_type="series",
+            position_ms=479_020,
+            duration_ms=2_561_768,
+            series_name="The Rookie (2018)",
+            season_number=5,
+            episode_number=19,
+        ),
+        make_progress_row(
+            content_id="645757c6-d3bd-4dfa-a6a0-adabf9e640fc",
+            content_type="series",
+            position_ms=1_527,
+            duration_ms=2_581_594,
+            series_name=None,
+            season_number=None,
+            episode_number=None,
+        ),
+    ]
+    rows[0].last_watched_at = "2026-08-03T13:24:02"
+    rows[1].last_watched_at = "2026-08-03T13:32:35"
+    rows[2].last_watched_at = "2026-08-03T13:32:41"
+
+    service = WatchProgressServiceV2(MagicMock())
+    service.wp_repo.get_continue_watching = MagicMock(return_value=rows)
+    service._normalize = MagicMock(
+        side_effect=lambda row: {
+            "content_type": row.content_type,
+            "content_id": "645757c6-d3bd-4dfa-a6a0-adabf9e640fc",
+            "series_name": row.series_name or "The Rookie (2018)",
+            "series_provider_id": "354311",
+            "season_number": row.season_number,
+            "episode_number": row.episode_number,
+            "position_ms": row.position_ms,
+            "duration_ms": row.duration_ms,
+            "last_watched_at": row.last_watched_at,
+            "progress_percent": 20,
+        }
+    )
+
+    items = service.get_continue_watching("user-1", limit=20)
+
+    assert len(items) == 1
+    assert items[0]["season_number"] == 5
+    assert items[0]["episode_number"] == 19
+
+
+def test_continue_watching_keeps_multiple_distinct_movies():
+    rows = [
+        make_progress_row(content_id="movie:111", position_ms=300_000, duration_ms=3_000_000),
+        make_progress_row(content_id="movie:222", position_ms=400_000, duration_ms=4_000_000),
+    ]
+    service = WatchProgressServiceV2(MagicMock())
+    service.wp_repo.get_continue_watching = MagicMock(return_value=rows)
+    service._normalize = MagicMock(
+        side_effect=lambda row: {
+            "content_type": "movie",
+            "content_id": row.content_id,
+            "series_name": None,
+            "series_provider_id": "",
+            "season_number": None,
+            "episode_number": None,
+            "position_ms": row.position_ms,
+            "duration_ms": row.duration_ms,
+            "last_watched_at": None,
+            "progress_percent": 10,
+        }
+    )
+
+    items = service.get_continue_watching("user-1", limit=20)
+
+    assert len(items) == 2
+
+
+def test_continue_watching_series_uses_catalog_title_when_serie_name_missing():
+    """El catálogo real expone `title`, no `serie_name`; la serie debe resolverse igual."""
+    progress_row = make_progress_row(
+        content_id="series:645757c6",
+        content_type="series",
+        position_ms=120_000,
+        duration_ms=1_200_000,
+        title="Old episode",
+        image_url="",
+        series_name=None,
+        season_number=None,
+        episode_number=None,
+    )
+    series_meta = {
+        "content_type": "series",
+        "id": "645757c6-d3bd-4dfa-a6a0-adabf9e640fc",
+        "provider_id": "354311",
+        "title": "The Rookie (2018)",
+        "logo": "",
+    }
+
+    service = make_service_with_mocks(progress_row, series_meta=series_meta)
+
+    item = service.get_continue_watching("user-1", limit=20)[0]
+
+    assert item["series_name"] == "The Rookie (2018)"
+    assert item["series_provider_id"] == "354311"
+
+
 def test_set_is_watched_with_season_episode_calls_repo_with_params():
     """mark-watched with season/episode should call repo.mark_watched with those params."""
     service = WatchProgressServiceV2(MagicMock())

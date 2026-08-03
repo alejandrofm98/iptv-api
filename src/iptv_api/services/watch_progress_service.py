@@ -28,7 +28,7 @@ class WatchProgressServiceV2:
 
     def get_continue_watching(self, user_id: str, limit: int = 20) -> list[dict]:
 
-        rows = self.wp_repo.get_continue_watching(user_id, limit * 3)
+        rows = self.wp_repo.get_continue_watching(user_id, limit * 5)
         if not rows:
             return []
 
@@ -41,9 +41,46 @@ class WatchProgressServiceV2:
             progress = position / duration
             if progress < 0.95:
                 incomplete.append(self._normalize(item))
-                if len(incomplete) >= limit:
-                    break
-        return incomplete
+
+        return self._dedupe_by_series(incomplete)[:limit]
+
+    def _dedupe_by_series(self, items: list[dict]) -> list[dict]:
+        """Collapsa varias filas de la misma serie a una sola entrada
+        (el episodio más reciente con metadatos). Evita duplicados en
+        Continuar viendo y stableIds repetidos en el cliente."""
+        best: dict[str, dict] = {}
+        for item in items:
+            key = self._series_group_key(item)
+            current = best.get(key)
+            if current is None or self._is_better_cw_item(item, current):
+                best[key] = item
+        return list(best.values())
+
+    @staticmethod
+    def _series_group_key(item: dict) -> str:
+        content_type = item.get("content_type")
+        if content_type != "series":
+            return f"movie:{item.get('content_id') or ''}"
+        provider_id = item.get("series_provider_id")
+        if provider_id:
+            return f"series:provider:{provider_id}"
+        content_id = item.get("content_id")
+        if content_id:
+            return f"series:content:{content_id}"
+        series_name = (item.get("series_name") or "").strip().lower()
+        if series_name:
+            return f"series:name:{series_name}"
+        return f"series:unknown:{content_type}"
+
+    @staticmethod
+    def _is_better_cw_item(new_item: dict, old_item: dict) -> bool:
+        def score(item: dict) -> tuple:
+            has_episode = (
+                item.get("season_number") is not None and item.get("episode_number") is not None
+            )
+            return (has_episode, item.get("last_watched_at") or "")
+
+        return score(new_item) > score(old_item)
 
     def get_watched_items(self, user_id: str, limit: int = 100) -> list[dict]:
         rows = self.wp_repo.get_watched_items(user_id, limit)
@@ -211,7 +248,11 @@ class WatchProgressServiceV2:
             self._apply_metadata(normalized, content_type, content_row)
             if content_type == "series":
                 normalized["series_provider_id"] = str(content_row.get("provider_id") or "")
-                normalized["series_name"] = content_row.get("serie_name") or row.series_name
+                normalized["series_name"] = (
+                    content_row.get("serie_name")
+                    or content_row.get("title")
+                    or row.series_name
+                )
                 normalized["season_number"] = (
                     self._safe_int(content_row.get("temporada")) or row.season_number
                 )
