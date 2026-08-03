@@ -246,6 +246,8 @@ class WatchProgressServiceV2:
             )
             normalized["image_url"] = self._image_url(content_row, row, content_type)
             self._apply_metadata(normalized, content_type, content_row)
+            if content_type == "movie":
+                normalized["provider_id"] = str(content_row.get("provider_id") or "")
             if content_type == "series":
                 normalized["series_provider_id"] = str(content_row.get("provider_id") or "")
                 normalized["series_name"] = (

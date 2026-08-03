@@ -1582,7 +1582,7 @@ class ContentServiceV2:
         watched_series_names: set[str] | None = None
         if user_id:
             watched_movie_ids = self.wp_repo.get_watched_movie_content_ids(user_id)
-            watched_series_names = self.wp_repo.get_completed_series_names(user_id)
+            watched_series_names = self.wp_repo.get_watched_series_names(user_id)
         if content_type == "series":
             result = self._get_distinct_series_groups_catalog_raw(
                 page=page,
@@ -1630,7 +1630,7 @@ class ContentServiceV2:
         watched_series_names: set[str] | None = None
         if user_id:
             watched_movie_ids = self.wp_repo.get_watched_movie_content_ids(user_id)
-            watched_series_names = self.wp_repo.get_completed_series_names(user_id)
+            watched_series_names = self.wp_repo.get_watched_series_names(user_id)
         patterns = self.SECTION_PATTERNS.get(content_type, [])
         gp = next((p for p in patterns if p["title"].upper() == section_title.upper()), None)
         if not gp:
@@ -1673,7 +1673,7 @@ class ContentServiceV2:
         watched_series_names: set[str] | None = None
         if user_id:
             watched_movie_ids = self.wp_repo.get_watched_movie_content_ids(user_id)
-            watched_series_names = self.wp_repo.get_completed_series_names(user_id)
+            watched_series_names = self.wp_repo.get_watched_series_names(user_id)
         counts = self.get_content_stats("channels")
         counts.update(self.get_content_stats("movies"))
         counts.update(self.get_content_stats("series"))
@@ -1721,7 +1721,7 @@ class ContentServiceV2:
         watched_series_names: set[str] | None = None
         if user_id:
             watched_movie_ids = self.wp_repo.get_watched_movie_content_ids(user_id)
-            watched_series_names = self.wp_repo.get_completed_series_names(user_id)
+            watched_series_names = self.wp_repo.get_watched_series_names(user_id)
         requested_types = [ct for ct in types if ct in ("channels", "movies", "series", "events")]
         if not requested_types:
             requested_types = ["channels", "movies", "series"]

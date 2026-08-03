@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import and_, delete, desc, func, select
+from sqlalchemy import String, and_, delete, desc, func, select
 from sqlalchemy.orm import Session
 
+from iptv_api.models.content import MovieCatalog
 from iptv_api.models.watch_progress import WatchProgress
 from iptv_api.repositories.base import BaseRepository
 
@@ -194,7 +195,12 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         return self.session.execute(stmt).scalar_one_or_none()
 
     def get_watched_movie_content_ids(self, user_id: str) -> set[str]:
-        """Content IDs de peliculas marcadas como vistas por el usuario."""
+        """Content IDs y provider IDs de peliculas marcadas como vistas por el usuario.
+
+        Los content_ids guardados son los IDs canonicos del catalogo (UUID).
+        El home compara contra provider_id, asi que resolvemos cada content_id
+        a su provider_id para que la coincidencia funcione.
+        """
         stmt = (
             select(WatchProgress.content_id)
             .where(
@@ -205,11 +211,22 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
                 )
             )
         )
-        return {str(row) for row in self.session.execute(stmt).scalars().all()}
+        content_ids = {str(row) for row in self.session.execute(stmt).scalars().all()}
+        if not content_ids:
+            return set()
 
-    def get_completed_series_names(self, user_id: str) -> set[str]:
-        """Series donde todos los episodios iniciados estan vistos:
-        tiene al menos un episodio visto y ninguno sin ver."""
+        provider_stmt = select(MovieCatalog.provider_id).where(
+            MovieCatalog.id.cast(String).in_(list(content_ids))
+        )
+        provider_ids = {str(row) for row in self.session.execute(provider_stmt).scalars().all()}
+        return content_ids | provider_ids
+
+    def get_watched_series_names(self, user_id: str) -> set[str]:
+        """Nombres de series con al menos un episodio marcado como visto.
+
+        Consistente con la lista de "vistas": si la serie aparece ahi, la
+        tarjeta del home muestra el tick aunque queden episodios por ver.
+        """
         watched_stmt = (
             select(WatchProgress.series_name)
             .where(
@@ -222,18 +239,4 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
             )
             .distinct()
         )
-        unwatched_stmt = (
-            select(WatchProgress.series_name)
-            .where(
-                and_(
-                    WatchProgress.user_id == user_id,
-                    WatchProgress.content_type == "series",
-                    WatchProgress.is_watched.is_(False),
-                    WatchProgress.series_name.isnot(None),
-                )
-            )
-            .distinct()
-        )
-        watched = {str(r) for r in self.session.execute(watched_stmt).scalars().all()}
-        unwatched = {str(r) for r in self.session.execute(unwatched_stmt).scalars().all()}
-        return watched - unwatched
+        return {str(r) for r in self.session.execute(watched_stmt).scalars().all()}
