@@ -30,6 +30,8 @@ class StreamProxyServiceV2:
     _DNS_ERROR_CACHE_TTL: float = 60.0
     _proxy_bootstrap_cache: tuple[str | None, float] | None = None
     _PROXY_BOOTSTRAP_CACHE_TTL: float = 60.0
+    _subtitle_track_cache: dict[str, tuple[list[dict[str, Any]], float]] = {}
+    _SUBTITLE_PROBE_TTL: float = 600.0
     _cache_eviction_counter: int = 0
     _CACHE_EVICTION_INTERVAL: int = 100
 
@@ -332,7 +334,8 @@ class StreamProxyServiceV2:
         )
         raise last_error or Exception("Stream failed")
 
-    def _rewrite_m3u8_url(self, url: str, base_url: str) -> str:
+    @staticmethod
+    def _rewrite_m3u8_url(url: str, base_url: str) -> str:
         if not url:
             return url
         if url.startswith("https://"):
@@ -351,6 +354,11 @@ class StreamProxyServiceV2:
         original_url: str,
         headers: dict[str, str] | None = None,
         use_resilience: bool = True,
+        content_type: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        stream_id: str | None = None,
+        subtitle_base_url: str | None = None,
     ) -> tuple[int, dict[str, str], AsyncIterator[bytes] | str]:
         default_headers = {"User-Agent": CONSTANTS.DEFAULT_USER_AGENT}
         if headers:
@@ -442,6 +450,18 @@ class StreamProxyServiceV2:
                     try:
                         m3u8_text = content.decode("utf-8")
                         rewritten = self._process_m3u8(m3u8_text, original_url)
+                        if content_type in ("movie", "series") and username and password and stream_id:
+                            try:
+                                rewritten = await self.inject_borrowed_subtitles(
+                                    rewritten,
+                                    subtitle_base_url or "",
+                                    content_type,
+                                    username,
+                                    password,
+                                    stream_id,
+                                )
+                            except Exception as e:
+                                logger.warning(f"Error inyectando subtítulos prestados: {e}")
                         pass_headers["content-type"] = "application/vnd.apple.mpegurl"
                         pass_headers.pop("content-length", None)
                         pass_headers.pop("content-range", None)
@@ -506,6 +526,286 @@ class StreamProxyServiceV2:
             else:
                 processed_lines.append(line)
         return "\n".join(processed_lines)
+
+    # ------------------------------------------------------------------
+    # Subtítulos prestados: extraer pistas de enlaces hermanos (VOD)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_credentials(url: str, username: str, password: str) -> str:
+        if not url:
+            return url
+        if username:
+            url = url.replace("{{USERNAME}}", username)
+        if password:
+            url = url.replace("{{PASSWORD}}", password)
+        return url
+
+    def _get_sibling_stream_urls(self, content_type: str, provider_id: str) -> list[str]:
+        """Devuelve URLs crudas de los demás enlaces del mismo contenido (movie/episodio).
+
+        Usa la columna ``url`` (URL directa del proveedor) y no ``stream_url``
+        (forma proxied con placeholders) para evitar auto-llamadas al proxy.
+        """
+        pid = provider_id.rsplit(".", 1)[0] if "." in provider_id else provider_id
+        if content_type == "movie":
+            from iptv_api.models.content import MovieStream
+
+            row = (
+                self.content_repo.session.execute(
+                    select(MovieStream.movie_id)
+                    .where(MovieStream.provider_id == pid)
+                    .limit(1)
+                )
+                .mappings()
+                .first()
+            )
+            if not row or not row.get("movie_id"):
+                return []
+            rows = (
+                self.content_repo.session.execute(
+                    select(MovieStream.url, MovieStream.provider_id)
+                    .where(MovieStream.movie_id == row["movie_id"])
+                )
+                .mappings()
+                .all()
+            )
+            return [
+                r.get("url")
+                for r in rows
+                if r.get("url") and (r.get("provider_id") or "").rsplit(".", 1)[0] != pid
+            ]
+        if content_type == "series":
+            from iptv_api.models.series import SeriesStream
+
+            row = (
+                self.content_repo.session.execute(
+                    select(SeriesStream.episode_id)
+                    .where(SeriesStream.provider_id == pid)
+                    .limit(1)
+                )
+                .mappings()
+                .first()
+            )
+            if not row or not row.get("episode_id"):
+                return []
+            rows = (
+                self.content_repo.session.execute(
+                    select(SeriesStream.url, SeriesStream.provider_id)
+                    .where(SeriesStream.episode_id == row["episode_id"])
+                )
+                .mappings()
+                .all()
+            )
+            return [
+                r.get("url")
+                for r in rows
+                if r.get("url") and (r.get("provider_id") or "").rsplit(".", 1)[0] != pid
+            ]
+        return []
+
+    async def _fetch_manifest_text(self, url: str) -> str | None:
+        try:
+            proxy_url = self._get_bootstrap_proxy_url()
+            async with httpx.AsyncClient(
+                timeout=10.0,
+                follow_redirects=True,
+                proxy=proxy_url,
+                headers={"User-Agent": CONSTANTS.DEFAULT_USER_AGENT},
+            ) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                content_type = resp.headers.get("content-type", "").lower()
+                if "mpegurl" in content_type or ".m3u8" in url.lower():
+                    return resp.text
+                return None
+        except Exception as e:
+            logger.debug(f"No se pudo sondear manifest hermano {url[:80]}: {e}")
+            return None
+
+    @staticmethod
+    def _split_media_attrs(attr_str: str) -> list[str]:
+        parts = []
+        current: list[str] = []
+        in_quotes = False
+        for ch in attr_str:
+            if ch == '"':
+                in_quotes = not in_quotes
+                current.append(ch)
+            elif ch == "," and not in_quotes:
+                parts.append("".join(current))
+                current = []
+            else:
+                current.append(ch)
+        if current:
+            parts.append("".join(current))
+        return parts
+
+    @classmethod
+    def _parse_subtitle_renditions(cls, m3u8_text: str, base_url: str) -> list[dict[str, Any]]:
+        tracks = []
+        for line in m3u8_text.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("#EXT-X-MEDIA"):
+                continue
+            if ":TYPE=SUBTITLES" not in stripped.replace(" ", "").upper():
+                continue
+            _, _, attr_str = stripped.partition(":")
+            attrs = {}
+            for part in cls._split_media_attrs(attr_str):
+                if "=" in part:
+                    key, _, value = part.partition("=")
+                    attrs[key.strip().upper()] = value.strip().strip('"')
+            uri = attrs.get("URI")
+            if not uri:
+                continue
+            tracks.append(
+                {
+                    "name": attrs.get("NAME") or attrs.get("LANGUAGE") or "Subtítulos",
+                    "lang": attrs.get("LANGUAGE", ""),
+                    "uri": cls._rewrite_m3u8_url(uri, base_url),
+                    "forced": attrs.get("FORCED", "").upper() == "YES",
+                }
+            )
+        return tracks
+
+    async def get_borrowed_subtitle_tracks(
+        self, content_type: str, username: str, password: str, provider_id: str
+    ) -> list[dict[str, Any]]:
+        """Extrae (con cache) las pistas de subtítulos de los enlaces hermanos."""
+        pid = provider_id.rsplit(".", 1)[0] if "." in provider_id else provider_id
+        cache_key = f"{content_type}:{pid}"
+        now = time.time()
+        cached = StreamProxyServiceV2._subtitle_track_cache.get(cache_key)
+        if cached and (now - cached[1]) < StreamProxyServiceV2._SUBTITLE_PROBE_TTL:
+            return cached[0]
+
+        tracks: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for raw_url in self._get_sibling_stream_urls(content_type, pid):
+            url = self._resolve_credentials(raw_url, username, password)
+            if not url:
+                continue
+            try:
+                resolved = await self.resolve_redirects(url, use_cache=True, use_proxy=True)
+            except Exception:
+                continue
+            text = await self._fetch_manifest_text(resolved)
+            if not text:
+                continue
+            for track in self._parse_subtitle_renditions(text, resolved):
+                key = (track["lang"], track["name"])
+                if key in seen or track["forced"]:
+                    continue
+                seen.add(key)
+                tracks.append(track)
+
+        StreamProxyServiceV2._subtitle_track_cache[cache_key] = (tracks, now)
+        return tracks
+
+    @staticmethod
+    def _escape_media_attr(value: str) -> str:
+        return value.replace("\\", "\\\\").replace('"', '\\"')
+
+    @staticmethod
+    def _build_subtitle_proxy_uri(
+        base_url: str, content_type: str, username: str, password: str, provider_id: str, index: int
+    ) -> str:
+        return (
+            f"{base_url}/api/subtitle/{content_type}/"
+            f"{quote(username, safe='')}/{quote(password, safe='')}/"
+            f"{quote(provider_id, safe='')}/{index}"
+        )
+
+    @classmethod
+    def _wire_subtitle_group(cls, m3u8_text: str, group_id: str) -> str:
+        out = []
+        for line in m3u8_text.splitlines():
+            stripped = line.strip()
+            if (
+                stripped.startswith("#EXT-X-MEDIA:TYPE=AUDIO")
+                or stripped.startswith("#EXT-X-STREAM-INF")
+            ) and 'SUBTITLES="' not in stripped:
+                out.append(f'{line},SUBTITLES="{group_id}"')
+            else:
+                out.append(line)
+        return "\n".join(out)
+
+    async def inject_borrowed_subtitles(
+        self,
+        m3u8_text: str,
+        base_url: str,
+        content_type: str,
+        username: str,
+        password: str,
+        provider_id: str,
+    ) -> str:
+        """Inyecta subtítulos de enlaces hermanos si el manifest no trae pistas propias."""
+        has_own_subtitles = any(
+            line.strip().startswith("#EXT-X-MEDIA")
+            and ":TYPE=SUBTITLES" in line.replace(" ", "").upper()
+            for line in m3u8_text.splitlines()
+        )
+        if has_own_subtitles:
+            return m3u8_text
+
+        tracks = await self.get_borrowed_subtitle_tracks(
+            content_type, username, password, provider_id
+        )
+        if not tracks:
+            return m3u8_text
+
+        pid = provider_id.rsplit(".", 1)[0] if "." in provider_id else provider_id
+        group_id = "walactv-borrowed"
+        media_lines = []
+        for idx, track in enumerate(tracks):
+            uri = self._build_subtitle_proxy_uri(
+                base_url, content_type, username, password, pid, idx
+            )
+            attrs = [
+                "TYPE=SUBTITLES",
+                f'GROUP-ID="{group_id}"',
+                f'NAME="{self._escape_media_attr(track.get("name") or "Subtítulos")}"',
+                f"DEFAULT={'YES' if idx == 0 else 'NO'}",
+                "AUTOSELECT=YES",
+                f'LANGUAGE="{self._escape_media_attr(track.get("lang") or "")}"',
+                f'URI="{self._escape_media_attr(uri)}"',
+            ]
+            media_lines.append("#EXT-X-MEDIA:" + ",".join(attrs))
+
+        lines = m3u8_text.split("\n")
+        output: list[str] = []
+        injected = False
+        for line in lines:
+            output.append(line)
+            if not injected and line.strip() == "#EXTM3U":
+                output.extend(media_lines)
+                injected = True
+        if not injected:
+            output.extend(media_lines)
+        rewritten = "\n".join(output)
+
+        if 'SUBTITLES="' not in rewritten:
+            rewritten = self._wire_subtitle_group(rewritten, group_id)
+        return rewritten
+
+    async def fetch_subtitle_file(self, url: str) -> tuple[int, dict[str, str], bytes]:
+        resolved = await self.resolve_redirects(url, use_cache=True, use_proxy=True)
+        proxy_url = self._get_bootstrap_proxy_url()
+        async with httpx.AsyncClient(
+            timeout=20.0,
+            follow_redirects=True,
+            proxy=proxy_url,
+            headers={"User-Agent": CONSTANTS.DEFAULT_USER_AGENT},
+        ) as client:
+            resp = await client.get(resolved)
+            resp.raise_for_status()
+        headers = {
+            "Content-Type": resp.headers.get("content-type", "text/vtt"),
+            "Cache-Control": "no-cache",
+        }
+        return resp.status_code, headers, resp.content
+
 
     def clear_cache(self):
         self._url_cache.clear()

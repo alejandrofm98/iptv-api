@@ -57,6 +57,28 @@ def _build_cast_options_response(request: Request) -> Response:
     return Response(status_code=204, headers=_build_cast_cors_headers(request))
 
 
+def _public_base_url(request: Request) -> str:
+    """URL pública base de la API (forwarded headers o public_domain)."""
+    forwarded_proto = request.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+
+    from iptv_api.core.config import get_settings
+
+    settings = get_settings()
+
+    internal_hosts = ["iptv-api", "localhost", "127.0.0.1"]
+    is_internal = any(h in forwarded_host for h in internal_hosts)
+
+    if forwarded_host and not is_internal:
+        base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+    else:
+        base_url = settings.public_domain.rstrip("/")
+
+    if base_url.startswith("http://"):
+        base_url = "https://" + base_url[len("http://") :]
+    return base_url
+
+
 def _build_cast_playlist_response(
     session_id: str, request: Request, transcode_svc: TranscodeService
 ) -> PlainTextResponse:
@@ -213,7 +235,13 @@ async def _proxy_stream_handler(
 
     try:
         status_code, headers, body = await stream_svc.get_stream_response(
-            stream_url, headers=request_headers
+            stream_url,
+            headers=request_headers,
+            content_type=content_type,
+            username=username,
+            password=password,
+            stream_id=clean_stream_id,
+            subtitle_base_url=_public_base_url(request),
         )
 
         if isinstance(body, str):
@@ -241,6 +269,57 @@ async def _proxy_stream_handler(
 # rutas /api/* para evitar colisiones. Además, validamos que no
 # capturen paths que empiezan por "api" u otros prefijos reservados.
 # ============================================
+
+
+@router.get(
+    "/api/subtitle/{content_type}/{username}/{password}/{provider_id}/{index}",
+    tags=["Stream"],
+)
+async def proxy_subtitle_file(
+    content_type: str,
+    username: str,
+    password: str,
+    provider_id: str,
+    index: int,
+    request: Request,
+    user_svc: UserServiceV2 = Depends(get_user_service_v2),
+    stream_svc: StreamProxyServiceV2 = Depends(get_stream_service_v2),
+):
+    """
+    Proxy de archivos de subtítulos prestados de enlaces hermanos (VOD).
+
+    Los subtítulos inyectados en los manifests apuntan aquí; el index
+    referencia la posición en la lista cacheada de pistas del contenido.
+    """
+    if content_type not in ["movie", "series"]:
+        raise BadRequestException(
+            "Tipo de contenido inválido", {"valid_types": ["movie", "series"]}
+        )
+
+    auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
+    if not auth.valid:
+        raise UnauthorizedException(auth.message)
+
+    clean_pid = provider_id.rsplit(".", 1)[0] if "." in provider_id else provider_id
+    tracks = await stream_svc.get_borrowed_subtitle_tracks(
+        content_type, username, password, clean_pid
+    )
+    if index < 0 or index >= len(tracks):
+        raise NotFoundException("Subtítulo", f"{provider_id}#{index}")
+
+    uri = tracks[index].get("uri") or ""
+    if not uri:
+        raise NotFoundException("Subtítulo", f"{provider_id}#{index}")
+
+    try:
+        status_code, headers, content = await stream_svc.fetch_subtitle_file(uri)
+    except Exception as e:
+        logger.warning(f"Error descargando subtítulo prestado {uri[:60]}: {e}")
+        raise BadRequestException("No se pudo descargar el subtítulo") from e
+
+    headers.update(_build_cast_cors_headers(request))
+    return Response(content=content, status_code=status_code, headers=headers)
+
 
 _RESERVED_PREFIXES = {
     "api",
