@@ -63,7 +63,9 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
             is_watched=row.is_watched,
         )
 
-    def get_watched_items(self, user_id: str, limit: int = 100) -> list[WatchProgress]:
+    def get_watched_items(
+        self, user_id: str, limit: int = 100, offset: int = 0
+    ) -> list[WatchProgress]:
         stmt = (
             select(WatchProgress)
             .where(
@@ -74,8 +76,22 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
             )
             .order_by(desc(WatchProgress.last_watched_at))
             .limit(limit)
+            .offset(offset)
         )
         return list(self.session.execute(stmt).scalars().all())
+
+    def count_watched_items(self, user_id: str) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(WatchProgress)
+            .where(
+                and_(
+                    WatchProgress.user_id == user_id,
+                    WatchProgress.is_watched.is_(True),
+                )
+            )
+        )
+        return int(self.session.execute(stmt).scalar_one())
 
     def upsert(self, user_id: str, content_id: str, data: dict[str, Any]) -> WatchProgress:
         existing = self.get_by_user_and_content(

@@ -82,9 +82,12 @@ class WatchProgressServiceV2:
 
         return score(new_item) > score(old_item)
 
-    def get_watched_items(self, user_id: str, limit: int = 100) -> list[dict]:
-        rows = self.wp_repo.get_watched_items(user_id, limit)
-        return [self._normalize(r) for r in rows]
+    def get_watched_items(
+        self, user_id: str, limit: int = 100, offset: int = 0
+    ) -> dict:
+        rows = self.wp_repo.get_watched_items(user_id, limit, offset)
+        total = self.wp_repo.count_watched_items(user_id)
+        return {"items": [self._normalize(r) for r in rows], "total": total}
 
     def get_progress(self, user_id: str, content_id: str) -> dict | None:
         rows = self._lookup_rows(user_id, content_id)

@@ -319,3 +319,31 @@ def test_set_is_watched_without_season_episode_uses_lookup_rows():
     service.wp_repo.mark_watched.assert_called_once_with(
         "user-1", progress_row.content_id, True, content_type="movie"
     )
+
+
+def test_get_watched_items_forwards_limit_and_offset_and_returns_real_total():
+    """get_watched_items debe paginar con offset y reportar el total real, no el tamaño de página."""
+    row_a = make_progress_row(content_id="movie:111", is_watched=True)
+    row_b = make_progress_row(content_id="movie:222", is_watched=True)
+    service = WatchProgressServiceV2(MagicMock())
+    service.wp_repo.get_watched_items = MagicMock(return_value=[row_a, row_b])
+    service.wp_repo.count_watched_items = MagicMock(return_value=7)
+    service._normalize = MagicMock(
+        side_effect=lambda row: {
+            "content_type": "movie",
+            "content_id": row.content_id,
+            "is_watched": row.is_watched,
+        }
+    )
+
+    result = service.get_watched_items("user-1", limit=2, offset=4)
+
+    service.wp_repo.get_watched_items.assert_called_once_with("user-1", 2, 4)
+    service.wp_repo.count_watched_items.assert_called_once_with("user-1")
+    assert result == {
+        "items": [
+            {"content_type": "movie", "content_id": "movie:111", "is_watched": True},
+            {"content_type": "movie", "content_id": "movie:222", "is_watched": True},
+        ],
+        "total": 7,
+    }

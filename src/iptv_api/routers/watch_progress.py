@@ -25,13 +25,13 @@ async def get_continue_watching(
 
 @router.get("/api/watch-progress/watched", tags=["Watch Progress"])
 async def get_watched_items(
-    limit: int = Query(100, ge=1, le=500, description="Máximo de items"),
+    limit: int = Query(100, ge=1, le=500, description="Máximo de items por página"),
+    offset: int = Query(0, ge=0, description="Desplazamiento para paginación"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
-    """Obtiene items marcados como vistos. Requiere Bearer Token."""
-    items = wp_svc.get_watched_items(auth.user_id, limit=limit)
-    return {"items": items, "total": len(items)}
+    """Obtiene items marcados como vistos, paginados. Requiere Bearer Token."""
+    return wp_svc.get_watched_items(auth.user_id, limit=limit, offset=offset)
 
 
 @router.get("/api/watch-progress/{content_id}", tags=["Watch Progress"])
