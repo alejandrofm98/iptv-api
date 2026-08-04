@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/playback-preferences", tags=["Playback Preferenc
 
 
 @router.get("/{content_type}/{catalog_id}", response_model=PlaybackPreferenceResponse)
-async def get_playback_preference(
+def get_playback_preference(
     content_type: str,
     catalog_id: str,
     auth: AuthResult = Depends(require_auth_with_jwt),
@@ -32,7 +32,7 @@ async def get_playback_preference(
 
 
 @router.put("/{content_type}/{catalog_id}", response_model=PlaybackPreferenceResponse)
-async def upsert_playback_preference(
+def upsert_playback_preference(
     content_type: str,
     catalog_id: str,
     body: PlaybackPreferenceUpdate,
@@ -49,7 +49,7 @@ async def upsert_playback_preference(
 
 
 @router.delete("/{content_type}/{catalog_id}")
-async def delete_playback_preference(
+def delete_playback_preference(
     content_type: str,
     catalog_id: str,
     auth: AuthResult = Depends(require_auth_with_jwt),
