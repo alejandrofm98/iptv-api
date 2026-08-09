@@ -1920,7 +1920,10 @@ class ContentServiceV2:
                         refreshed = self._resolve_dailymotion_stream(str(dailymotion_access_id))
                         if refreshed:
                             return refreshed
-                    direct_url = provider_url or stream_url
+                    # Preferir la URL real del stream (m3u8/directa) sobre la pagina
+                    # embed del proveedor: `provider_url` apunta al reproductor, no al
+                    # video, y el proxy la devolveria como text/html no reproducible.
+                    direct_url = stream_url or provider_url
                     if direct_url:
                         return {
                             "stream_url": direct_url,
