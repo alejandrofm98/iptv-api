@@ -178,7 +178,11 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             )
             .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
             .where(has_streams_filter)
-            .order_by(desc(MovieMetadata.release_date).nullslast(), MovieCatalog.title)
+            .order_by(
+                desc(MovieCatalog.created_at),
+                desc(MovieMetadata.release_date).nullslast(),
+                MovieCatalog.title,
+            )
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
@@ -377,7 +381,8 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         total = self.session.execute(text(count_sql), params).scalar() or 0
 
         data_sql = f"""
-            SELECT DISTINCT ON (mc.tmdb_id)
+            SELECT * FROM (
+                SELECT DISTINCT ON (mc.tmdb_id)
                 mc.id, mc.title, mc.tmdb_id, mc.year, mc.countries,
                 mc.group_normalizado, mc.logo, mc.provider_id,
                 mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
@@ -401,11 +406,13 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                     '[]'::jsonb
                 ) AS stream_options,
                 (SELECT COUNT(ms.id) FROM movie_streams ms WHERE ms.movie_id = mc.id) AS stream_count
-            FROM trending_rankings tr
-            JOIN movies_catalog mc ON mc.tmdb_id = tr.tmdb_id
-            LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
-            {where_clause}
-            ORDER BY mc.tmdb_id NULLS LAST, tr.rank ASC
+                FROM trending_rankings tr
+                JOIN movies_catalog mc ON mc.tmdb_id = tr.tmdb_id
+                LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
+                {where_clause}
+                ORDER BY mc.tmdb_id NULLS LAST, tr.rank ASC
+            ) trending
+            ORDER BY trending_rank ASC, trending.tmdb_id ASC
             LIMIT :limit OFFSET :offset
         """
         rows = self.session.execute(text(data_sql), params).mappings().all()

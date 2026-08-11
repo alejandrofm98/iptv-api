@@ -492,7 +492,8 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         total = self.session.execute(text(count_sql), params).scalar() or 0
 
         data_sql = f"""
-            SELECT DISTINCT ON (sc.tmdb_id)
+            SELECT * FROM (
+                SELECT DISTINCT ON (sc.tmdb_id)
                 sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.countries,
                 sc.group_normalizado, sc.logo, sc.provider_id,
                 sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
@@ -508,11 +509,13 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                     (SELECT COUNT(DISTINCT se.season_number) FROM series_episodes se WHERE se.catalog_id = sc.id),
                     0
                 ) AS total_seasons
-            FROM trending_rankings tr
-            JOIN series_catalog sc ON sc.tmdb_id = tr.tmdb_id
-            LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
-            {where_clause}
-            ORDER BY sc.tmdb_id NULLS LAST, tr.rank ASC
+                FROM trending_rankings tr
+                JOIN series_catalog sc ON sc.tmdb_id = tr.tmdb_id
+                LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
+                {where_clause}
+                ORDER BY sc.tmdb_id NULLS LAST, tr.rank ASC
+            ) trending
+            ORDER BY trending_rank ASC, trending.tmdb_id ASC
             LIMIT :limit OFFSET :offset
         """
         rows = self.session.execute(text(data_sql), params).mappings().all()
