@@ -12,6 +12,19 @@ class StreamOption(BaseModel):
     numero: int | None = None
 
 
+class SkipSegment(BaseModel):
+    start_ms: int
+    end_ms: int
+    confidence: float | None = None
+    submission_count: int | None = None
+
+
+class SkipSegments(BaseModel):
+    intro: SkipSegment | None = None
+    recap: SkipSegment | None = None
+    outro: SkipSegment | None = None
+
+
 class MovieCatalogItem(BaseModel):
     id: str
     title: str
@@ -90,3 +103,5 @@ class SeriesEpisodeItem(BaseModel):
     quality: str | None = None
     provider_id: str | None = None
     numero: int | None = None
+    imdb_id: str | None = None
+    skip_segments: SkipSegments | None = None

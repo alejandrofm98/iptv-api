@@ -179,7 +179,49 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                     se.vote_count,
                     se.episode_type,
                     se.tmdb_checked,
+                    se.imdb_id,
                     sm.imdb_id AS series_imdb_id,
+                    jsonb_build_object(
+                        'intro', (
+                            SELECT jsonb_build_object(
+                                'start_ms', vs.start_ms,
+                                'end_ms', vs.end_ms,
+                                'confidence', vs.confidence,
+                                'submission_count', vs.submission_count
+                            )
+                            FROM video_segments vs
+                            WHERE vs.episode_id = se.id
+                              AND vs.source = 'introdb'
+                              AND vs.segment_type = 'intro'
+                            LIMIT 1
+                        ),
+                        'recap', (
+                            SELECT jsonb_build_object(
+                                'start_ms', vs.start_ms,
+                                'end_ms', vs.end_ms,
+                                'confidence', vs.confidence,
+                                'submission_count', vs.submission_count
+                            )
+                            FROM video_segments vs
+                            WHERE vs.episode_id = se.id
+                              AND vs.source = 'introdb'
+                              AND vs.segment_type = 'recap'
+                            LIMIT 1
+                        ),
+                        'outro', (
+                            SELECT jsonb_build_object(
+                                'start_ms', vs.start_ms,
+                                'end_ms', vs.end_ms,
+                                'confidence', vs.confidence,
+                                'submission_count', vs.submission_count
+                            )
+                            FROM video_segments vs
+                            WHERE vs.episode_id = se.id
+                              AND vs.source = 'introdb'
+                              AND vs.segment_type = 'outro'
+                            LIMIT 1
+                        )
+                    ) AS skip_segments,
                     jsonb_agg(
                         jsonb_build_object(
                             'url', ss.stream_url,
@@ -203,7 +245,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 GROUP BY se.id, se.season_number, se.episode_number, se.numero,
                          se.title, se.title_en, se.overview, se.overview_en,
                          se.air_date, se.still_path, se.runtime, se.vote_average,
-                         se.vote_count, se.episode_type, se.tmdb_checked,
+                         se.vote_count, se.episode_type, se.tmdb_checked, se.imdb_id,
                          sm.imdb_id
             )
             SELECT *

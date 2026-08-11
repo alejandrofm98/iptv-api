@@ -1269,7 +1269,8 @@ class ContentServiceV2:
             "vote_average": row.get("vote_average"),
             "vote_count": row.get("vote_count"),
             "episode_type": row.get("episode_type", ""),
-            "imdb_id": row.get("series_imdb_id"),
+            "imdb_id": row.get("imdb_id"),
+            "skip_segments": row.get("skip_segments"),
             **({"is_watched": is_watched} if is_watched is not None else {}),
         }
 
