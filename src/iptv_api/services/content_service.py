@@ -57,20 +57,20 @@ class ContentServiceV2:
     SECTION_PATTERNS: dict[str, list[dict[str, Any]]] = {
         "movies": [
             {"title": "TENDENCIAS", "type": "trending", "language_country": True},
-            {"title": "2026 ESTRENOS", "year": 2026, "sort_by": "release_date", "language_country": True},
-            {"title": "2025 ESTRENOS", "year": 2025, "sort_by": "release_date"},
-            {"title": "PRIME", "group": "PRIME", "country": "ES", "sort_by": "release_date"},
-            {"title": "NETFLIX", "pattern": "NETFLIX", "sort_by": "release_date"},
-            {"title": "HBO MAX", "pattern": "HBO MAX", "sort_by": "release_date"},
-            {"title": "DISNEY+", "pattern": "DISNEY", "sort_by": "release_date"},
+            {"title": "2026 ESTRENOS", "year": 2026, "sort_by": "created_at", "language_country": True},
+            {"title": "2025 ESTRENOS", "year": 2025, "sort_by": "created_at"},
+            {"title": "PRIME", "group": "PRIME", "country": "ES", "sort_by": "created_at"},
+            {"title": "NETFLIX", "pattern": "NETFLIX", "sort_by": "created_at"},
+            {"title": "HBO MAX", "pattern": "HBO MAX", "sort_by": "created_at"},
+            {"title": "DISNEY+", "pattern": "DISNEY", "sort_by": "created_at"},
         ],
         "series": [
             {"title": "TENDENCIAS", "type": "trending", "language_country": True},
-            {"title": "2026 ESTRENOS", "year": 2026, "sort_by": "release_date", "language_country": True},
-            {"title": "PRIME", "group": "PRIME", "country": "ES", "sort_by": "release_date"},
-            {"title": "DISNEY+", "pattern": "DISNEY", "sort_by": "release_date"},
-            {"title": "NETFLIX", "pattern": "NETFLIX", "sort_by": "release_date"},
-            {"title": "HBO", "pattern": "HBO", "sort_by": "release_date"},
+            {"title": "2026 ESTRENOS", "year": 2026, "sort_by": "created_at", "language_country": True},
+            {"title": "PRIME", "group": "PRIME", "country": "ES", "sort_by": "created_at"},
+            {"title": "DISNEY+", "pattern": "DISNEY", "sort_by": "created_at"},
+            {"title": "NETFLIX", "pattern": "NETFLIX", "sort_by": "created_at"},
+            {"title": "HBO", "pattern": "HBO", "sort_by": "created_at"},
         ],
     }
 

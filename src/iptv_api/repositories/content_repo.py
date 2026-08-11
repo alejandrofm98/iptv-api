@@ -308,6 +308,11 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             if sort_by == "release_date"
             else "mc.tmdb_id NULLS LAST, mc.created_at DESC"
         )
+        final_order = (
+            "sub.release_date DESC NULLS LAST"
+            if sort_by == "release_date"
+            else "sub.created_at DESC NULLS LAST"
+        )
 
         data_sql = f"""
             SELECT * FROM (
@@ -348,7 +353,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 {where_clause}
                 ORDER BY {inner_order}
             ) sub
-            ORDER BY sub.release_date DESC NULLS LAST
+            ORDER BY {final_order}
             LIMIT :limit OFFSET :offset
         """
         rows = self.session.execute(text(data_sql), params).mappings().all()

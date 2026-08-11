@@ -432,6 +432,11 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             if sort_by == "release_date"
             else "COALESCE(sc.tmdb_id, sc.id::text) NULLS LAST, sc.created_at DESC"
         )
+        final_order = (
+            "sub.release_date DESC NULLS LAST"
+            if sort_by == "release_date"
+            else "sub.created_at DESC NULLS LAST"
+        )
         data_sql = f"""
             SELECT * FROM (
                 SELECT DISTINCT ON (COALESCE(sc.tmdb_id, sc.id::text))
@@ -454,7 +459,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 {where_clause}
                 ORDER BY {inner_order}
             ) sub
-            ORDER BY sub.release_date DESC NULLS LAST
+            ORDER BY {final_order}
             LIMIT :limit OFFSET :offset
         """
         rows = self.session.execute(text(data_sql), params).mappings().all()
