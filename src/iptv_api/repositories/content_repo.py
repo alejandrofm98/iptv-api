@@ -319,6 +319,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 SELECT DISTINCT ON (mc.tmdb_id)
                     mc.id, mc.title, mc.tmdb_id, mc.year, mc.countries,
                     mc.group_normalizado, mc.logo, mc.provider_id,
+                    mc.created_at,
                     mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
                     mm.genres, mm.backdrop_path, mm.poster_path,
                     mm.title AS tmdb_title, mm.release_date, mm.runtime_minutes,
