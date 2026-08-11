@@ -4,8 +4,8 @@ from urllib.parse import unquote
 import httpx
 from fastapi import APIRouter, Depends, Query, Response
 
-from iptv_api.services.stream_service import StreamProxyServiceV2
 from iptv_api.core.dependencies import get_stream_service_v2
+from iptv_api.services.stream_service import StreamProxyServiceV2
 
 router = APIRouter()
 

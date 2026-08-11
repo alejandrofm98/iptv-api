@@ -6,9 +6,6 @@ from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt
 from starlette.responses import PlainTextResponse
 
-from iptv_api.services.device_service import DeviceServiceV2
-from iptv_api.services.stream_service import StreamProxyServiceV2
-from iptv_api.services.user_service import UserServiceV2
 from iptv_api.core.config import get_settings
 from iptv_api.core.constants import JWT_ACCESS_TOKEN_EXPIRE_MINUTES, JWT_ALGORITHM
 from iptv_api.core.dependencies import (
@@ -23,6 +20,9 @@ from iptv_api.core.exceptions import (
     UnauthorizedException,
 )
 from iptv_api.core.models import Token
+from iptv_api.services.device_service import DeviceServiceV2
+from iptv_api.services.stream_service import StreamProxyServiceV2
+from iptv_api.services.user_service import UserServiceV2
 
 router = APIRouter()
 

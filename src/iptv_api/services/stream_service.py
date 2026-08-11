@@ -450,7 +450,12 @@ class StreamProxyServiceV2:
                     try:
                         m3u8_text = content.decode("utf-8")
                         rewritten = self._process_m3u8(m3u8_text, original_url)
-                        if content_type in ("movie", "series") and username and password and stream_id:
+                        if (
+                            content_type in ("movie", "series")
+                            and username
+                            and password
+                            and stream_id
+                        ):
                             try:
                                 rewritten = await self.inject_borrowed_subtitles(
                                     rewritten,
@@ -553,9 +558,7 @@ class StreamProxyServiceV2:
 
             row = (
                 self.content_repo.session.execute(
-                    select(MovieStream.movie_id)
-                    .where(MovieStream.provider_id == pid)
-                    .limit(1)
+                    select(MovieStream.movie_id).where(MovieStream.provider_id == pid).limit(1)
                 )
                 .mappings()
                 .first()
@@ -564,8 +567,9 @@ class StreamProxyServiceV2:
                 return []
             rows = (
                 self.content_repo.session.execute(
-                    select(MovieStream.url, MovieStream.provider_id)
-                    .where(MovieStream.movie_id == row["movie_id"])
+                    select(MovieStream.url, MovieStream.provider_id).where(
+                        MovieStream.movie_id == row["movie_id"]
+                    )
                 )
                 .mappings()
                 .all()
@@ -580,9 +584,7 @@ class StreamProxyServiceV2:
 
             row = (
                 self.content_repo.session.execute(
-                    select(SeriesStream.episode_id)
-                    .where(SeriesStream.provider_id == pid)
-                    .limit(1)
+                    select(SeriesStream.episode_id).where(SeriesStream.provider_id == pid).limit(1)
                 )
                 .mappings()
                 .first()
@@ -591,8 +593,9 @@ class StreamProxyServiceV2:
                 return []
             rows = (
                 self.content_repo.session.execute(
-                    select(SeriesStream.url, SeriesStream.provider_id)
-                    .where(SeriesStream.episode_id == row["episode_id"])
+                    select(SeriesStream.url, SeriesStream.provider_id).where(
+                        SeriesStream.episode_id == row["episode_id"]
+                    )
                 )
                 .mappings()
                 .all()
@@ -805,7 +808,6 @@ class StreamProxyServiceV2:
             "Cache-Control": "no-cache",
         }
         return resp.status_code, headers, resp.content
-
 
     def clear_cache(self):
         self._url_cache.clear()

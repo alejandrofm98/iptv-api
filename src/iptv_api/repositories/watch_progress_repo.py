@@ -145,7 +145,7 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
     ) -> WatchProgress | None:
         wp = self.get_by_user_and_content(user_id, content_id, season=season, episode=episode)
         if wp:
-            wp.is_watched = is_watched  # type: ignore[assignment]
+            wp.is_watched = is_watched
             self.session.flush()
             return wp
         if not is_watched:
@@ -217,14 +217,11 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         El home compara contra provider_id, asi que resolvemos cada content_id
         a su provider_id para que la coincidencia funcione.
         """
-        stmt = (
-            select(WatchProgress.content_id)
-            .where(
-                and_(
-                    WatchProgress.user_id == user_id,
-                    WatchProgress.content_type == "movie",
-                    WatchProgress.is_watched.is_(True),
-                )
+        stmt = select(WatchProgress.content_id).where(
+            and_(
+                WatchProgress.user_id == user_id,
+                WatchProgress.content_type == "movie",
+                WatchProgress.is_watched.is_(True),
             )
         )
         content_ids = {str(row) for row in self.session.execute(stmt).scalars().all()}

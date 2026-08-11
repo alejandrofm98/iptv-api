@@ -16,7 +16,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         result = {}
         for key, value in row.items():
             if hasattr(value, "__table__"):
-                for col in value.__table__.columns.keys():
+                for col in value.__table__.columns:
                     result[col] = getattr(value, col)
             else:
                 result[key] = value
@@ -110,7 +110,9 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         if year:
             filters.append(MovieCatalog.year == year)
         if genre:
-            filters.append(text("movies_metadata.genres @> ARRAY[:genre]::text[]").bindparams(genre=genre))
+            filters.append(
+                text("movies_metadata.genres @> ARRAY[:genre]::text[]").bindparams(genre=genre)
+            )
         if group:
             filters.append(MovieCatalog.group_normalizado.ilike(f"%{group}%"))
 
@@ -122,7 +124,9 @@ class ContentRepository(BaseRepository[MovieCatalog]):
 
         count_stmt = select(func.count()).select_from(MovieCatalog)
         if needs_metadata_join:
-            count_stmt = count_stmt.outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
+            count_stmt = count_stmt.outerjoin(
+                MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id
+            )
         count_stmt = count_stmt.where(has_streams_filter)
         if filters:
             count_stmt = count_stmt.where(and_(*filters))
@@ -231,24 +235,26 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             q = select(Channel.country).distinct().order_by(Channel.country)
             rows = self.session.execute(q).scalars().all()
             return [r for r in rows if r]
-        if content_type == "movies":
-            table = "movies_catalog"
-        else:
-            table = "series_catalog"
-        q = text(f"SELECT DISTINCT unnest({table}.countries) AS c FROM {table} WHERE {table}.countries IS NOT NULL ORDER BY c")
-        rows = self.session.execute(q).scalars().all()
+        table = "movies_catalog" if content_type == "movies" else "series_catalog"
+        statement = text(
+            f"SELECT DISTINCT unnest({table}.countries) AS c FROM {table} WHERE {table}.countries IS NOT NULL ORDER BY c"
+        )
+        rows = self.session.execute(statement).scalars().all()
         return [r for r in rows if r]
 
     def get_distinct_genres(self, content_type: str) -> list[str]:
         if content_type == "movies":
-            from sqlalchemy import func as sa_func, distinct
+            from sqlalchemy import distinct
+            from sqlalchemy import func as sa_func
 
             q = select(distinct(sa_func.unnest(MovieMetadata.genres))).order_by(
                 sa_func.unnest(MovieMetadata.genres)
             )
         elif content_type == "series":
+            from sqlalchemy import distinct
+            from sqlalchemy import func as sa_func
+
             from iptv_api.models.series import SeriesMetadata
-            from sqlalchemy import func as sa_func, distinct
 
             q = select(distinct(sa_func.unnest(SeriesMetadata.genres))).order_by(
                 sa_func.unnest(SeriesMetadata.genres)

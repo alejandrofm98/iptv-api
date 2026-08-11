@@ -3,6 +3,7 @@ Configuración centralizada para IPTV
 Carga configuración IPTV desde PostgreSQL y variables de entorno locales
 """
 
+import logging
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -27,6 +28,8 @@ def _load_environment() -> None:
 
 
 _load_environment()
+
+logger = logging.getLogger("iptv-api.config")
 
 
 class Settings:
@@ -111,8 +114,8 @@ class Settings:
                 )
                 self._config_loaded = True
 
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("No se pudo cargar la configuración dinámica de PostgreSQL: %s", exc)
 
     def reload_config(self) -> bool:
         """Recarga configuración desde PostgreSQL"""

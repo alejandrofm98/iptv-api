@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends
 
-from iptv_api.services.channel_favorites_service import ChannelFavoritesServiceV2
 from iptv_api.core.dependencies import AuthResult as AuthDep
 from iptv_api.core.dependencies import (
     get_channel_favorites_service_v2,
@@ -8,6 +7,7 @@ from iptv_api.core.dependencies import (
 )
 from iptv_api.core.exceptions import NotFoundException
 from iptv_api.core.models import ChannelFavoriteCreate
+from iptv_api.services.channel_favorites_service import ChannelFavoritesServiceV2
 
 router = APIRouter()
 

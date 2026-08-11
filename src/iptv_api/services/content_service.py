@@ -57,7 +57,12 @@ class ContentServiceV2:
     SECTION_PATTERNS: dict[str, list[dict[str, Any]]] = {
         "movies": [
             {"title": "TENDENCIAS", "type": "trending", "language_country": True},
-            {"title": "2026 ESTRENOS", "year": 2026, "sort_by": "created_at", "language_country": True},
+            {
+                "title": "2026 ESTRENOS",
+                "year": 2026,
+                "sort_by": "created_at",
+                "language_country": True,
+            },
             {"title": "2025 ESTRENOS", "year": 2025, "sort_by": "created_at"},
             {"title": "PRIME", "group": "PRIME", "country": "ES", "sort_by": "created_at"},
             {"title": "NETFLIX", "pattern": "NETFLIX", "sort_by": "created_at"},
@@ -66,7 +71,12 @@ class ContentServiceV2:
         ],
         "series": [
             {"title": "TENDENCIAS", "type": "trending", "language_country": True},
-            {"title": "2026 ESTRENOS", "year": 2026, "sort_by": "created_at", "language_country": True},
+            {
+                "title": "2026 ESTRENOS",
+                "year": 2026,
+                "sort_by": "created_at",
+                "language_country": True,
+            },
             {"title": "PRIME", "group": "PRIME", "country": "ES", "sort_by": "created_at"},
             {"title": "DISNEY+", "pattern": "DISNEY", "sort_by": "created_at"},
             {"title": "NETFLIX", "pattern": "NETFLIX", "sort_by": "created_at"},
@@ -683,7 +693,11 @@ class ContentServiceV2:
             "tmdb_title": row.get("tmdb_title") or serie_name,
             "popularity": row.get("popularity"),
             "status": row.get("status"),
-            **({"is_watched": serie_name in watched_series_names} if watched_series_names is not None else {}),
+            **(
+                {"is_watched": serie_name in watched_series_names}
+                if watched_series_names is not None
+                else {}
+            ),
         }
 
     def _to_android_movie_from_catalog(
@@ -745,11 +759,21 @@ class ContentServiceV2:
             "tmdb_title": tmdb_title,
             "popularity": row.get("popularity"),
             "status": row.get("status"),
-            **({"is_watched": (row.get("provider_id") or str(row.get("id", ""))) in watched_movie_ids} if watched_movie_ids is not None else {}),
+            **(
+                {
+                    "is_watched": (row.get("provider_id") or str(row.get("id", "")))
+                    in watched_movie_ids
+                }
+                if watched_movie_ids is not None
+                else {}
+            ),
         }
 
     def _to_android_series_group_item(
-        self, row: dict[str, Any], username: str = "", password: str = "",
+        self,
+        row: dict[str, Any],
+        username: str = "",
+        password: str = "",
         watched_series_names: set[str] | None = None,
     ) -> dict[str, Any]:
         catalog_title = row.get("title", "")
@@ -808,7 +832,11 @@ class ContentServiceV2:
             "popularity": row.get("popularity"),
             "status": row.get("status"),
             "total_seasons": row.get("total_seasons"),
-            **({"is_watched": serie_name in watched_series_names} if watched_series_names is not None else {}),
+            **(
+                {"is_watched": serie_name in watched_series_names}
+                if watched_series_names is not None
+                else {}
+            ),
         }
 
     def _get_movies_catalog_page_raw(
@@ -900,13 +928,17 @@ class ContentServiceV2:
         use_upper_group = "group" in gp
         group_filter = gp.get("pattern") if not use_upper_group else None
         upper_group = gp.get("group") if use_upper_group else None
-        effective_country = country if gp.get("language_country") else (country or gp.get("country"))
+        effective_country = (
+            country if gp.get("language_country") else (country or gp.get("country"))
+        )
         year = gp.get("year")
         sort_by = sort_by or gp.get("sort_by")
         if gp.get("type") == "trending":
             if content_type == "series":
                 items, total = self.series_repo.get_trending_series(
-                    page=page, page_size=page_size, country=effective_country,
+                    page=page,
+                    page_size=page_size,
+                    country=effective_country,
                 )
                 items = [
                     self._to_android_series_from_catalog(
@@ -920,7 +952,9 @@ class ContentServiceV2:
                 ]
             else:
                 items, total = self.content_repo.get_trending_movies(
-                    page=page, page_size=page_size, country=effective_country,
+                    page=page,
+                    page_size=page_size,
+                    country=effective_country,
                 )
                 items = [
                     self._to_android_movie_from_catalog(
@@ -947,7 +981,10 @@ class ContentServiceV2:
             raw_items = result.get("items") or []
             total = result.get("total", 0)
             items = [
-                self._to_android_series_group_item(row, username, password, watched_series_names=watched_series_names) for row in raw_items
+                self._to_android_series_group_item(
+                    row, username, password, watched_series_names=watched_series_names
+                )
+                for row in raw_items
             ]
             return items, total
         elif content_type == "movies":
@@ -963,7 +1000,9 @@ class ContentServiceV2:
             )
             if items_cat:
                 return [
-                    self._to_android_movie_from_catalog(row, username, password, watched_movie_ids=watched_movie_ids)
+                    self._to_android_movie_from_catalog(
+                        row, username, password, watched_movie_ids=watched_movie_ids
+                    )
                     for row in items_cat
                 ], total_cat
             return [], 0
@@ -1597,7 +1636,10 @@ class ContentServiceV2:
             items = result.get("items") or []
             total = result.get("total", 0)
             parsed_items = [
-                self._to_android_series_from_catalog(row, username, password, watched_series_names=watched_series_names) for row in items
+                self._to_android_series_from_catalog(
+                    row, username, password, watched_series_names=watched_series_names
+                )
+                for row in items
             ]
             return self._build_paginated_payload(parsed_items, total, page, page_size)
         if content_type in ("movies", "channels"):
@@ -1611,7 +1653,10 @@ class ContentServiceV2:
                 )
                 rows = [dict(c) for c in channels]
             android_items = [
-                self._to_android_catalog_item(row, content_type, username, password, watched_movie_ids=watched_movie_ids) for row in rows
+                self._to_android_catalog_item(
+                    row, content_type, username, password, watched_movie_ids=watched_movie_ids
+                )
+                for row in rows
             ]
             return self._build_paginated_payload(android_items, total, page, page_size)
         return self._build_paginated_payload([], 0, page, page_size)
@@ -1733,14 +1778,19 @@ class ContentServiceV2:
                     1, 1000, search=query, country=country, genre=genre
                 )
                 merged_items.extend(
-                    self._to_android_movie_from_catalog(row, username, password, watched_movie_ids=watched_movie_ids) for row in rows
+                    self._to_android_movie_from_catalog(
+                        row, username, password, watched_movie_ids=watched_movie_ids
+                    )
+                    for row in rows
                 )
             elif content_type == "series":
                 result = self._get_distinct_series_groups_catalog_raw(
                     page=1, page_size=1000, search=query, country=country, genre=genre
                 )
                 merged_items.extend(
-                    self._to_android_series_from_catalog(row, username, password, watched_series_names=watched_series_names)
+                    self._to_android_series_from_catalog(
+                        row, username, password, watched_series_names=watched_series_names
+                    )
                     for row in (result.get("items") or [])
                 )
             elif content_type == "channels":
@@ -1949,7 +1999,7 @@ class ContentServiceV2:
         extra = kwargs.get("extra")
         return self._build_paginated_payload(items, total, page, page_size, extra)
 
-    COUNTRY_NAMES: dict[str, str] = {
+    _LEGACY_COUNTRY_NAMES: dict[str, str] = {
         "AD": "Andorra",
         "AE": "Emiratos Árabes Unidos",
         "AF": "Afganistán",

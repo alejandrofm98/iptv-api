@@ -26,7 +26,12 @@ class StubContentService:
         }
 
     def get_home_catalog_new(
-        self, username: str, country: str | None = None, password: str = "", page_size: int = 24
+        self,
+        username: str,
+        country: str | None = None,
+        password: str = "",
+        page_size: int = 24,
+        user_id: str | None = None,
     ) -> dict:
         return self.get_home_catalog(
             username=username, country=country, password=password, page_size=page_size
@@ -42,6 +47,7 @@ class StubContentService:
         password: str = "",
         country: str | None = None,
         genre: str | None = None,
+        user_id: str | None = None,
     ) -> dict:
         return {
             "items": [
@@ -69,6 +75,7 @@ class StubContentService:
         year: int | None = None,
         password: str = "",
         genre: str | None = None,
+        user_id: str | None = None,
     ) -> dict:
         return {
             "items": [

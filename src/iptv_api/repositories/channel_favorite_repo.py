@@ -17,7 +17,7 @@ class ChannelFavoriteRepository(BaseRepository[ChannelFavorite]):
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def add(self, user_id: str, channel_provider_id: str) -> ChannelFavorite:  # type: ignore[override]
+    def add(self, user_id: str, channel_provider_id: str) -> ChannelFavorite:
         fav = ChannelFavorite(user_id=user_id, channel_provider_id=channel_provider_id)
         self.session.add(fav)
         self.session.flush()
@@ -32,4 +32,4 @@ class ChannelFavoriteRepository(BaseRepository[ChannelFavorite]):
         )
         result = self.session.execute(stmt)
         self.session.flush()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return result.rowcount > 0

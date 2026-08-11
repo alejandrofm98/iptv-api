@@ -1,7 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Request
 
-from iptv_api.services.content_service import ContentServiceV2
-from iptv_api.services.watch_progress_service import WatchProgressServiceV2
 from iptv_api.core.dependencies import AuthResult as AuthDep
 from iptv_api.core.dependencies import (
     get_content_service_v2,
@@ -9,6 +7,8 @@ from iptv_api.core.dependencies import (
     require_auth_with_jwt,
 )
 from iptv_api.core.exceptions import NotFoundException
+from iptv_api.services.content_service import ContentServiceV2
+from iptv_api.services.watch_progress_service import WatchProgressServiceV2
 
 router = APIRouter()
 

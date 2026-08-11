@@ -23,7 +23,7 @@ def test_split_media_attrs_respects_quotes() -> None:
     parts = StreamProxyServiceV2._split_media_attrs(
         'TYPE=SUBTITLES,NAME="Esp, Añol",URI="subs/es.vtt"'
     )
-    assert parts == ['TYPE=SUBTITLES', 'NAME="Esp, Añol"', 'URI="subs/es.vtt"']
+    assert parts == ["TYPE=SUBTITLES", 'NAME="Esp, Añol"', 'URI="subs/es.vtt"']
 
 
 def test_parse_subtitle_renditions_extracts_tracks() -> None:
@@ -47,8 +47,7 @@ def test_parse_subtitle_renditions_extracts_tracks() -> None:
 
 def test_parse_subtitle_renditions_skips_non_subtitle_media() -> None:
     playlist = (
-        "#EXTM3U\n"
-        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="ES",LANGUAGE="es",URI="es.m3u8"\n'
+        '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="ES",LANGUAGE="es",URI="es.m3u8"\n'
     )
     assert StreamProxyServiceV2._parse_subtitle_renditions(playlist, "https://host/a.m3u8") == []
 
@@ -57,14 +56,15 @@ def test_wire_subtitle_group_adds_reference_to_audio_and_variants() -> None:
     playlist = (
         "#EXTM3U\n"
         '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="ES",LANGUAGE="es",URI="es.m3u8"\n'
-        "#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS=\"avc1\"\n"
+        '#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS="avc1"\n'
         "https://cdn.provider.com/master.m3u8\n"
     )
     out = StreamProxyServiceV2._wire_subtitle_group(playlist, "walactv-borrowed")
-    assert '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="ES",LANGUAGE="es",URI="es.m3u8",SUBTITLES="walactv-borrowed"' in out
     assert (
-        '#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS="avc1",SUBTITLES="walactv-borrowed"' in out
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="ES",LANGUAGE="es",URI="es.m3u8",SUBTITLES="walactv-borrowed"'
+        in out
     )
+    assert '#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS="avc1",SUBTITLES="walactv-borrowed"' in out
 
 
 def test_build_subtitle_proxy_uri_encodes_credentials() -> None:
@@ -76,7 +76,9 @@ def test_build_subtitle_proxy_uri_encodes_credentials() -> None:
 
 async def test_inject_borrowed_subtitles_returns_unchanged_when_manifest_has_subs() -> None:
     service = _make_service()
-    service.get_borrowed_subtitle_tracks = AsyncMock(return_value=[{"name": "ES", "lang": "es", "uri": "x", "forced": False}])
+    service.get_borrowed_subtitle_tracks = AsyncMock(
+        return_value=[{"name": "ES", "lang": "es", "uri": "x", "forced": False}]
+    )
     playlist = f"#EXTM3U\n{SUB_MEDIA_LINE}\n"
     out = await service.inject_borrowed_subtitles(
         playlist, "https://iptv.walerike.com", "movie", "user", "pass", "abc"
@@ -114,14 +116,10 @@ async def test_inject_borrowed_subtitles_adds_media_lines_and_wires_group() -> N
         playlist, "https://iptv.walerike.com", "movie", "us er", "p@ss", "abc"
     )
     assert 'TYPE=SUBTITLES,GROUP-ID="walactv-borrowed",NAME="Español"' in out
-    assert 'DEFAULT=YES' in out
+    assert "DEFAULT=YES" in out
     assert 'LANGUAGE="es"' in out
-    assert (
-        'URI="https://iptv.walerike.com/api/subtitle/movie/us%20er/p%40ss/abc/0"' in out
-    )
-    assert (
-        'TYPE=SUBTITLES,GROUP-ID="walactv-borrowed",NAME="English",DEFAULT=NO' in out
-    )
+    assert 'URI="https://iptv.walerike.com/api/subtitle/movie/us%20er/p%40ss/abc/0"' in out
+    assert 'TYPE=SUBTITLES,GROUP-ID="walactv-borrowed",NAME="English",DEFAULT=NO' in out
     assert (
         '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="EN",LANGUAGE="en",URI="en.m3u8",SUBTITLES="walactv-borrowed"'
         in out

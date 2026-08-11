@@ -122,17 +122,13 @@ async def _extract_stape(client: httpx.AsyncClient, url: str) -> dict:
         return {"url": f"https://stape.io{part1}{part2}", "provider": "stape", "type": "mp4"}
 
     # Alternativa con get_video
-    match = _first(
+    match = re.search(
         r"get_video\?id=([^&\"']+)&expires=([^&\"']+)&ip=([^&\"']+)&token=([^\"'&\s]+)", html
     )
     if match:
-        # match es el primer grupo; necesitamos todos
-        m = re.search(
-            r"get_video\?id=([^&\"']+)&expires=([^&\"']+)&ip=([^&\"']+)&token=([^\"'&\s]+)", html
-        )
         direct = (
             f"https://stape.io/get_video"
-            f"?id={m.group(1)}&expires={m.group(2)}&ip={m.group(3)}&token={m.group(4)}"
+            f"?id={match.group(1)}&expires={match.group(2)}&ip={match.group(3)}&token={match.group(4)}"
         )
         return {"url": direct, "provider": "stape", "type": "mp4"}
 

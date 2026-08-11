@@ -5,7 +5,7 @@ Modelos Pydantic para IPTV API
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================
 # Enums
@@ -57,14 +57,13 @@ class UserResponse(BaseModel):
     active_devices: int = 0
     role: str  # <--- NUEVO
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserWithDevices(UserResponse):
     """Usuario con lista de dispositivos"""
 
-    devices: list["DeviceResponse"] = []
+    devices: list["DeviceResponse"] = Field(default_factory=list)
 
 
 # ============================================
@@ -83,8 +82,7 @@ class DeviceResponse(BaseModel):
     last_activity: datetime
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SessionInfo(BaseModel):

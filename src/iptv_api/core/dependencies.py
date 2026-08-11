@@ -19,7 +19,7 @@ from iptv_api.core.exceptions import (  # noqa: E402
     UnauthorizedException,
 )
 from iptv_api.core.models import AuthResult  # noqa: E402
-from iptv_api.database import SessionLocal  # noqa: E402
+from iptv_api.database import get_session  # noqa: E402
 from iptv_api.services.calendar_service import CalendarServiceV2  # noqa: E402
 from iptv_api.services.channel_favorites_service import ChannelFavoritesServiceV2  # noqa: E402
 from iptv_api.services.content_service import ContentServiceV2  # noqa: E402
@@ -61,7 +61,7 @@ def get_transcode_service() -> TranscodeService:
 
 def get_db():
     """Crea una sesión de SQLAlchemy por request."""
-    session = SessionLocal()
+    session = get_session()
     try:
         yield session
         session.commit()

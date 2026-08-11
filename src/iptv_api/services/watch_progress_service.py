@@ -82,9 +82,7 @@ class WatchProgressServiceV2:
 
         return score(new_item) > score(old_item)
 
-    def get_watched_items(
-        self, user_id: str, limit: int = 100, offset: int = 0
-    ) -> dict:
+    def get_watched_items(self, user_id: str, limit: int = 100, offset: int = 0) -> dict:
         rows = self.wp_repo.get_watched_items(user_id, limit, offset)
         total = self.wp_repo.count_watched_items(user_id)
         return {"items": [self._normalize(r) for r in rows], "total": total}
@@ -254,9 +252,7 @@ class WatchProgressServiceV2:
             if content_type == "series":
                 normalized["series_provider_id"] = str(content_row.get("provider_id") or "")
                 normalized["series_name"] = (
-                    content_row.get("serie_name")
-                    or content_row.get("title")
-                    or row.series_name
+                    content_row.get("serie_name") or content_row.get("title") or row.series_name
                 )
                 normalized["season_number"] = (
                     self._safe_int(content_row.get("temporada")) or row.season_number

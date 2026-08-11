@@ -35,7 +35,7 @@ class APIException(HTTPException):
             status_code=status_code,
             detail=ErrorResponse(
                 error=error, message=message, details=details, status_code=status_code
-            ).dict(),
+            ).model_dump(),
         )
 
 
@@ -108,7 +108,7 @@ class ValidationException(APIException):
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             error="ValidationError",
             message="Error de validación",
-            details={"errors": [e.dict() for e in errors]},
+            details={"errors": [e.model_dump() for e in errors]},
         )
 
 

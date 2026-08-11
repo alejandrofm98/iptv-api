@@ -6,11 +6,6 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from starlette.responses import RedirectResponse
 
-from iptv_api.services.device_service import DeviceServiceV2
-from iptv_api.services.playlist_service import PlaylistServiceV2
-from iptv_api.services.stream_service import StreamProxyServiceV2
-from iptv_api.services.transcode_service import TranscodeService
-from iptv_api.services.user_service import UserServiceV2
 from iptv_api.core.dependencies import (
     get_device_service_v2,
     get_playlist_service_v2,
@@ -25,6 +20,11 @@ from iptv_api.core.exceptions import (
     TooManyRequestsException,
     UnauthorizedException,
 )
+from iptv_api.services.device_service import DeviceServiceV2
+from iptv_api.services.playlist_service import PlaylistServiceV2
+from iptv_api.services.stream_service import StreamProxyServiceV2
+from iptv_api.services.transcode_service import TranscodeService
+from iptv_api.services.user_service import UserServiceV2
 
 logger = logging.getLogger("iptv-api")
 

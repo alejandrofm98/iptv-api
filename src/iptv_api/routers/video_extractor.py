@@ -4,10 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from iptv_api.services.device_service import DeviceServiceV2
-from iptv_api.services.stream_service import StreamProxyServiceV2
-from iptv_api.services.user_service import UserServiceV2
-from iptv_api.services.video_extractor_service import VideoExtractorService
 from iptv_api.core.dependencies import AuthResult as AuthDep
 from iptv_api.core.dependencies import (
     get_device_service_v2,
@@ -21,6 +17,10 @@ from iptv_api.core.exceptions import (
     TooManyRequestsException,
     UnauthorizedException,
 )
+from iptv_api.services.device_service import DeviceServiceV2
+from iptv_api.services.stream_service import StreamProxyServiceV2
+from iptv_api.services.user_service import UserServiceV2
+from iptv_api.services.video_extractor_service import VideoExtractorService
 
 logger = logging.getLogger("iptv-api")
 

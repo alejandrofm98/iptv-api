@@ -2,7 +2,6 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 
-from iptv_api.services.calendar_service import CalendarServiceV2
 from iptv_api.core.config import get_settings
 from iptv_api.core.dependencies import AuthResult as AuthDep
 from iptv_api.core.dependencies import (
@@ -11,6 +10,7 @@ from iptv_api.core.dependencies import (
 )
 from iptv_api.core.exceptions import BadRequestException, NotFoundException
 from iptv_api.core.models import CalendarDayResponse, CalendarEvent
+from iptv_api.services.calendar_service import CalendarServiceV2
 
 router = APIRouter()
 

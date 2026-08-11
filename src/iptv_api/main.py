@@ -54,7 +54,7 @@ settings = get_settings()
 
 
 async def cleanup_sessions_task():
-    from iptv_api.database import SessionLocal
+    from iptv_api.database import get_session
     from iptv_api.repositories.session_repo import SessionRepository
 
     while True:
@@ -62,7 +62,7 @@ async def cleanup_sessions_task():
             await asyncio.sleep(settings.cleanup_interval_minutes * 60)
 
             def _do_cleanup():
-                session = SessionLocal()
+                session = get_session()
                 try:
                     repo = SessionRepository(session)
                     cleaned = repo.cleanup_inactive(settings.session_timeout_minutes)
@@ -97,14 +97,14 @@ async def lifespan(app: FastAPI):
     if not settings.is_valid():
         print("❌ Error: Configuración incompleta")
     else:
-        from iptv_api.database import SessionLocal
+        from iptv_api.database import get_session
         from iptv_api.repositories.channel_repo import ChannelRepository
         from iptv_api.repositories.config_repo import ConfigRepository
         from iptv_api.repositories.content_repo import ContentRepository
         from iptv_api.repositories.series_repo import SeriesRepository
         from iptv_api.services.stream_service import StreamProxyServiceV2
 
-        session = SessionLocal()
+        session = get_session()
         try:
             stream_svc = StreamProxyServiceV2(
                 config_repo=ConfigRepository(session),
@@ -138,14 +138,14 @@ async def lifespan(app: FastAPI):
     try:
         transcode_svc = get_transcode_service()
         await transcode_svc.stop_all()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("No se pudo detener el servicio de transcodificación: %s", exc)
     try:
         from iptv_api.services.stream_service import StreamProxyServiceV2
 
         await StreamProxyServiceV2.close_all_clients()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("No se pudieron cerrar los clientes HTTP de streams: %s", exc)
 
 
 # ============================================

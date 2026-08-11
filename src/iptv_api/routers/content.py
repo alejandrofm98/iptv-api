@@ -4,8 +4,6 @@ import os
 from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import JSONResponse
 
-from iptv_api.services.channel_favorites_service import ChannelFavoritesServiceV2
-from iptv_api.services.content_service import ContentServiceV2
 from iptv_api.core.config import get_settings
 from iptv_api.core.dependencies import AuthResult as AuthDep
 from iptv_api.core.dependencies import (
@@ -14,6 +12,8 @@ from iptv_api.core.dependencies import (
     require_auth_with_jwt,
 )
 from iptv_api.core.exceptions import BadRequestException, NotFoundException
+from iptv_api.services.channel_favorites_service import ChannelFavoritesServiceV2
+from iptv_api.services.content_service import ContentServiceV2
 
 logger = logging.getLogger("iptv-api")
 

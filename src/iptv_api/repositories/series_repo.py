@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import Integer, String, and_, func, or_, select, text
+from sqlalchemy import Integer, String, and_, func, literal, or_, select, text
 from sqlalchemy.orm import Session
 
 from iptv_api.models.series import SeriesCatalog, SeriesEpisode, SeriesMetadata, SeriesStream
@@ -16,7 +16,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         result = {}
         for key, value in row.items():
             if hasattr(value, "__table__"):
-                for col in value.__table__.columns.keys():
+                for col in value.__table__.columns:
                     result[col] = getattr(value, col)
             else:
                 result[key] = value
@@ -340,7 +340,6 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             "the",
             "los",
             "las",
-            "les",
             "der",
             "die",
             "das",
@@ -376,11 +375,14 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             return None
         like_conditions = [func.lower(func.trim(SeriesCatalog.title)).like(f"%{w}%") for w in words]
         match_score = sum(
-            func.cast(
-                func.lower(func.trim(SeriesCatalog.title)).like(f"%{w}%"),
-                Integer,
-            )
-            for w in words
+            (
+                func.cast(
+                    func.lower(func.trim(SeriesCatalog.title)).like(f"%{w}%"),
+                    Integer,
+                )
+                for w in words
+            ),
+            literal(0),
         )
         stmt = (
             select(

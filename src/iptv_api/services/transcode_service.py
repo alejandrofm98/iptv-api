@@ -13,6 +13,7 @@ import logging
 import os
 import shutil
 import time
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ class TranscodeService:
     _CODEC_CACHE_TTL: float = 3600.0
     UNSUPPORTED_CODECS = {"eac3", "ac3", "truehd", "dts", "flac"}
     _known_transcode_urls: set = set()
-    _background_tasks: set[asyncio.Task] = set()  # type: ignore[type-arg]
+    _background_tasks: set[asyncio.Task[Any]] = set()
 
     def __init__(self):
         self._sessions: dict[str, HlsSession] = {}

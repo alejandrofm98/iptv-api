@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, delete, desc, func, select
 from sqlalchemy.orm import Session
@@ -54,20 +54,20 @@ class SessionRepository(BaseRepository[ActiveSession]):
         )
         result = self.session.execute(stmt)
         self.session.flush()
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        return result.rowcount > 0
 
     def delete_by_user(self, user_id: str) -> int:
         stmt = delete(ActiveSession).where(ActiveSession.user_id == user_id)
         result = self.session.execute(stmt)
         self.session.flush()
-        return result.rowcount  # type: ignore[attr-defined]
+        return result.rowcount
 
     def cleanup_inactive(self, timeout_minutes: int = 30) -> int:
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
+        cutoff = datetime.now(UTC) - timedelta(minutes=timeout_minutes)
         stmt = delete(ActiveSession).where(ActiveSession.last_activity < cutoff)
         result = self.session.execute(stmt)
         self.session.flush()
-        return result.rowcount  # type: ignore[attr-defined]
+        return result.rowcount
 
     def list_all_with_users(self, limit: int = 100) -> list[dict]:
         stmt = (
