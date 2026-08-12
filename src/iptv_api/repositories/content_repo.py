@@ -17,7 +17,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         for key, value in row.items():
             if hasattr(value, "__table__"):
                 for col in value.__table__.columns:
-                    result[col] = getattr(value, col)
+                    result[col.name] = getattr(value, col.name)
             else:
                 result[key] = value
         return result
