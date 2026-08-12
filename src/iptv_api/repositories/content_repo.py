@@ -47,6 +47,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                     MovieCatalog.id.cast(String) == movie_id,
                     MovieCatalog.tmdb_id == movie_id,
                     MovieCatalog.provider_id == movie_id,
+                    MovieMetadata.imdb_id == movie_id,
                 )
             )
             .limit(1)
@@ -117,7 +118,8 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             filters.append(MovieCatalog.group_normalizado.ilike(f"%{group}%"))
 
         has_streams_filter = text(
-            "EXISTS (SELECT 1 FROM movie_streams ms WHERE ms.movie_id = movies_catalog.id)"
+            "(movies_catalog.tmdb_id IS NOT NULL OR EXISTS "
+            "(SELECT 1 FROM movie_streams ms WHERE ms.movie_id = movies_catalog.id))"
         )
 
         needs_metadata_join = genre is not None
@@ -301,7 +303,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             filters.append("mm.genres @> ARRAY[:genre]::text[]")
             params["genre"] = genre
 
-        has_streams_filter = "EXISTS (SELECT 1 FROM movie_streams ms WHERE ms.movie_id = mc.id)"
+        has_streams_filter = "(mc.tmdb_id IS NOT NULL OR EXISTS (SELECT 1 FROM movie_streams ms WHERE ms.movie_id = mc.id))"
         base_where = f"{' AND '.join(filters)}" if filters else "TRUE"
         where_clause = f"WHERE {base_where} AND {has_streams_filter}"
 
@@ -325,6 +327,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 SELECT DISTINCT ON (mc.tmdb_id)
                     mc.id, mc.title, mc.tmdb_id, mc.year, mc.countries,
                     mc.group_normalizado, mc.logo, mc.provider_id,
+                    mc.has_iptv_source, mc.has_torrent_source, mc.torrent_source_checked_at,
                     mc.created_at,
                     mm.overview_es, mm.overview_en, mm.vote_average, mm.vote_count,
                     mm.genres, mm.backdrop_path, mm.poster_path,
@@ -417,7 +420,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                     ) FROM movie_streams ms WHERE ms.movie_id = mc.id),
                     '[]'::jsonb
                 ) AS stream_options,
-                (SELECT COUNT(ms.id) FROM movie_streams ms WHERE ms.movie_id = mc.id) AS stream_count
+                 (SELECT COUNT(ms.id) FROM movie_streams ms WHERE ms.movie_id = mc.id) AS stream_count
                 FROM trending_rankings tr
                 JOIN movies_catalog mc ON mc.tmdb_id = tr.tmdb_id
                 LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id

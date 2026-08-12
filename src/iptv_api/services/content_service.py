@@ -528,6 +528,8 @@ class ContentServiceV2:
             "provider_id": provider_id,
             "url": original_url,
             "stream_url": stream_url,
+            "has_iptv_source": row.get("has_iptv_source", False),
+            "has_torrent_source": row.get("has_torrent_source", False),
         }
         if content_type == "channels":
             base_item["tvg_id"] = row.get("tvg_id")
@@ -624,6 +626,8 @@ class ContentServiceV2:
                     "tmdb_title": parsed.get("tmdb_title"),
                     "popularity": parsed.get("popularity"),
                     "status": parsed.get("status"),
+                    "has_iptv_source": parsed.get("has_iptv_source", False),
+                    "has_torrent_source": parsed.get("has_torrent_source", False),
                 }
             )
             if content_type == "movies":
@@ -693,6 +697,9 @@ class ContentServiceV2:
             "tmdb_title": row.get("tmdb_title") or serie_name,
             "popularity": row.get("popularity"),
             "status": row.get("status"),
+            "has_iptv_source": row.get("has_iptv_source", False),
+            "has_torrent_source": row.get("has_torrent_source", False),
+            "torrent_source_checked_at": row.get("torrent_source_checked_at"),
             **(
                 {"is_watched": serie_name in watched_series_names}
                 if watched_series_names is not None
@@ -759,6 +766,9 @@ class ContentServiceV2:
             "tmdb_title": tmdb_title,
             "popularity": row.get("popularity"),
             "status": row.get("status"),
+            "has_iptv_source": row.get("has_iptv_source", False),
+            "has_torrent_source": row.get("has_torrent_source", False),
+            "torrent_source_checked_at": row.get("torrent_source_checked_at"),
             **(
                 {
                     "is_watched": (row.get("provider_id") or str(row.get("id", "")))
@@ -1153,6 +1163,7 @@ class ContentServiceV2:
             row = self.get_movie(item_id)
             if row is not None:
                 self._ensure_stream_url(row, username, password)
+                self._attach_torrent_movie_streams(row)
             return row
         elif content_type in ("series", "serie"):
             row = self.get_series(item_id)
@@ -1174,6 +1185,21 @@ class ContentServiceV2:
                     "url": channel.url,
                 }
         return None
+
+    @staticmethod
+    def _attach_torrent_movie_streams(row: dict) -> None:
+        """Añade resultados Torrentio efimeros al detalle de una pelicula."""
+        imdb_id = row.get("imdb_id")
+        if not imdb_id:
+            return
+        try:
+            from iptv_api.services.torrentio_service import TorrentioService
+
+            torrent_streams = TorrentioService().get_movie_streams(imdb_id)
+        except Exception as exc:
+            logger.info("Torrentio no disponible para pelicula %s: %s", imdb_id, exc)
+            return
+        row["stream_options"] = (row.get("stream_options") or []) + torrent_streams
 
     def _ensure_stream_url(self, row: dict, username: str, password: str) -> None:
         if row.get("stream_url"):
@@ -1308,7 +1334,9 @@ class ContentServiceV2:
             "vote_average": row.get("vote_average"),
             "vote_count": row.get("vote_count"),
             "episode_type": row.get("episode_type", ""),
-            "imdb_id": row.get("imdb_id"),
+            "imdb_id": row.get("series_imdb_id") or row.get("imdb_id"),
+            "has_iptv_source": row.get("has_iptv_source", False),
+            "has_torrent_source": row.get("has_torrent_source", False),
             "skip_segments": row.get("skip_segments"),
             **({"is_watched": is_watched} if is_watched is not None else {}),
         }

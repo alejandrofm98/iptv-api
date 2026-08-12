@@ -4,12 +4,22 @@ from pydantic import BaseModel, Field
 
 
 class StreamOption(BaseModel):
-    url: str
-    label: str
+    url: str = ""
+    label: str = "Ver"
     country: str | None = None
     quality: str | None = None
     provider_id: str | None = None
     numero: int | None = None
+    source: str | None = None
+    provider: str | None = None
+    language: str | None = None
+    playable: bool = True
+    requires_resolution: bool = False
+    info_hash: str | None = None
+    file_idx: int | None = None
+    seeders: int | None = None
+    size_bytes: int | None = None
+    title: str | None = None
 
 
 class SkipSegment(BaseModel):
@@ -37,6 +47,9 @@ class MovieCatalogItem(BaseModel):
     backdrop_path: str | None = None
     vote_average: float | None = None
     created_at: datetime | None = None
+    has_iptv_source: bool = False
+    has_torrent_source: bool = False
+    torrent_source_checked_at: datetime | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -71,6 +84,9 @@ class SeriesCatalogItem(BaseModel):
     total_episodes: int | None = None
     total_seasons: int | None = None
     created_at: datetime | None = None
+    has_iptv_source: bool = False
+    has_torrent_source: bool = False
+    torrent_source_checked_at: datetime | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 

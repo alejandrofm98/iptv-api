@@ -31,6 +31,7 @@ from iptv_api.routers import (
     replays,
     series,
     streams,
+    torrentio,
     video_extractor,
     watch_progress,
 )
@@ -199,6 +200,7 @@ app.include_router(playback_preferences.router)
 app.include_router(calendar.router)
 app.include_router(replays.router)
 app.include_router(streams.router)
+app.include_router(torrentio.router)
 app.include_router(video_extractor.router)
 app.include_router(logo.router)
 

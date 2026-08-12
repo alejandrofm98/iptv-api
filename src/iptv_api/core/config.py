@@ -71,6 +71,13 @@ class Settings:
         self.iptv_base_url: str | None = None
         self.iptv_source_url: str | None = None
 
+        # ===== Torrentio (busqueda en tiempo real; no persiste torrents) =====
+        self.torrentio_base_url = os.getenv("TORRENTIO_BASE_URL", "https://torrentio.strem.fun")
+        self.torrentio_providers = os.getenv("TORRENTIO_PROVIDERS", "wolfmax4k")
+        self.torrentio_languages = os.getenv("TORRENTIO_LANGUAGES", "spanish,english")
+        self.torrentio_timeout_seconds = float(os.getenv("TORRENTIO_TIMEOUT_SECONDS", "15"))
+        self.torrentio_cache_ttl_seconds = int(os.getenv("TORRENTIO_CACHE_TTL_SECONDS", "60"))
+
         # ===== Estado interno =====
         self._config_loaded: bool = False
 

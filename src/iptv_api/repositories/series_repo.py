@@ -47,6 +47,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                     SeriesCatalog.id.cast(String) == series_id,
                     SeriesCatalog.tmdb_id == series_id,
                     SeriesCatalog.provider_id == series_id,
+                    SeriesMetadata.imdb_id == series_id,
                 )
             )
             .limit(1)
@@ -463,7 +464,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             filters.append("sm.genres @> ARRAY[:genre]::text[]")
             params["genre"] = genre
 
-        has_streams_filter = "EXISTS (SELECT 1 FROM series_episodes se JOIN series_streams ss ON ss.episode_id = se.id WHERE se.catalog_id = sc.id)"
+        has_streams_filter = "(sc.tmdb_id IS NOT NULL OR EXISTS (SELECT 1 FROM series_episodes se JOIN series_streams ss ON ss.episode_id = se.id WHERE se.catalog_id = sc.id))"
         base_where = f"{' AND '.join(filters)}" if filters else "TRUE"
         where_clause = f"WHERE {base_where} AND {has_streams_filter}"
 
@@ -486,6 +487,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 SELECT DISTINCT ON (COALESCE(sc.tmdb_id, sc.id::text))
                     sc.id, sc.title, sc.series_key, sc.tmdb_id, sc.year, sc.countries,
                     sc.group_normalizado, sc.logo, sc.provider_id,
+                    sc.has_iptv_source, sc.has_torrent_source, sc.torrent_source_checked_at,
                     sc.created_at,
                     sm.overview_es, sm.overview_en, sm.vote_average, sm.vote_count,
                     sm.genres, sm.backdrop_path, sm.poster_path,

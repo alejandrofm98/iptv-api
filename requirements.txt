@@ -16,4 +16,4 @@ curl_cffi
 alembic==1.18.4
 sqlalchemy==2.0.50
 # iptv-db: shared ORM models, schemas, and Alembic migrations
-iptv-db @ git+https://github.com/alejandrofm98/iptv-db.git@ba2144e
+iptv-db @ git+https://github.com/alejandrofm98/iptv-db.git@0b865ac
