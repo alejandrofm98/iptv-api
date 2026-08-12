@@ -23,6 +23,17 @@ async def get_continue_watching(
     return {"items": items, "total": len(items)}
 
 
+@router.get("/api/watch-progress/continue", tags=["Watch Progress"])
+async def get_home_continue_watching(
+    limit: int = Query(20, ge=1, le=50, description="Máximo de películas o series"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
+):
+    """Obtiene una entrada resumida por película o serie para Home."""
+    items = wp_svc.get_continue_watching_home(auth.user_id, limit=limit)
+    return {"items": items, "total": len(items)}
+
+
 @router.get("/api/watch-progress/watched", tags=["Watch Progress"])
 async def get_watched_items(
     limit: int = Query(100, ge=1, le=500, description="Máximo de items por página"),

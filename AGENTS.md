@@ -164,6 +164,7 @@ Lista exhaustiva (verificada contra el cliente Kotlin):
 
 - `POST /api/auth/login`
 - `GET /api/watch-progress`
+- `GET /api/watch-progress/continue` — resumen para Home, una entrada por película o serie
 - `GET /api/playback-preferences/{movie|series}/{catalog_id}`
 - `PUT /api/playback-preferences/{movie|series}/{catalog_id}`
 - `DELETE /api/playback-preferences/{movie|series}/{catalog_id}`

@@ -44,6 +44,51 @@ class WatchProgressServiceV2:
 
         return self._dedupe_by_series(incomplete)[:limit]
 
+    def get_continue_watching_home(self, user_id: str, limit: int = 20) -> list[dict]:
+        """Obtiene una entrada por película o serie para la pantalla de inicio."""
+        active_rows = self.wp_repo.get_continue_watching(user_id, max(limit * 5, 100))
+        watched_rows = self.wp_repo.get_watched_items(user_id, max(limit * 5, 100), 0)
+
+        active = [
+            self._normalize(row)
+            for row in active_rows
+            if self._has_resume_progress(row)
+        ]
+        watched = [self._normalize(row) for row in watched_rows]
+        by_group: dict[str, dict] = {}
+
+        for item in active:
+            if item.get("content_type") == "movie":
+                by_group.setdefault(self._series_group_key(item), item)
+                continue
+            key = self._series_group_key(item)
+            current = by_group.get(key)
+            if current is None or self._is_newer(item, current):
+                by_group[key] = item
+
+        for item in watched:
+            if item.get("content_type") != "series":
+                continue
+            key = self._series_group_key(item)
+            if key not in by_group:
+                by_group[key] = item
+
+        return sorted(
+            by_group.values(),
+            key=lambda item: item.get("last_watched_at") or "",
+            reverse=True,
+        )[:limit]
+
+    @staticmethod
+    def _has_resume_progress(row) -> bool:
+        duration = row.duration_ms or 0
+        position = row.position_ms or 0
+        return duration > 0 and position > 0 and position / duration < 0.95 and not row.is_watched
+
+    @staticmethod
+    def _is_newer(new_item: dict, old_item: dict) -> bool:
+        return (new_item.get("last_watched_at") or "") > (old_item.get("last_watched_at") or "")
+
     def _dedupe_by_series(self, items: list[dict]) -> list[dict]:
         """Collapsa varias filas de la misma serie a una sola entrada
         (el episodio más reciente con metadatos). Evita duplicados en

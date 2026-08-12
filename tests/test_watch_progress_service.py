@@ -240,6 +240,54 @@ def test_continue_watching_keeps_multiple_distinct_movies():
     assert len(items) == 2
 
 
+def test_home_continue_watching_prefers_active_episode_and_groups_series():
+    active = make_progress_row(
+        content_id="series:777",
+        content_type="series",
+        position_ms=300_000,
+        duration_ms=1_200_000,
+        series_name="The Rookie",
+        season_number=5,
+        episode_number=19,
+    )
+    active.last_watched_at = "2026-08-03T13:30:00"
+    watched = make_progress_row(
+        content_id="series:777",
+        content_type="series",
+        position_ms=0,
+        duration_ms=0,
+        is_watched=True,
+        series_name="The Rookie",
+        season_number=5,
+        episode_number=18,
+    )
+    watched.last_watched_at = "2026-08-03T13:40:00"
+
+    service = WatchProgressServiceV2(MagicMock())
+    service.wp_repo.get_continue_watching = MagicMock(return_value=[active])
+    service.wp_repo.get_watched_items = MagicMock(return_value=[watched])
+    service._normalize = MagicMock(
+        side_effect=lambda row: {
+            "content_type": row.content_type,
+            "content_id": row.content_id,
+            "series_name": row.series_name,
+            "series_provider_id": "rookie-id",
+            "season_number": row.season_number,
+            "episode_number": row.episode_number,
+            "position_ms": row.position_ms,
+            "duration_ms": row.duration_ms,
+            "last_watched_at": row.last_watched_at,
+            "is_watched": row.is_watched,
+        }
+    )
+
+    items = service.get_continue_watching_home("user-1", limit=20)
+
+    assert len(items) == 1
+    assert items[0]["season_number"] == 5
+    assert items[0]["episode_number"] == 19
+
+
 def test_continue_watching_series_uses_catalog_title_when_serie_name_missing():
     """El catálogo real expone `title`, no `serie_name`; la serie debe resolverse igual."""
     progress_row = make_progress_row(

@@ -8,6 +8,7 @@ ANDROID_CONTRACT_PATHS = {
     "/api/content/{content_type}/{item_id}",
     "/api/series/by-id/{series_id}/episodes",
     "/api/watch-progress",
+    "/api/watch-progress/continue",
     "/api/playback-preferences/{content_type}/{catalog_id}",
     "/api/channel-favorites",
     "/api/calendar/{fecha}",
