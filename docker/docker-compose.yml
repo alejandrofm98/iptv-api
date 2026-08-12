@@ -12,10 +12,12 @@ services:
     build:
       context: ..  # Contexto desde la raíz del proyecto
       dockerfile: docker/Dockerfile
-    container_name: iptv-api
+      args:
+        IPTV_DB_REF: ${IPTV_DB_REF:-main}
+    container_name: ${IPTV_CONTAINER_PREFIX:-iptv}-api
     restart: unless-stopped
     ports:
-      - "3010:3010"
+      - "${IPTV_HOST_PORT:-3010}:3010"
     env_file:
       - .env
     environment:
@@ -49,14 +51,14 @@ services:
       # Traefik: API endpoints van directo al contenedor (sin pasar por nginx)
       - "traefik.enable=true"
       # Router para /api/* y /docs/* (prioridad alta) - Con HTTPS
-      - "traefik.http.routers.iptv-api.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (PathPrefix(`/api/`) || PathPrefix(`/docs`) || PathPrefix(`/openapi`) || PathPrefix(`/redoc`))"
-      - "traefik.http.routers.iptv-api.entrypoints=websecure"
-      - "traefik.http.routers.iptv-api.tls=true"
-      - "traefik.http.routers.iptv-api.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.iptv-api.priority=100"
-      - "traefik.http.services.iptv-api.loadbalancer.server.port=3010"
-      - "traefik.http.services.iptv-api.loadbalancer.passhostheader=true"
-      - "traefik.http.services.iptv-api.loadbalancer.responseforwarding.flushinterval=100ms"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-api.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (PathPrefix(`/api/`) || PathPrefix(`/docs`) || PathPrefix(`/openapi`) || PathPrefix(`/redoc`))"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-api.entrypoints=websecure"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-api.tls=true"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-api.priority=100"
+      - "traefik.http.services.${IPTV_ROUTER_PREFIX:-iptv}-api.loadbalancer.server.port=3010"
+      - "traefik.http.services.${IPTV_ROUTER_PREFIX:-iptv}-api.loadbalancer.passhostheader=true"
+      - "traefik.http.services.${IPTV_ROUTER_PREFIX:-iptv}-api.loadbalancer.responseforwarding.flushinterval=100ms"
 
   # ============================================
   # Nginx Reverse Proxy (para streams y playlist)
@@ -65,7 +67,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.nginx
-    container_name: iptv-nginx
+    container_name: ${IPTV_CONTAINER_PREFIX:-iptv}-nginx
     restart: unless-stopped
     volumes:
       # Volumen compartido (solo lectura) y SSL
@@ -84,47 +86,47 @@ services:
       - "traefik.enable=true"
 
       # ── Middleware vacío para evitar heredar el redirect HTTP→HTTPS de Dokploy ──
-      - "traefik.http.middlewares.iptv-no-redirect.headers.customrequestheaders.X-Placeholder=1"
+      - "traefik.http.middlewares.${IPTV_ROUTER_PREFIX:-iptv}-no-redirect.headers.customrequestheaders.X-Placeholder=1"
 
       # ── Router HTTPS (general) ─────────────────────────────────────
-      - "traefik.http.routers.iptv-https.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`)"
-      - "traefik.http.routers.iptv-https.entrypoints=websecure"
-      - "traefik.http.routers.iptv-https.tls=true"
-      - "traefik.http.routers.iptv-https.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.iptv-https.priority=10"
-      - "traefik.http.routers.iptv-https.service=iptv-service"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-https.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`)"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-https.entrypoints=websecure"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-https.tls=true"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-https.priority=10"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-https.service=${IPTV_ROUTER_PREFIX:-iptv}-service"
 
       # ── Router HTTP general (prioridad baja) ──────────────────────
-      - "traefik.http.routers.iptv-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
-      - "traefik.http.routers.iptv-http.entrypoints=web"
-      - "traefik.http.routers.iptv-http.priority=20"
-      - "traefik.http.routers.iptv-http.service=iptv-service"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`)"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-http.entrypoints=web"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-http.priority=20"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-http.service=${IPTV_ROUTER_PREFIX:-iptv}-service"
 
       # ── Rutas IPTV: HTTP sin redirect (prioridad 200) ─────────────
       # /get.php, /live/, /movie/, /series/ nunca redirigen a HTTPS
       # El middleware iptv-no-redirect evita heredar el redirect global de Dokploy
-      - "traefik.http.routers.iptv-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (Path(`/get.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
-      - "traefik.http.routers.iptv-streams-http.entrypoints=web"
-      - "traefik.http.routers.iptv-streams-http.priority=200"
-      - "traefik.http.routers.iptv-streams-http.service=iptv-service"
-      - "traefik.http.routers.iptv-streams-http.middlewares=iptv-no-redirect@docker"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (Path(`/get.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.entrypoints=web"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.priority=200"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.service=${IPTV_ROUTER_PREFIX:-iptv}-service"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.middlewares=${IPTV_ROUTER_PREFIX:-iptv}-no-redirect@docker"
 
       # ── Imágenes generadas: HTTP sin redirect y HTTPS explícito ─────────
-      - "traefik.http.routers.iptv-images-http.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`) && PathPrefix(`/images/`)"
-      - "traefik.http.routers.iptv-images-http.entrypoints=web"
-      - "traefik.http.routers.iptv-images-http.priority=250"
-      - "traefik.http.routers.iptv-images-http.service=iptv-service"
-      - "traefik.http.routers.iptv-images-http.middlewares=iptv-no-redirect@docker"
-      - "traefik.http.routers.iptv-images-https.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`) && PathPrefix(`/images/`)"
-      - "traefik.http.routers.iptv-images-https.entrypoints=websecure"
-      - "traefik.http.routers.iptv-images-https.tls=true"
-      - "traefik.http.routers.iptv-images-https.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.iptv-images-https.priority=250"
-      - "traefik.http.routers.iptv-images-https.service=iptv-service"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-http.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`) && PathPrefix(`/images/`)"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-http.entrypoints=web"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-http.priority=250"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-http.service=${IPTV_ROUTER_PREFIX:-iptv}-service"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-http.middlewares=${IPTV_ROUTER_PREFIX:-iptv}-no-redirect@docker"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-https.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`) && PathPrefix(`/images/`)"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-https.entrypoints=websecure"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-https.tls=true"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-https.priority=250"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-images-https.service=${IPTV_ROUTER_PREFIX:-iptv}-service"
 
       # ── Servicio compartido ────────────────────────────────────────
-      - "traefik.http.services.iptv-service.loadbalancer.server.port=80"
-      - "traefik.http.routers.iptv-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`) && (Path(`/get.php`) || Path(`/player_api.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
+      - "traefik.http.services.${IPTV_ROUTER_PREFIX:-iptv}-service.loadbalancer.server.port=80"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`) && (Path(`/get.php`) || Path(`/player_api.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
 
   # ============================================
   # Video Extractor Service (Playwright)
@@ -133,10 +135,10 @@ services:
     build:
       context: ../video-extractor-service
       dockerfile: Dockerfile
-    container_name: video-extractor
+    container_name: ${IPTV_CONTAINER_PREFIX:-iptv}-video-extractor
     restart: unless-stopped
     ports:
-      - "8001:8001"
+      - "${VIDEO_EXTRACTOR_HOST_PORT:-8001}:8001"
     networks:
       - iptv-network
       - iptv-ecosystem
@@ -153,14 +155,17 @@ services:
 networks:
   dokploy-network:
     external: true
+    name: ${DOKPLOY_NETWORK:-dokploy-network}
   iptv-network:
     driver: bridge
   iptv-ecosystem:
-    external: true
+    external: ${IPTV_ECOSYSTEM_EXTERNAL:-true}
+    name: ${IPTV_ECOSYSTEM_NETWORK:-iptv-ecosystem}
 
 # ============================================
 # Volumes
 # ============================================
 volumes:
   iptv-data:
-    external: true
+    external: ${IPTV_DATA_EXTERNAL:-true}
+    name: ${IPTV_DATA_VOLUME:-iptv-data}

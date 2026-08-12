@@ -31,7 +31,9 @@ COPY src/iptv_api/ /app/iptv_api/
 COPY resources/ /app/resources/
 
 # Clonar iptv-db para migraciones automáticas
-RUN git clone https://github.com/alejandrofm98/iptv-db.git /opt/iptv-db
+ARG IPTV_DB_REF=main
+RUN git clone https://github.com/alejandrofm98/iptv-db.git /opt/iptv-db \
+    && git -C /opt/iptv-db checkout "${IPTV_DB_REF}"
 
 # Entrypoint con migración automática
 COPY docker/entrypoint.sh /entrypoint.sh
