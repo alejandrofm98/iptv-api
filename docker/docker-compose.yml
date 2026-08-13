@@ -137,8 +137,6 @@ services:
       dockerfile: Dockerfile
     container_name: ${IPTV_CONTAINER_PREFIX:-iptv}-video-extractor
     restart: unless-stopped
-    ports:
-      - "${VIDEO_EXTRACTOR_HOST_PORT:-8001}:8001"
     networks:
       - iptv-network
       - iptv-ecosystem
