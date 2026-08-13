@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 
 from iptv_api.core.dependencies import (
+    get_db,
     get_device_service_v2,
-    get_playlist_service_v2,
     get_stream_service_v2,
     get_user_service_v2,
     require_admin,
@@ -10,9 +10,11 @@ from iptv_api.core.dependencies import (
 from iptv_api.core.exceptions import BadRequestException, NotFoundException
 from iptv_api.core.models import SystemStats, UserCreate, UserUpdate
 from iptv_api.services.device_service import DeviceServiceV2
-from iptv_api.services.playlist_service import PlaylistServiceV2
 from iptv_api.services.stream_service import StreamProxyServiceV2
 from iptv_api.services.user_service import UserServiceV2
+from iptv_api.repositories.channel_repo import ChannelRepository
+from iptv_api.repositories.content_repo import ContentRepository
+from iptv_api.repositories.series_repo import SeriesRepository
 
 router = APIRouter()
 
@@ -169,20 +171,18 @@ async def get_system_stats(
     _: dict = Depends(require_admin),
     user_svc: UserServiceV2 = Depends(get_user_service_v2),
     device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
-    playlist_svc: PlaylistServiceV2 = Depends(get_playlist_service_v2),
+    session=Depends(get_db),
 ):
     """Obtiene estadísticas del sistema"""
     _, total_users = user_svc.list_users(page=1, page_size=1)
     sessions = device_svc.get_all_sessions(limit=10000)
-    playlist_stats = playlist_svc.get_playlist_stats()
-
     return SystemStats(
         total_users=total_users,
         active_users=total_users,
         total_sessions=len(sessions),
-        total_channels=playlist_stats["total_channels"],
-        total_movies=playlist_stats["total_movies"],
-        total_series=playlist_stats["total_series"],
+        total_channels=ChannelRepository(session).count(),
+        total_movies=ContentRepository(session).count(),
+        total_series=SeriesRepository(session).count(),
     )
 
 
@@ -193,28 +193,3 @@ async def get_resilience_status(
 ):
     """Obtiene el estado de resiliencia de streams (circuit breaker, retry, buffer)"""
     return stream_svc.get_resilience_status()
-
-
-# ============================================
-# API: Admin Content
-# ============================================
-
-
-@router.post("/api/admin/content/reload", tags=["Admin - Content"])
-async def reload_template(
-    _: dict = Depends(require_admin),
-    playlist_svc: PlaylistServiceV2 = Depends(get_playlist_service_v2),
-):
-    """Recarga los templates M3U en memoria"""
-    playlist_svc.reload_template()
-    templates = playlist_svc._templates
-    if templates.get("full"):
-        return {
-            "status": "success",
-            "message": "Templates recargados correctamente",
-            "templates": {k: len(v) if v else 0 for k, v in templates.items()},
-        }
-    else:
-        raise BadRequestException(
-            "No se pudo recargar el template. Verifica que playlist_template.m3u exista."
-        )

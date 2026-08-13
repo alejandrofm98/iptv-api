@@ -24,7 +24,6 @@ services:
       # Docker flag
       - DOCKER_CONTAINER=true
       # M3U
-      - M3U_DIR=/app/data/m3u
       # Public domain (para generar URLs en M3U)
       - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-https://localhost}
       # Microservicio Playwright para extracción de video
@@ -103,9 +102,9 @@ services:
       - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-http.service=${IPTV_ROUTER_PREFIX:-iptv}-service"
 
       # ── Rutas IPTV: HTTP sin redirect (prioridad 200) ─────────────
-      # /get.php, /live/, /movie/, /series/ nunca redirigen a HTTPS
+      # /live/, /movie/, /series/ nunca redirigen a HTTPS
       # El middleware iptv-no-redirect evita heredar el redirect global de Dokploy
-      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (Path(`/get.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
+      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-localhost}`) && (PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
       - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.entrypoints=web"
       - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.priority=200"
       - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.service=${IPTV_ROUTER_PREFIX:-iptv}-service"
@@ -126,7 +125,6 @@ services:
 
       # ── Servicio compartido ────────────────────────────────────────
       - "traefik.http.services.${IPTV_ROUTER_PREFIX:-iptv}-service.loadbalancer.server.port=80"
-      - "traefik.http.routers.${IPTV_ROUTER_PREFIX:-iptv}-streams-http.rule=Host(`${TRAEFIK_DOMAIN:-iptv.walerike.com}`) && (Path(`/get.php`) || Path(`/player_api.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))"
 
   # ============================================
   # Video Extractor Service (Playwright)

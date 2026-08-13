@@ -110,7 +110,6 @@ Regla: NO anadir logica nueva aqui. Si necesitas tocar estas piezas, migralas a 
 | `get_watch_progress_service`  | `WatchProgressService`    | Continuidad de visionado             |
 | `get_calendar_service`        | `CalendarService`         | EPG y programacion                   |
 | `get_postgres_service`        | `PostgresService`         | Queries complejas de catalogo        |
-| `get_playlist_service`        | `PlaylistService`         | Generacion M3U                       |
 
 Cadena (3 niveles de indireccion, intencional):
 
@@ -254,7 +253,6 @@ existe gana):
 `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`.
 
 **Runtime**: `PUBLIC_DOMAIN` (base de URLs de streams servidas al
-cliente), `M3U_DIR` (directorio de salida de M3Us generadas).
 
 Reglas:
 

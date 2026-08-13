@@ -25,7 +25,6 @@ from iptv_api.services.channel_favorites_service import ChannelFavoritesServiceV
 from iptv_api.services.content_service import ContentServiceV2  # noqa: E402
 from iptv_api.services.device_service import DeviceServiceV2  # noqa: E402
 from iptv_api.services.playback_preference_service import PlaybackPreferenceService  # noqa: E402
-from iptv_api.services.playlist_service import PlaylistServiceV2  # noqa: E402
 from iptv_api.services.stream_service import StreamProxyServiceV2  # noqa: E402
 from iptv_api.services.transcode_service import TranscodeService  # noqa: E402
 from iptv_api.services.user_service import UserServiceV2  # noqa: E402
@@ -108,9 +107,6 @@ def get_calendar_service_v2(
     return CalendarServiceV2(session)
 
 
-_playlist_service_v2: PlaylistServiceV2 | None = None
-
-
 def get_stream_service_v2(
     session: Session = Depends(get_db),
 ) -> StreamProxyServiceV2:
@@ -125,13 +121,6 @@ def get_stream_service_v2(
         content_repo=ContentRepository(session),
         series_repo=SeriesRepository(session),
     )
-
-
-def get_playlist_service_v2() -> PlaylistServiceV2:
-    global _playlist_service_v2
-    if _playlist_service_v2 is None:
-        _playlist_service_v2 = PlaylistServiceV2()
-    return _playlist_service_v2
 
 
 def get_content_service_v2(

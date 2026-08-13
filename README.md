@@ -8,7 +8,6 @@ API FastAPI para gestión de usuarios IPTV, catálogo de contenido y proxy de st
 - Gestión de usuarios y sesiones/dispositivos por cuenta
 - Catálogo unificado de contenido (`channels`, `movies`, `series`) con paginación `page/page_size`
 - Endpoints de calendario deportivo con canales resueltos
-- Playlist vía `/get.php`
 - Proxy de streams (`/live`, `/movie`, `/series`) con control de conexiones
 - Perfil HLS específico para Chromecast en directo
 - Transcodificación HLS bajo demanda para clientes web permitidos
@@ -31,7 +30,7 @@ iptv-api/
 ├── docker/            # Dockerfile, compose, env de Docker
 ├── nginx/             # Config de Nginx
 ├── resources/images/  # Placeholders de logos
-└── data/m3u/          # Plantillas y archivos M3U
+└── data/              # Datos compartidos del catálogo
 ```
 
 ## Configuración
@@ -56,7 +55,6 @@ Variables opcionales PostgreSQL (si no se definen, se infieren desde Supabase):
 Variables importantes de runtime:
 
 - `PUBLIC_DOMAIN` (usado para construir URLs de streams)
-- `M3U_DIR` (directorio de salida M3U)
 
 ## Ejecutar local
 
@@ -98,7 +96,6 @@ curl http://localhost:3010/api/admin/users \
 
 ### 2) Credenciales en URL (players)
 
-- Playlist: `/get.php?username=...&password=...`
 - Streams: `/live/{user}/{pass}/{id}`, `/movie/{user}/{pass}/{id}`, `/series/{user}/{pass}/{id}`
 - Chromecast live: `/cast/{user}/{pass}/{id}/playlist.m3u8`
 
@@ -153,7 +150,6 @@ Las preferencias de audio y subtítulos se comparten entre clientes. En series,
 
 ### Streaming
 
-- `GET /get.php`
 - `GET /{live|movie|series}/{username}/{password}/{stream_id}`
 - `GET /{username}/{password}/{stream_id}` (atajo para `live`)
 - `GET /cast/{username}/{password}/{stream_id}/playlist.m3u8`
@@ -173,12 +169,6 @@ Grupos de canales:
 ```bash
 curl "http://localhost:3010/api/content/groups?content_type=channels" \
   -H "Authorization: Bearer <TOKEN>"
-```
-
-Playlist estándar:
-
-```bash
-curl "http://localhost:3010/get.php?username=<USER>&password=<PASS>&type=m3u_plus&output=ts"
 ```
 
 Stream en vivo:

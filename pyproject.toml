@@ -14,7 +14,6 @@ line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
 extend-exclude = [
-    "data/m3u",
     ".venv",
     "video-extractor-service",
 ]
@@ -59,7 +58,6 @@ show_error_codes = true
 exclude = [
     "video-extractor-service/",
     ".venv/",
-    "data/m3u/",
 ]
 
 [[tool.mypy.overrides]]

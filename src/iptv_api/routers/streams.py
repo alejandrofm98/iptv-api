@@ -1,5 +1,4 @@
 import asyncio
-import gzip
 import logging
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -8,7 +7,6 @@ from starlette.responses import RedirectResponse
 
 from iptv_api.core.dependencies import (
     get_device_service_v2,
-    get_playlist_service_v2,
     get_stream_service_v2,
     get_transcode_service,
     get_user_service_v2,
@@ -21,7 +19,6 @@ from iptv_api.core.exceptions import (
     UnauthorizedException,
 )
 from iptv_api.services.device_service import DeviceServiceV2
-from iptv_api.services.playlist_service import PlaylistServiceV2
 from iptv_api.services.stream_service import StreamProxyServiceV2
 from iptv_api.services.transcode_service import TranscodeService
 from iptv_api.services.user_service import UserServiceV2
@@ -328,7 +325,6 @@ _RESERVED_PREFIXES = {
     "auth",
     "internal",
     "logo",
-    "get.php",
     "health",
 }
 
@@ -405,90 +401,6 @@ async def proxy_stream_channel(
         force_hls_for_live=True,
         hls_profile="web",
     )
-
-
-# ============================================
-# Playlist M3U
-# ============================================
-
-
-@router.get("/get.php", tags=["Playlist"])
-async def get_playlist_standard(
-    request: Request,
-    username: str = Query(..., description="Usuario"),
-    password: str = Query(..., description="Contraseña"),
-    type: str | None = Query(None, description="Tipo: m3u, m3u_plus"),
-    _output: str | None = Query(None, description="Output: ts, m3u8"),
-    content: str = Query("full", description="Contenido: full, live, movie, series"),
-    user_svc: UserServiceV2 = Depends(get_user_service_v2),
-    device_svc: DeviceServiceV2 = Depends(get_device_service_v2),
-    playlist_svc: PlaylistServiceV2 = Depends(get_playlist_service_v2),
-):
-    """
-    Genera playlist M3U — Formato estándar de proveedores IPTV.
-    """
-    valid_content = ["full", "live", "movie", "series"]
-    if content not in valid_content:
-        content = "full"
-
-    auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
-
-    if not auth.valid:
-        raise UnauthorizedException(auth.message)
-
-    if not auth.can_connect:
-        raise ForbiddenException(auth.message)
-
-    user_agent = request.headers.get("User-Agent", "Unknown")
-    ip_address = request.client.host if request.client else "Unknown"
-
-    success, message, _ = await asyncio.to_thread(
-        device_svc.register_or_update_session,
-        user_id=auth.user_id,
-        user_agent=user_agent,
-        ip_address=ip_address,
-        max_connections=auth.max_devices,
-    )
-
-    if not success:
-        raise TooManyRequestsException(message)
-
-    logger.info(f"📋 Playlist solicitada: user={username}, content={content}, ua={user_agent[:50]}")
-
-    m3u_content = playlist_svc.generate_m3u(
-        username=username, password=password, content_type=content
-    )
-
-    content_bytes = m3u_content.encode("utf-8")
-
-    content_length = len(content_bytes)
-
-    SIZE_THRESHOLD = 5 * 1024 * 1024
-    if content_length > SIZE_THRESHOLD:
-        content_bytes = gzip.compress(content_bytes, compresslevel=6)
-        is_gzip = True
-    else:
-        is_gzip = False
-
-    content_length = len(content_bytes)
-
-    filename = (
-        f"playlist_{username}_{content}.m3u" if content != "full" else f"playlist_{username}.m3u"
-    )
-
-    headers = {
-        "Content-Length": str(content_length),
-        "Content-Disposition": f'attachment; filename="{filename}"',
-        "Content-Description": "File Transfer",
-        "Cache-Control": "must-revalidate",
-        "Pragma": "public",
-        "Expires": "0",
-    }
-
-    if is_gzip:
-        headers["Content-Encoding"] = "gzip"
-
-    return Response(content=content_bytes, media_type="application/octet-stream", headers=headers)
 
 
 # ============================================

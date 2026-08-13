@@ -131,22 +131,6 @@ class AuthResult(BaseModel):
 
 
 # ============================================
-# Playlist Models
-# ============================================
-
-
-class PlaylistInfo(BaseModel):
-    """Información de playlist generada"""
-
-    username: str
-    total_channels: int
-    total_movies: int
-    total_series: int
-    generated_at: datetime
-    expires_at: datetime | None
-
-
-# ============================================
 # Pagination Models
 # ============================================
 

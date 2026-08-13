@@ -40,7 +40,6 @@ COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Crear directorios necesarios
-RUN mkdir -p /app/data/m3u
 
 # Puerto expuesto
 EXPOSE 3010

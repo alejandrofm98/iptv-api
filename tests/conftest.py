@@ -47,7 +47,6 @@ def app_settings(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     settings.API_SECRET_KEY = "test-secret"
     settings.JWT_SECRET = "test-jwt-secret"
     settings.PUBLIC_DOMAIN = "http://localhost:3010"
-    settings.M3U_DIR = "/tmp/iptv-test-m3u"
     settings.is_valid.return_value = True
     return settings
 
