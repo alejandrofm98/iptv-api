@@ -123,14 +123,14 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             "(SELECT 1 FROM movie_streams ms WHERE ms.movie_id = movies_catalog.id))"
         )
 
-        needs_metadata_join = genre is not None
+        visibility_filter = text(allowed_catalog_source_sql("movies_catalog", "movies_metadata"))
 
-        count_stmt = select(func.count()).select_from(MovieCatalog)
-        if needs_metadata_join:
-            count_stmt = count_stmt.outerjoin(
-                MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id
-            )
-        count_stmt = count_stmt.where(has_streams_filter)
+        count_stmt = (
+            select(func.count())
+            .select_from(MovieCatalog)
+            .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
+            .where(has_streams_filter, visibility_filter)
+        )
         if filters:
             count_stmt = count_stmt.where(and_(*filters))
         total = self.session.execute(count_stmt).scalar() or 0
@@ -184,7 +184,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 )""").label("stream_options"),
             )
             .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
-            .where(has_streams_filter)
+            .where(has_streams_filter, visibility_filter)
             .order_by(
                 desc(MovieCatalog.created_at),
                 desc(MovieMetadata.release_date).nullslast(),
