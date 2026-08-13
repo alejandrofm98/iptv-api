@@ -16,15 +16,41 @@ class CalendarServiceV2:
 
     def get_events_by_date(self, fecha: date) -> list[dict[str, Any]]:
         sql = text("SELECT * FROM get_eventos_fecha_con_channels(:fecha)")
-        rows = self.session.execute(sql, {"fecha": fecha}).mappings().all()
-        return [self._convert_dates(dict(r)) for r in rows]
+        try:
+            rows = self.session.execute(sql, {"fecha": fecha}).mappings().all()
+            return [self._convert_dates(dict(r)) for r in rows]
+        except Exception:
+            self.session.rollback()
+            return self._get_events_from_table(fecha)
 
     def get_event_by_id(self, event_id: str) -> dict[str, Any] | None:
         sql = text("SELECT * FROM get_evento_con_channels(:event_id)")
-        row = self.session.execute(sql, {"event_id": event_id}).mappings().first()
-        if row:
-            return self._convert_dates(dict(row))
-        return None
+        try:
+            row = self.session.execute(sql, {"event_id": event_id}).mappings().first()
+            return self._convert_dates(dict(row)) if row else None
+        except Exception:
+            self.session.rollback()
+            row = self.session.execute(
+                text("SELECT * FROM calendario WHERE id = CAST(:event_id AS uuid)"),
+                {"event_id": event_id},
+            ).mappings().first()
+            return self._convert_dates(self._table_event(dict(row))) if row else None
+
+    def _get_events_from_table(self, fecha: date) -> list[dict[str, Any]]:
+        rows = self.session.execute(
+            text("SELECT * FROM calendario WHERE fecha = :fecha ORDER BY hora, id"),
+            {"fecha": fecha},
+        ).mappings().all()
+        return [self._convert_dates(self._table_event(dict(row))) for row in rows]
+
+    @staticmethod
+    def _table_event(row: dict[str, Any]) -> dict[str, Any]:
+        channels = row.get("canales") or []
+        return {
+            **row,
+            "canales_original": list(channels),
+            "canales_resueltos": [],
+        }
 
     def get_provider_ids(self, channel_ids: list[str]) -> dict[str, str]:
         if not channel_ids:
