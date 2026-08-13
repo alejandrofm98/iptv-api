@@ -1,0 +1,120 @@
+services:
+  iptv-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        IPTV_DB_REF: 0b865ac
+    container_name: walactv-dev-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DOCKER_CONTAINER: "true"
+      M3U_DIR: /app/data/m3u
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:-https://dev-iptv.walerike.com}
+      VIDEO_EXTRACTOR_URL: http://video-extractor:8001
+    volumes:
+      - iptv-data-dev:/app/data
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    mem_limit: 1g
+    networks:
+      - iptv-network-dev
+      - dokploy-network
+      - iptv-ecosystem-dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 40s
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.iptv-dev-api.rule: Host(`${TRAEFIK_DOMAIN:-dev-iptv.walerike.com}`) && (PathPrefix(`/api/`) || PathPrefix(`/docs`) || PathPrefix(`/openapi`) || PathPrefix(`/redoc`))
+      traefik.http.routers.iptv-dev-api.entrypoints: websecure
+      traefik.http.routers.iptv-dev-api.tls: "true"
+      traefik.http.routers.iptv-dev-api.tls.certresolver: letsencrypt
+      traefik.http.routers.iptv-dev-api.priority: "100"
+      traefik.http.services.iptv-dev-api.loadbalancer.server.port: "3010"
+
+  nginx:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.nginx
+    container_name: walactv-dev-nginx
+    restart: unless-stopped
+    volumes:
+      - iptv-data-dev:/app/data:ro
+      - ../nginx/ssl:/etc/nginx/ssl:ro
+      - ../resources/images:/app/resources/images:ro
+    depends_on:
+      iptv-api:
+        condition: service_healthy
+    networks:
+      - iptv-network-dev
+      - dokploy-network
+      - iptv-ecosystem-dev
+    labels:
+      traefik.enable: "true"
+      traefik.http.middlewares.iptv-dev-no-redirect.headers.customrequestheaders.X-Placeholder: "1"
+      traefik.http.routers.iptv-dev-https.rule: Host(`${TRAEFIK_DOMAIN:-dev-iptv.walerike.com}`)
+      traefik.http.routers.iptv-dev-https.entrypoints: websecure
+      traefik.http.routers.iptv-dev-https.tls: "true"
+      traefik.http.routers.iptv-dev-https.tls.certresolver: letsencrypt
+      traefik.http.routers.iptv-dev-https.priority: "10"
+      traefik.http.routers.iptv-dev-https.service: iptv-dev-service
+      traefik.http.routers.iptv-dev-http.rule: Host(`${TRAEFIK_DOMAIN:-dev-iptv.walerike.com}`)
+      traefik.http.routers.iptv-dev-http.entrypoints: web
+      traefik.http.routers.iptv-dev-http.priority: "20"
+      traefik.http.routers.iptv-dev-http.service: iptv-dev-service
+      traefik.http.routers.iptv-dev-streams-http.rule: Host(`${TRAEFIK_DOMAIN:-dev-iptv.walerike.com}`) && (Path(`/get.php`) || Path(`/player_api.php`) || PathPrefix(`/live/`) || PathPrefix(`/movie/`) || PathPrefix(`/series/`))
+      traefik.http.routers.iptv-dev-streams-http.entrypoints: web
+      traefik.http.routers.iptv-dev-streams-http.priority: "200"
+      traefik.http.routers.iptv-dev-streams-http.service: iptv-dev-service
+      traefik.http.routers.iptv-dev-streams-http.middlewares: iptv-dev-no-redirect@docker
+      traefik.http.routers.iptv-dev-images-http.rule: Host(`${TRAEFIK_DOMAIN:-dev-iptv.walerike.com}`) && PathPrefix(`/images/`)
+      traefik.http.routers.iptv-dev-images-http.entrypoints: web
+      traefik.http.routers.iptv-dev-images-http.priority: "250"
+      traefik.http.routers.iptv-dev-images-http.service: iptv-dev-service
+      traefik.http.routers.iptv-dev-images-http.middlewares: iptv-dev-no-redirect@docker
+      traefik.http.routers.iptv-dev-images-https.rule: Host(`${TRAEFIK_DOMAIN:-dev-iptv.walerike.com}`) && PathPrefix(`/images/`)
+      traefik.http.routers.iptv-dev-images-https.entrypoints: websecure
+      traefik.http.routers.iptv-dev-images-https.tls: "true"
+      traefik.http.routers.iptv-dev-images-https.tls.certresolver: letsencrypt
+      traefik.http.routers.iptv-dev-images-https.priority: "250"
+      traefik.http.routers.iptv-dev-images-https.service: iptv-dev-service
+      traefik.http.services.iptv-dev-service.loadbalancer.server.port: "80"
+
+  video-extractor:
+    build:
+      context: ../video-extractor-service
+      dockerfile: Dockerfile
+    container_name: walactv-dev-video-extractor
+    restart: unless-stopped
+    networks:
+      - iptv-network-dev
+      - iptv-ecosystem-dev
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  dokploy-network:
+    external: true
+    name: dokploy-network
+  iptv-network-dev:
+    name: walactv-dev-iptv-network
+  iptv-ecosystem-dev:
+    external: true
+    name: iptv-ecosystem-dev
+
+volumes:
+  iptv-data-dev:
+    external: true
+    name: walactv-dev-iptv-data
