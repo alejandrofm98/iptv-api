@@ -3,6 +3,7 @@ from typing import Any
 from sqlalchemy import String, and_, case, desc, func, literal_column, or_, select, text
 from sqlalchemy.orm import Session
 
+from iptv_api.core.catalog_visibility import allowed_catalog_source_sql
 from iptv_api.models.content import MovieCatalog, MovieMetadata, MovieStream
 from iptv_api.repositories.base import BaseRepository
 
@@ -304,8 +305,9 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             params["genre"] = genre
 
         has_streams_filter = "(mc.tmdb_id IS NOT NULL OR EXISTS (SELECT 1 FROM movie_streams ms WHERE ms.movie_id = mc.id))"
+        visibility_filter = allowed_catalog_source_sql("mc", "mm")
         base_where = f"{' AND '.join(filters)}" if filters else "TRUE"
-        where_clause = f"WHERE {base_where} AND {has_streams_filter}"
+        where_clause = f"WHERE {base_where} AND {has_streams_filter} AND {visibility_filter}"
 
         count_join = "LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id" if genre else ""
         count_sql = f"SELECT COUNT(DISTINCT mc.tmdb_id) AS total FROM movies_catalog mc {count_join} {where_clause}"
@@ -382,6 +384,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             "tr.trending_window = 'week'",
             "tr.media_type = 'movie'",
         ]
+        conditions.append(allowed_catalog_source_sql("mc", "mm"))
         if country:
             conditions.append(":country = ANY(mc.countries)")
             params["country"] = country
@@ -391,6 +394,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             SELECT COUNT(*) AS total
             FROM trending_rankings tr
             JOIN movies_catalog mc ON mc.tmdb_id = tr.tmdb_id
+            LEFT JOIN movies_metadata mm ON mm.tmdb_id = mc.tmdb_id
             {where_clause}
         """
         total = self.session.execute(text(count_sql), params).scalar() or 0

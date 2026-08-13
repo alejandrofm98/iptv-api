@@ -18,7 +18,7 @@ logger = logging.getLogger("iptv-api.torrentio")
 _IMDB_PATTERN = re.compile(r"^tt\d+$", re.IGNORECASE)
 _SEEDERS_PATTERN = re.compile(r"[👤]\s*([\d,.]+)")
 _SIZE_PATTERN = re.compile(r"💾\s*([\d,.]+)\s*(KB|MB|GB|TB)", re.IGNORECASE)
-_LANGUAGE_CODES = {"🇪🇸": "ES", "🇬🇧": "EN"}
+_LANGUAGE_CODES = {"🇪🇸": "ES", "🇬🇧": "EN", "🇯🇵": "JP"}
 _EXCLUDED_LANGUAGE_MARKERS = ("🇲🇽", "latino")
 _QUALITY_PATTERN = re.compile(r"\b(4k|2160p|1080p|720p|480p)\b", re.IGNORECASE)
 
@@ -41,6 +41,7 @@ class TorrentioService:
         self.languages = settings.torrentio_languages
         self.timeout = settings.torrentio_timeout_seconds
         self.cache_ttl = settings.torrentio_cache_ttl_seconds
+        self.proxy = settings.torrentio_proxy
         self.session = session or requests.Session()
         self.session.headers.update(
             {
@@ -71,7 +72,10 @@ class TorrentioService:
 
         encoded_config = quote(config, safe="=,")
         url = f"{self.base_url}/{encoded_config}/stream/{content_type}/{content_id}.json"
-        response = self.session.get(url, timeout=self.timeout)
+        request_kwargs: dict[str, Any] = {"timeout": self.timeout}
+        if self.proxy:
+            request_kwargs["proxies"] = {"http": self.proxy, "https": self.proxy}
+        response = self.session.get(url, **request_kwargs)
         response.raise_for_status()
         payload = response.json()
         raw_streams = payload.get("streams", []) if isinstance(payload, dict) else []
@@ -144,6 +148,10 @@ class TorrentioService:
             return "ES"
         if "🇬🇧" in title:
             return "EN"
+        if "🇯🇵" in title or re.search(r"\b(japanese|japonesa?|japon(?:es|és)?)\b", lowered):
+            return "JP"
+        if "日本語" in title or "日本" in title:
+            return "JP"
         if re.search(r"\b(spanish|castellano)\b", lowered):
             return "ES"
         if re.search(r"\benglish\b", lowered):

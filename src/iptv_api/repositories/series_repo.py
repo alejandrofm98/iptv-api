@@ -3,6 +3,7 @@ from typing import Any
 from sqlalchemy import Integer, String, and_, func, literal, or_, select, text
 from sqlalchemy.orm import Session
 
+from iptv_api.core.catalog_visibility import allowed_catalog_source_sql
 from iptv_api.models.series import SeriesCatalog, SeriesEpisode, SeriesMetadata, SeriesStream
 from iptv_api.repositories.base import BaseRepository
 
@@ -465,8 +466,9 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             params["genre"] = genre
 
         has_streams_filter = "(sc.tmdb_id IS NOT NULL OR EXISTS (SELECT 1 FROM series_episodes se JOIN series_streams ss ON ss.episode_id = se.id WHERE se.catalog_id = sc.id))"
+        visibility_filter = allowed_catalog_source_sql("sc", "sm")
         base_where = f"{' AND '.join(filters)}" if filters else "TRUE"
-        where_clause = f"WHERE {base_where} AND {has_streams_filter}"
+        where_clause = f"WHERE {base_where} AND {has_streams_filter} AND {visibility_filter}"
 
         count_join = "LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id" if genre else ""
         count_sql = f"SELECT COUNT(DISTINCT COALESCE(sc.tmdb_id, sc.id::text)) AS total FROM series_catalog sc {count_join} {where_clause}"
@@ -530,6 +532,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             "tr.trending_window = 'week'",
             "tr.media_type = 'tv'",
         ]
+        conditions.append(allowed_catalog_source_sql("sc", "sm"))
         if country:
             conditions.append(":country = ANY(sc.countries)")
             params["country"] = country
@@ -539,6 +542,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             SELECT COUNT(*) AS total
             FROM trending_rankings tr
             JOIN series_catalog sc ON sc.tmdb_id = tr.tmdb_id
+            LEFT JOIN series_metadata sm ON sm.tmdb_id = sc.tmdb_id
             {where_clause}
         """
         total = self.session.execute(text(count_sql), params).scalar() or 0

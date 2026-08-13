@@ -18,6 +18,7 @@ def make_settings() -> Mock:
     settings.torrentio_languages = "spanish,english"
     settings.torrentio_timeout_seconds = 15.0
     settings.torrentio_cache_ttl_seconds = 60
+    settings.torrentio_proxy = None
     return settings
 
 
@@ -64,6 +65,27 @@ def test_stream_lookup_uses_short_memory_cache():
         service.get_movie_streams("tt0111161")
 
     session.get.assert_called_once()
+
+
+def test_stream_lookup_uses_configured_proxy():
+    session = Mock()
+    session.get.return_value = make_response({"streams": []})
+    settings = make_settings()
+    settings.torrentio_proxy = "http://proxy.example:8080"
+
+    with patch("iptv_api.services.torrentio_service.get_settings", return_value=settings):
+        TorrentioService._cache.clear()
+        TorrentioService(session=session).get_movie_streams("tt0111161")
+
+    assert session.get.call_args.kwargs["proxies"] == {
+        "http": "http://proxy.example:8080",
+        "https": "http://proxy.example:8080",
+    }
+
+
+def test_japanese_stream_is_classified_as_japanese():
+    assert TorrentioService._detect_language("Anime 🇯🇵 👤 4") == "JP"
+    assert TorrentioService._detect_language("Pelicula japonesa subtitulada") == "JP"
 
 
 def test_movie_endpoint_resolves_catalog_id_to_imdb_id():

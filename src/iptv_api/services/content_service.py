@@ -11,9 +11,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 import requests
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from iptv_api.core.catalog_visibility import is_allowed_catalog_item
 from iptv_api.core.config import get_settings
 from iptv_api.repositories.channel_repo import ChannelRepository
 from iptv_api.repositories.config_repo import SyncMetadataRepository
@@ -1556,12 +1557,25 @@ class ContentServiceV2:
             gz_path = f"{json_path}.gz"
             if os.path.exists(gz_path):
                 with gzip.open(gz_path, "rt", encoding="utf-8") as f:
-                    return json.load(f)
+                    payload = json.load(f)
+                    return self._filter_static_catalog(payload, content_type)
             with open(json_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                payload = json.load(f)
+                return self._filter_static_catalog(payload, content_type)
         except Exception as e:
             logger.error(f"Error cargando JSON estático {content_type}: {e}")
             return None
+
+    @staticmethod
+    def _filter_static_catalog(payload: dict, content_type: str) -> dict:
+        """Filtra caches nuevas; deja intactas caches antiguas sin metadatos de fuente."""
+        if content_type not in {"movies", "series"}:
+            return payload
+        items = payload.get("items") or []
+        if not items or not any("has_iptv_source" in item for item in items):
+            return payload
+        filtered = [item for item in items if is_allowed_catalog_item(item)]
+        return {**payload, "items": filtered, "total": len(filtered)}
 
     def _get_all_channels_from_db(self) -> dict:
         from iptv_api.models.channel import Channel
@@ -1588,9 +1602,21 @@ class ContentServiceV2:
         return {"items": items, "total": len(items)}
 
     def _get_all_movies_from_db(self) -> dict:
-        from iptv_api.models.content import MovieCatalog
+        from iptv_api.models.content import MovieCatalog, MovieMetadata
 
-        stmt = select(MovieCatalog).order_by(MovieCatalog.title)
+        stmt = (
+            select(MovieCatalog)
+            .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
+            .where(text("""(
+                movies_catalog.has_torrent_source = TRUE
+                OR (movies_catalog.has_iptv_source = TRUE AND (
+                    movies_catalog.countries && ARRAY['ES', 'EN']::varchar[]
+                    OR (movies_metadata.tmdb_data->>'original_language' = 'ja'
+                        AND movies_catalog.countries && ARRAY['JP']::varchar[])
+                ))
+            )"""))
+            .order_by(MovieCatalog.title)
+        )
         rows = list(self.session.execute(stmt).scalars().all())
         items = []
         for r in rows:
@@ -1610,9 +1636,21 @@ class ContentServiceV2:
         return {"items": items, "total": len(items)}
 
     def _get_all_series_from_db(self) -> dict:
-        from iptv_api.models.series import SeriesCatalog
+        from iptv_api.models.series import SeriesCatalog, SeriesMetadata
 
-        stmt = select(SeriesCatalog).order_by(SeriesCatalog.title)
+        stmt = (
+            select(SeriesCatalog)
+            .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
+            .where(text("""(
+                series_catalog.has_torrent_source = TRUE
+                OR (series_catalog.has_iptv_source = TRUE AND (
+                    series_catalog.countries && ARRAY['ES', 'EN']::varchar[]
+                    OR (series_metadata.tmdb_data->>'original_language' = 'ja'
+                        AND series_catalog.countries && ARRAY['JP']::varchar[])
+                ))
+            )"""))
+            .order_by(SeriesCatalog.title)
+        )
         rows = list(self.session.execute(stmt).scalars().all())
         items = []
         for r in rows:

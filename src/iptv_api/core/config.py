@@ -7,6 +7,7 @@ import logging
 import os
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 
@@ -71,6 +72,7 @@ class Settings:
         self.torrentio_languages = os.getenv("TORRENTIO_LANGUAGES", "spanish,english")
         self.torrentio_timeout_seconds = float(os.getenv("TORRENTIO_TIMEOUT_SECONDS", "15"))
         self.torrentio_cache_ttl_seconds = int(os.getenv("TORRENTIO_CACHE_TTL_SECONDS", "60"))
+        self.torrentio_proxy = os.getenv("TORRENTIO_PROXY", "").strip() or None
 
         # ===== Estado interno =====
         self._config_loaded: bool = False
@@ -100,6 +102,27 @@ class Settings:
 
             if CONSTANTS.CLEANUP_INTERVAL_KEY in config:
                 self.cleanup_interval_minutes = int(config[CONSTANTS.CLEANUP_INTERVAL_KEY])
+
+            if not self.torrentio_proxy:
+                proxy_host = (
+                    config.get("TORRENTIO_PROXY_IP") or config.get("PROXY_IP") or ""
+                ).strip()
+                proxy_port = (
+                    config.get("TORRENTIO_PROXY_PORT") or config.get("PROXY_PORT") or ""
+                ).strip()
+                proxy_user = (
+                    config.get("TORRENTIO_PROXY_USER") or config.get("PROXY_USER") or ""
+                ).strip()
+                proxy_password = (
+                    config.get("TORRENTIO_PROXY_PASS") or config.get("PROXY_PASS") or ""
+                ).strip()
+                if proxy_host and proxy_port:
+                    credentials = (
+                        f"{quote(proxy_user, safe='')}:{quote(proxy_password, safe='')}@"
+                        if proxy_user and proxy_password
+                        else ""
+                    )
+                    self.torrentio_proxy = f"http://{credentials}{proxy_host}:{proxy_port}"
 
             self._config_loaded = True
 
