@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from dotenv import load_dotenv
+from urllib.parse import quote
 
 import iptv_api.core.constants as CONSTANTS
 
@@ -65,6 +66,14 @@ class Settings:
         self.pg_database = os.getenv("PG_DATABASE", "postgres")
         self.pg_user = os.getenv("PG_USER", "")
         self.pg_password = os.getenv("PG_PASSWORD", "")
+
+        # ===== Torrentio (busqueda en tiempo real; no persiste torrents) =====
+        self.torrentio_base_url = os.getenv("TORRENTIO_BASE_URL", "https://torrentio.strem.fun")
+        self.torrentio_providers = os.getenv("TORRENTIO_PROVIDERS", "wolfmax4k")
+        self.torrentio_languages = os.getenv("TORRENTIO_LANGUAGES", "spanish,english")
+        self.torrentio_timeout_seconds = float(os.getenv("TORRENTIO_TIMEOUT_SECONDS", "15"))
+        self.torrentio_cache_ttl_seconds = int(os.getenv("TORRENTIO_CACHE_TTL_SECONDS", "60"))
+        self.torrentio_proxy = os.getenv("TORRENTIO_PROXY", "").strip() or None
 
         # ===== Torrentio (busqueda en tiempo real; no persiste torrents) =====
         self.torrentio_base_url = os.getenv("TORRENTIO_BASE_URL", "https://torrentio.strem.fun")
