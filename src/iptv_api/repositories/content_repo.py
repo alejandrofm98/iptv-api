@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from iptv_api.core.catalog_visibility import allowed_catalog_source_sql
 from iptv_api.models.content import MovieCatalog, MovieMetadata, MovieStream
-from iptv_api.repositories.base import BaseRepository
+from iptv_api.repositories.base import BaseRepository, strip_id_prefix
 
 
 class ContentRepository(BaseRepository[MovieCatalog]):
@@ -24,6 +24,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         return result
 
     def get_movie_with_metadata(self, movie_id: str) -> dict | None:
+        movie_id = strip_id_prefix(movie_id)
         stmt = (
             select(
                 MovieCatalog,

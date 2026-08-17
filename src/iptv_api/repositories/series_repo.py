@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from iptv_api.core.catalog_visibility import allowed_catalog_source_sql
 from iptv_api.models.series import SeriesCatalog, SeriesEpisode, SeriesMetadata, SeriesStream
-from iptv_api.repositories.base import BaseRepository
+from iptv_api.repositories.base import BaseRepository, strip_id_prefix
 
 
 class SeriesRepository(BaseRepository[SeriesCatalog]):
@@ -24,6 +24,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         return result
 
     def get_with_metadata(self, series_id: str) -> dict | None:
+        series_id = strip_id_prefix(series_id)
         stmt = (
             select(
                 SeriesCatalog,

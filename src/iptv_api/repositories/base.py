@@ -7,6 +7,24 @@ from iptv_api.database import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
 
+_ID_PREFIXES = (
+    "content:",
+    "movie:",
+    "series:content:",
+    "series:provider:",
+    "series:name:",
+    "replay:",
+)
+
+
+def strip_id_prefix(raw_id: str) -> str:
+    """Quita prefijos de agrupacion (content:, series:content:, replay:...) que
+    usan los clientes como identificadores, dejando el id crudo del catalogo."""
+    for prefix in _ID_PREFIXES:
+        if raw_id.startswith(prefix):
+            return raw_id[len(prefix):]
+    return raw_id
+
 
 class BaseRepository(Generic[ModelType]):
     def __init__(self, model: type[ModelType], session: Session):
