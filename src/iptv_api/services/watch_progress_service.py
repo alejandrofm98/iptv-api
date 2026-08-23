@@ -362,6 +362,7 @@ class WatchProgressServiceV2:
         normalized["year"] = content_row.get("year")
         normalized["tmdb_id"] = content_row.get("tmdb_id")
         normalized["tmdb_title"] = content_row.get("tmdb_title")
+        normalized["imdb_id"] = content_row.get("imdb_id")
         normalized["popularity"] = content_row.get("popularity")
         normalized["status"] = content_row.get("status")
         if content_type == "series":
