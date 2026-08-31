@@ -1236,7 +1236,9 @@ class ContentServiceV2:
     def _resolve_stream_url(stream_options: list[dict], username: str, password: str) -> str:
         if not stream_options:
             return ""
-        url = stream_options[0].get("url", "")
+        # `or ""` porque stream_options de series solo-torrentio traen url null
+        # explicito en el JSONB y .get("url", "") devolveria None -> crash en replace.
+        url = stream_options[0].get("url") or ""
         if username and password:
             url = url.replace("{{USERNAME}}", username).replace("{{PASSWORD}}", password)
         return url
@@ -1247,7 +1249,7 @@ class ContentServiceV2:
             return []
         resolved = []
         for opt in stream_options:
-            url = opt.get("url", "")
+            url = opt.get("url") or ""
             if username and password:
                 url = url.replace("{{USERNAME}}", username).replace("{{PASSWORD}}", password)
             resolved.append(
