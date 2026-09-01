@@ -624,6 +624,7 @@ class ContentServiceV2:
                     "release_date": parsed.get("release_date"),
                     "year": parsed.get("year"),
                     "tmdb_id": parsed.get("tmdb_id"),
+                    "imdb_id": parsed.get("imdb_id"),
                     "tmdb_title": parsed.get("tmdb_title"),
                     "popularity": parsed.get("popularity"),
                     "status": parsed.get("status"),
