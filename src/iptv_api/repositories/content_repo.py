@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from sqlalchemy import String, and_, case, desc, func, literal_column, or_, select, text
@@ -102,7 +103,14 @@ class ContentRepository(BaseRepository[MovieCatalog]):
     ) -> tuple[list[dict], int]:
         filters = []
         if country:
-            filters.append(MovieCatalog.countries.any(country))
+            # Idioma: enlaces directos del pais O torrents de ese idioma
+            # (torrent_languages lo rellena el scrapper via Torrentio).
+            filters.append(
+                or_(
+                    MovieCatalog.countries.any(country),
+                    MovieCatalog.torrent_languages.contains([country]),
+                )
+            )
         if search:
             filters.append(
                 or_(
@@ -293,8 +301,11 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             filters.append("UPPER(mc.group_normalizado) LIKE :upper_group")
             params["upper_group"] = f"%{upper_group}%"
         if country:
-            filters.append(":country = ANY(mc.countries)")
+            filters.append(
+                "(:country = ANY(mc.countries) OR mc.torrent_languages @> :country_torrent::jsonb)"
+            )
             params["country"] = country
+            params["country_torrent"] = json.dumps([country])
         if search:
             filters.append("(mc.title ILIKE :search OR mc.tmdb_id::text ILIKE :search)")
             params["search"] = f"%{search}%"
@@ -387,8 +398,11 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         ]
         conditions.append(allowed_catalog_source_sql("mc", "mm"))
         if country:
-            conditions.append(":country = ANY(mc.countries)")
+            conditions.append(
+                "(:country = ANY(mc.countries) OR mc.torrent_languages @> :country_torrent::jsonb)"
+            )
             params["country"] = country
+            params["country_torrent"] = json.dumps([country])
         where_clause = "WHERE " + " AND ".join(conditions)
 
         count_sql = f"""

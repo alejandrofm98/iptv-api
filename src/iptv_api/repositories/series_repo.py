@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from sqlalchemy import Integer, String, and_, func, literal, or_, select, text
@@ -454,8 +455,11 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             filters.append("UPPER(sc.group_normalizado) LIKE :upper_group")
             params["upper_group"] = f"%{upper_group}%"
         if country:
-            filters.append(":country = ANY(sc.countries)")
+            filters.append(
+                "(:country = ANY(sc.countries) OR sc.torrent_languages @> :country_torrent::jsonb)"
+            )
             params["country"] = country
+            params["country_torrent"] = json.dumps([country])
         if search:
             filters.append("(sc.title ILIKE :search OR sc.title ILIKE :search)")
             params["search"] = f"%{search}%"
@@ -535,8 +539,11 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         ]
         conditions.append(allowed_catalog_source_sql("sc", "sm"))
         if country:
-            conditions.append(":country = ANY(sc.countries)")
+            conditions.append(
+                "(:country = ANY(sc.countries) OR sc.torrent_languages @> :country_torrent::jsonb)"
+            )
             params["country"] = country
+            params["country_torrent"] = json.dumps([country])
         where_clause = "WHERE " + " AND ".join(conditions)
 
         count_sql = f"""
