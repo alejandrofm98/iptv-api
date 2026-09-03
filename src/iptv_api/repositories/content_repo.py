@@ -302,7 +302,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
             params["upper_group"] = f"%{upper_group}%"
         if country:
             filters.append(
-                "(:country = ANY(mc.countries) OR mc.torrent_languages @> :country_torrent::jsonb)"
+                "(:country = ANY(mc.countries) OR COALESCE(mc.torrent_languages, '[]'::jsonb) @> CAST(:country_torrent AS jsonb))"
             )
             params["country"] = country
             params["country_torrent"] = json.dumps([country])
@@ -399,7 +399,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
         conditions.append(allowed_catalog_source_sql("mc", "mm"))
         if country:
             conditions.append(
-                "(:country = ANY(mc.countries) OR mc.torrent_languages @> :country_torrent::jsonb)"
+                "(:country = ANY(mc.countries) OR COALESCE(mc.torrent_languages, '[]'::jsonb) @> CAST(:country_torrent AS jsonb))"
             )
             params["country"] = country
             params["country_torrent"] = json.dumps([country])

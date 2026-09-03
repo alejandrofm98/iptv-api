@@ -456,7 +456,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
             params["upper_group"] = f"%{upper_group}%"
         if country:
             filters.append(
-                "(:country = ANY(sc.countries) OR sc.torrent_languages @> :country_torrent::jsonb)"
+                "(:country = ANY(sc.countries) OR COALESCE(sc.torrent_languages, '[]'::jsonb) @> CAST(:country_torrent AS jsonb))"
             )
             params["country"] = country
             params["country_torrent"] = json.dumps([country])
@@ -540,7 +540,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
         conditions.append(allowed_catalog_source_sql("sc", "sm"))
         if country:
             conditions.append(
-                "(:country = ANY(sc.countries) OR sc.torrent_languages @> :country_torrent::jsonb)"
+                "(:country = ANY(sc.countries) OR COALESCE(sc.torrent_languages, '[]'::jsonb) @> CAST(:country_torrent AS jsonb))"
             )
             params["country"] = country
             params["country_torrent"] = json.dumps([country])
