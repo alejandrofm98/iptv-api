@@ -30,17 +30,25 @@ class CalendarServiceV2:
             return self._convert_dates(dict(row)) if row else None
         except Exception:
             self.session.rollback()
-            row = self.session.execute(
-                text("SELECT * FROM calendario WHERE id = CAST(:event_id AS uuid)"),
-                {"event_id": event_id},
-            ).mappings().first()
+            row = (
+                self.session.execute(
+                    text("SELECT * FROM calendario WHERE id = CAST(:event_id AS uuid)"),
+                    {"event_id": event_id},
+                )
+                .mappings()
+                .first()
+            )
             return self._convert_dates(self._table_event(dict(row))) if row else None
 
     def _get_events_from_table(self, fecha: date) -> list[dict[str, Any]]:
-        rows = self.session.execute(
-            text("SELECT * FROM calendario WHERE fecha = :fecha ORDER BY hora, id"),
-            {"fecha": fecha},
-        ).mappings().all()
+        rows = (
+            self.session.execute(
+                text("SELECT * FROM calendario WHERE fecha = :fecha ORDER BY hora, id"),
+                {"fecha": fecha},
+            )
+            .mappings()
+            .all()
+        )
         return [self._convert_dates(self._table_event(dict(row))) for row in rows]
 
     @staticmethod

@@ -1610,14 +1610,16 @@ class ContentServiceV2:
         stmt = (
             select(MovieCatalog)
             .outerjoin(MovieMetadata, MovieMetadata.tmdb_id == MovieCatalog.tmdb_id)
-            .where(text("""(
+            .where(
+                text("""(
                 movies_catalog.has_torrent_source = TRUE
                 OR (movies_catalog.has_iptv_source = TRUE AND (
                     movies_catalog.countries && ARRAY['ES', 'EN']::varchar[]
                     OR (movies_metadata.tmdb_data->>'original_language' = 'ja'
                         AND movies_catalog.countries && ARRAY['JP']::varchar[])
                 ))
-            )"""))
+            )""")
+            )
             .order_by(MovieCatalog.title)
         )
         rows = list(self.session.execute(stmt).scalars().all())
@@ -1644,14 +1646,16 @@ class ContentServiceV2:
         stmt = (
             select(SeriesCatalog)
             .outerjoin(SeriesMetadata, SeriesMetadata.tmdb_id == SeriesCatalog.tmdb_id)
-            .where(text("""(
+            .where(
+                text("""(
                 series_catalog.has_torrent_source = TRUE
                 OR (series_catalog.has_iptv_source = TRUE AND (
                     series_catalog.countries && ARRAY['ES', 'EN']::varchar[]
                     OR (series_metadata.tmdb_data->>'original_language' = 'ja'
                         AND series_catalog.countries && ARRAY['JP']::varchar[])
                 ))
-            )"""))
+            )""")
+            )
             .order_by(SeriesCatalog.title)
         )
         rows = list(self.session.execute(stmt).scalars().all())

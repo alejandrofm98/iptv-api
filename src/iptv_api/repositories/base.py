@@ -22,7 +22,7 @@ def strip_id_prefix(raw_id: str) -> str:
     usan los clientes como identificadores, dejando el id crudo del catalogo."""
     for prefix in _ID_PREFIXES:
         if raw_id.startswith(prefix):
-            return raw_id[len(prefix):]
+            return raw_id[len(prefix) :]
     return raw_id
 
 

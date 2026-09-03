@@ -9,12 +9,12 @@ from iptv_api.core.dependencies import (
 )
 from iptv_api.core.exceptions import BadRequestException, NotFoundException
 from iptv_api.core.models import SystemStats, UserCreate, UserUpdate
-from iptv_api.services.device_service import DeviceServiceV2
-from iptv_api.services.stream_service import StreamProxyServiceV2
-from iptv_api.services.user_service import UserServiceV2
 from iptv_api.repositories.channel_repo import ChannelRepository
 from iptv_api.repositories.content_repo import ContentRepository
 from iptv_api.repositories.series_repo import SeriesRepository
+from iptv_api.services.device_service import DeviceServiceV2
+from iptv_api.services.stream_service import StreamProxyServiceV2
+from iptv_api.services.user_service import UserServiceV2
 
 router = APIRouter()
 

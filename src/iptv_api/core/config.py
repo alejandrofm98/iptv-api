@@ -10,7 +10,6 @@ from pathlib import Path
 from urllib.parse import quote
 
 from dotenv import load_dotenv
-from urllib.parse import quote
 
 import iptv_api.core.constants as CONSTANTS
 

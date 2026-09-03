@@ -49,11 +49,7 @@ class WatchProgressServiceV2:
         active_rows = self.wp_repo.get_continue_watching(user_id, max(limit * 5, 100))
         watched_rows = self.wp_repo.get_watched_items(user_id, max(limit * 5, 100), 0)
 
-        active = [
-            self._normalize(row)
-            for row in active_rows
-            if self._has_resume_progress(row)
-        ]
+        active = [self._normalize(row) for row in active_rows if self._has_resume_progress(row)]
         watched = [self._normalize(row) for row in watched_rows]
         by_group: dict[str, dict] = {}
 
