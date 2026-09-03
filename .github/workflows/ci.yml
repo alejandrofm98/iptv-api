@@ -30,7 +30,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff
+          # Version pinned: las reglas de formato cambian entre versiones de
+          # ruff y un bump silencioso romperia el check sin cambios en el repo.
+          pip install ruff==0.15.8
 
       - name: Ruff format check
         run: ruff format --check .
