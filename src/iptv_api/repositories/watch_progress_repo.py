@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import String, and_, delete, desc, func, select
+from sqlalchemy import String, and_, delete, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from iptv_api.models.content import MovieCatalog
@@ -109,6 +109,50 @@ class WatchProgressRepository(BaseRepository[WatchProgress]):
         self.session.add(wp)
         self.session.flush()
         return wp
+
+    def delete_stale_series_progress(
+        self,
+        user_id: str,
+        season: int,
+        episode: int,
+        content_id: str | None = None,
+        series_name: str | None = None,
+    ) -> int:
+        """Borra progresos a medias de episodios anteriores de la misma serie.
+
+        Al completar un episodio, los in-progress de episodios estrictamente
+        anteriores (o filas sin S/E, no resolvibles a episodio) quedan rancios
+        y ocultarian el ultimo visto en Continuar viendo. Best-effort.
+        """
+        scope = []
+        if content_id:
+            scope.append(WatchProgress.content_id == content_id)
+        if series_name:
+            scope.append(WatchProgress.series_name == series_name)
+        if not scope:
+            return 0
+        stmt = delete(WatchProgress).where(
+            and_(
+                WatchProgress.user_id == user_id,
+                WatchProgress.content_type == "series",
+                WatchProgress.is_watched.is_(False),
+                or_(*scope),
+                or_(
+                    WatchProgress.season_number.is_(None),
+                    WatchProgress.season_number < season,
+                    and_(
+                        WatchProgress.season_number == season,
+                        or_(
+                            WatchProgress.episode_number.is_(None),
+                            WatchProgress.episode_number < episode,
+                        ),
+                    ),
+                ),
+            )
+        )
+        result = self.session.execute(stmt)
+        self.session.flush()
+        return result.rowcount
 
     def delete_by_user_and_content_id(self, user_id: str, content_id: str) -> bool:
         stmt = delete(WatchProgress).where(

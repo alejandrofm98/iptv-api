@@ -66,7 +66,8 @@ class WatchProgressServiceV2:
             if item.get("content_type") != "series":
                 continue
             key = self._series_group_key(item)
-            if key not in by_group:
+            current = by_group.get(key)
+            if current is None or self._watched_supersedes_active(item, current):
                 by_group[key] = item
 
         return sorted(
@@ -84,6 +85,31 @@ class WatchProgressServiceV2:
     @staticmethod
     def _is_newer(new_item: dict, old_item: dict) -> bool:
         return (new_item.get("last_watched_at") or "") > (old_item.get("last_watched_at") or "")
+
+    @staticmethod
+    def _episode_tuple(item: dict) -> tuple[int, int] | None:
+        season = item.get("season_number")
+        episode = item.get("episode_number")
+        if season is None or episode is None:
+            return None
+        return (season, episode)
+
+    def _watched_supersedes_active(self, watched_item: dict, current_item: dict) -> bool:
+        """Dice si un episodio visto debe desplazar al actual del grupo.
+
+        Un progreso a medias rancio (p. ej. T2E1 abandonado) no debe ocultar
+        el ultimo episodio visto (p. ej. T3E1): si el visto va por delante en
+        (temporada, episodio), gana. Si no hay S/E comparable en ambos, gana
+        el mas reciente. En cualquier otro caso el activo a medias sigue
+        mandando (es lo reanudable).
+        """
+        if current_item.get("content_type") != "series" or current_item.get("is_watched"):
+            return self._is_newer(watched_item, current_item)
+        watched_ep = self._episode_tuple(watched_item)
+        active_ep = self._episode_tuple(current_item)
+        if watched_ep is not None and active_ep is not None:
+            return watched_ep > active_ep
+        return self._is_newer(watched_item, current_item)
 
     def _dedupe_by_series(self, items: list[dict]) -> list[dict]:
         """Collapsa varias filas de la misma serie a una sola entrada
@@ -153,6 +179,14 @@ class WatchProgressServiceV2:
         if duration_ms > 0 and (position_ms / duration_ms) >= 0.95 and not row.is_watched:
             row.is_watched = True
             self.session.flush()
+            if (
+                row.content_type == "series"
+                and row.season_number is not None
+                and row.episode_number is not None
+            ):
+                self._cleanup_stale_series_progress(
+                    user_id, row.content_id, row.season_number, row.episode_number
+                )
         return self._normalize(row)
 
     def delete_progress(self, user_id: str, content_id: str) -> bool:
@@ -189,6 +223,8 @@ class WatchProgressServiceV2:
             )
             if result and is_watched and completed:
                 self._delete_completed_playback_preference(user_id, content_type, canonical)
+            if result and is_watched and season is not None and episode is not None:
+                self._cleanup_stale_series_progress(user_id, canonical, season, episode)
             return result
         rows = self._lookup_rows(user_id, content_id)
         if rows:
@@ -220,6 +256,25 @@ class WatchProgressServiceV2:
             row = self._find_content_row(content_type, content_id)
             if row and row.get("id"):
                 self._delete_completed_playback_preference(user_id, content_type, str(row["id"]))
+        except Exception:
+            return
+
+    def _cleanup_stale_series_progress(
+        self, user_id: str, content_id: str, season: int, episode: int
+    ) -> None:
+        """Best-effort: al completar un episodio, purga los in-progress rancios
+        de episodios anteriores de la misma serie. Nunca debe romper la respuesta."""
+        try:
+            row = self.wp_repo.get_by_user_and_content(
+                user_id, content_id, season=season, episode=episode
+            )
+            self.wp_repo.delete_stale_series_progress(
+                user_id,
+                season,
+                episode,
+                content_id=content_id,
+                series_name=row.series_name if row else None,
+            )
         except Exception:
             return
 

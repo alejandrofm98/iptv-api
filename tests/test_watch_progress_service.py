@@ -288,6 +288,196 @@ def test_home_continue_watching_prefers_active_episode_and_groups_series():
     assert items[0]["episode_number"] == 19
 
 
+def _home_service_with(active_rows, watched_rows) -> WatchProgressServiceV2:
+    service = WatchProgressServiceV2(MagicMock())
+    service.wp_repo.get_continue_watching = MagicMock(return_value=active_rows)
+    service.wp_repo.get_watched_items = MagicMock(return_value=watched_rows)
+    service._normalize = MagicMock(
+        side_effect=lambda row: {
+            "content_type": row.content_type,
+            "content_id": row.content_id,
+            "series_name": row.series_name,
+            "series_provider_id": "silo-id",
+            "season_number": row.season_number,
+            "episode_number": row.episode_number,
+            "position_ms": row.position_ms,
+            "duration_ms": row.duration_ms,
+            "last_watched_at": row.last_watched_at,
+            "is_watched": row.is_watched,
+        }
+    )
+    return service
+
+
+def test_home_continue_watching_prefers_newer_watched_when_active_is_stale():
+    """Caso Silo: un T2E1 a medias y abandonado no debe ocultar el T3E1 visto despues."""
+    active = make_progress_row(
+        content_id="series:silo",
+        content_type="series",
+        position_ms=300_000,
+        duration_ms=1_200_000,
+        series_name="Silo",
+        season_number=2,
+        episode_number=1,
+    )
+    active.last_watched_at = "2026-08-01T13:00:00"
+    watched = make_progress_row(
+        content_id="series:silo",
+        content_type="series",
+        position_ms=0,
+        duration_ms=0,
+        is_watched=True,
+        series_name="Silo",
+        season_number=3,
+        episode_number=1,
+    )
+    watched.last_watched_at = "2026-09-06T15:00:00"
+
+    items = _home_service_with([active], [watched]).get_continue_watching_home("user-1", limit=20)
+
+    assert len(items) == 1
+    assert items[0]["season_number"] == 3
+    assert items[0]["episode_number"] == 1
+    assert items[0]["is_watched"] is True
+
+
+def test_home_continue_watching_keeps_active_ahead_of_newer_watched_behind():
+    """El activo a medias manda si va por delante, aunque el visto sea mas reciente."""
+    active = make_progress_row(
+        content_id="series:silo",
+        content_type="series",
+        position_ms=300_000,
+        duration_ms=1_200_000,
+        series_name="Silo",
+        season_number=3,
+        episode_number=1,
+    )
+    active.last_watched_at = "2026-08-01T13:00:00"
+    watched = make_progress_row(
+        content_id="series:silo",
+        content_type="series",
+        position_ms=0,
+        duration_ms=0,
+        is_watched=True,
+        series_name="Silo",
+        season_number=2,
+        episode_number=5,
+    )
+    watched.last_watched_at = "2026-09-06T15:00:00"
+
+    items = _home_service_with([active], [watched]).get_continue_watching_home("user-1", limit=20)
+
+    assert len(items) == 1
+    assert items[0]["season_number"] == 3
+    assert items[0]["episode_number"] == 1
+    assert items[0]["is_watched"] is False
+
+
+def test_home_continue_watching_falls_back_to_newest_without_episode_numbers():
+    """Sin S/E comparable en ambos, gana el mas reciente."""
+    active = make_progress_row(
+        content_id="series:silo",
+        content_type="series",
+        position_ms=300_000,
+        duration_ms=1_200_000,
+        series_name="Silo",
+        season_number=None,
+        episode_number=None,
+    )
+    active.last_watched_at = "2026-08-01T13:00:00"
+    watched = make_progress_row(
+        content_id="series:silo",
+        content_type="series",
+        position_ms=0,
+        duration_ms=0,
+        is_watched=True,
+        series_name="Silo",
+        season_number=1,
+        episode_number=1,
+    )
+    watched.last_watched_at = "2026-09-06T15:00:00"
+
+    items = _home_service_with([active], [watched]).get_continue_watching_home("user-1", limit=20)
+
+    assert len(items) == 1
+    assert items[0]["is_watched"] is True
+
+
+def test_set_is_watched_episode_cleans_stale_progress():
+    """Completar un episodio purga los in-progress rancios de la misma serie."""
+    service = WatchProgressServiceV2(MagicMock())
+    service._canonical_content_id = MagicMock(return_value="series:silo")
+    service.wp_repo.mark_watched = MagicMock(return_value=True)
+    completed_row = make_progress_row(
+        content_id="series:silo",
+        content_type="series",
+        is_watched=True,
+        series_name="Silo",
+        season_number=3,
+        episode_number=1,
+    )
+    service.wp_repo.get_by_user_and_content = MagicMock(return_value=completed_row)
+    service.wp_repo.delete_stale_series_progress = MagicMock(return_value=2)
+
+    result = service.set_is_watched("user-1", "series:silo", True, season=3, episode=1)
+
+    assert result is True
+    service.wp_repo.delete_stale_series_progress.assert_called_once_with(
+        "user-1", 3, 1, content_id="series:silo", series_name="Silo"
+    )
+
+
+def test_set_is_watched_episode_no_cleanup_when_unmarking():
+    """Desmarcar como visto no debe borrar progresos."""
+    service = WatchProgressServiceV2(MagicMock())
+    service._canonical_content_id = MagicMock(return_value="series:silo")
+    service.wp_repo.mark_watched = MagicMock(return_value=True)
+    service.wp_repo.delete_stale_series_progress = MagicMock()
+
+    result = service.set_is_watched("user-1", "series:silo", False, season=3, episode=1)
+
+    assert result is True
+    service.wp_repo.delete_stale_series_progress.assert_not_called()
+
+
+def test_upsert_progress_natural_completion_cleans_stale_progress():
+    """Completar por progreso (>=95%) tambien purga los rancios anteriores."""
+    service = WatchProgressServiceV2(MagicMock())
+    row = make_progress_row(
+        content_id="series:silo",
+        content_type="series",
+        position_ms=1_150_000,
+        duration_ms=1_200_000,
+        is_watched=False,
+        series_name="Silo",
+        season_number=3,
+        episode_number=1,
+    )
+    service.wp_repo.upsert = MagicMock(return_value=row)
+    service.wp_repo.get_by_user_and_content = MagicMock(return_value=row)
+    service.wp_repo.delete_stale_series_progress = MagicMock(return_value=1)
+    service._normalize = MagicMock(return_value={})
+    service._canonical_content_id = MagicMock(return_value="series:silo")
+
+    service.upsert_progress(
+        "user-1",
+        "series:silo",
+        {
+            "content_type": "series",
+            "position_ms": 1_150_000,
+            "duration_ms": 1_200_000,
+            "series_name": "Silo",
+            "season_number": 3,
+            "episode_number": 1,
+        },
+    )
+
+    assert row.is_watched is True
+    service.wp_repo.delete_stale_series_progress.assert_called_once_with(
+        "user-1", 3, 1, content_id="series:silo", series_name="Silo"
+    )
+
+
 def test_continue_watching_series_uses_catalog_title_when_serie_name_missing():
     """El catálogo real expone `title`, no `serie_name`; la serie debe resolverse igual."""
     progress_row = make_progress_row(
