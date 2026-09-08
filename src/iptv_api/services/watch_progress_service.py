@@ -97,18 +97,13 @@ class WatchProgressServiceV2:
     def _watched_supersedes_active(self, watched_item: dict, current_item: dict) -> bool:
         """Dice si un episodio visto debe desplazar al actual del grupo.
 
-        Un progreso a medias rancio (p. ej. T2E1 abandonado) no debe ocultar
-        el ultimo episodio visto (p. ej. T3E1): si el visto va por delante en
-        (temporada, episodio), gana. Si no hay S/E comparable en ambos, gana
-        el mas reciente. En cualquier otro caso el activo a medias sigue
-        mandando (es lo reanudable).
+        Siempre gana el episodio mas alto en (temporada, episodio), sin mirar
+        fechas. Solo si no hay S/E comparable en ambos se usa la fecha.
         """
-        if current_item.get("content_type") != "series" or current_item.get("is_watched"):
-            return self._is_newer(watched_item, current_item)
         watched_ep = self._episode_tuple(watched_item)
-        active_ep = self._episode_tuple(current_item)
-        if watched_ep is not None and active_ep is not None:
-            return watched_ep > active_ep
+        current_ep = self._episode_tuple(current_item)
+        if watched_ep is not None and current_ep is not None:
+            return watched_ep > current_ep
         return self._is_newer(watched_item, current_item)
 
     def _dedupe_by_series(self, items: list[dict]) -> list[dict]:
