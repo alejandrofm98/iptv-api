@@ -328,3 +328,22 @@ class ChannelFavoriteResponse(BaseModel):
     channel_provider_id: str
     provider_id: str
     created_at: str | None = None
+
+
+class HiddenGroupCreate(BaseModel):
+    """Modelo para ocultar un grupo de canales (alcance grupo + pais).
+
+    country == "" significa global (todos los paises).
+    """
+
+    group_name: str = Field(..., min_length=1, max_length=255)
+    country: str = Field(default="", max_length=10)
+
+
+class HiddenGroupResponse(BaseModel):
+    """Respuesta de grupo oculto."""
+
+    user_id: str
+    country: str
+    group_name: str
+    created_at: str | None = None

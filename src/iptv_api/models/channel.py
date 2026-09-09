@@ -1,5 +1,5 @@
 """Shim: re-exports models from iptv-db. Source of truth is iptv_db.models."""
 
-from iptv_db.models.channel import Channel, ChannelFavorite
+from iptv_db.models.channel import Channel, ChannelFavorite, HiddenChannelGroup
 
-__all__ = ["Channel", "ChannelFavorite"]
+__all__ = ["Channel", "ChannelFavorite", "HiddenChannelGroup"]

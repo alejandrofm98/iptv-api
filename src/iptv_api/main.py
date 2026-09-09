@@ -26,6 +26,7 @@ from iptv_api.routers import (
     channel_favorites,
     content,
     health,
+    hidden_groups,
     logo,
     playback_preferences,
     replays,
@@ -194,6 +195,7 @@ app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(content.router)
 app.include_router(channel_favorites.router)
+app.include_router(hidden_groups.router)
 app.include_router(series.router)
 app.include_router(watch_progress.router)
 app.include_router(playback_preferences.router)

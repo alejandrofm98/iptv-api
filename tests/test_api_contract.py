@@ -13,6 +13,7 @@ ANDROID_CONTRACT_PATHS = {
     "/api/torrentio/movies/{movie_id}",
     "/api/torrentio/series/{series_id}/episodes/{season}/{episode}",
     "/api/channel-favorites",
+    "/api/hidden-groups",
     "/api/calendar/{fecha}",
     "/{content_type}/{username}/{password}/{stream_id}",
 }
