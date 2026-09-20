@@ -49,6 +49,7 @@ class ContentRepository(BaseRepository[MovieCatalog]):
                 or_(
                     MovieCatalog.id.cast(String) == movie_id,
                     MovieCatalog.tmdb_id == movie_id,
+                    MovieCatalog.imdb_id == movie_id,
                     MovieCatalog.provider_id == movie_id,
                     MovieMetadata.imdb_id == movie_id,
                 )

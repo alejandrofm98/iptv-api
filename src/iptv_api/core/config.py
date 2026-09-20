@@ -74,13 +74,15 @@ class Settings:
         self.torrentio_cache_ttl_seconds = int(os.getenv("TORRENTIO_CACHE_TTL_SECONDS", "60"))
         self.torrentio_proxy = os.getenv("TORRENTIO_PROXY", "").strip() or None
 
-        # ===== Torrentio (busqueda en tiempo real; no persiste torrents) =====
-        self.torrentio_base_url = os.getenv("TORRENTIO_BASE_URL", "https://torrentio.strem.fun")
-        self.torrentio_providers = os.getenv("TORRENTIO_PROVIDERS", "wolfmax4k")
-        self.torrentio_languages = os.getenv("TORRENTIO_LANGUAGES", "spanish,english")
-        self.torrentio_timeout_seconds = float(os.getenv("TORRENTIO_TIMEOUT_SECONDS", "15"))
-        self.torrentio_cache_ttl_seconds = int(os.getenv("TORRENTIO_CACHE_TTL_SECONDS", "60"))
-        self.torrentio_proxy = os.getenv("TORRENTIO_PROXY", "").strip() or None
+        # ===== Addons Stremio (metadata read-only: Cinemeta + sinopsis ES de TMDB) =====
+        self.cinemeta_base_url = os.getenv("CINEMETA_BASE_URL", "https://v3-cinemeta.strem.io")
+        self.cinemeta_timeout_seconds = float(os.getenv("CINEMETA_TIMEOUT_SECONDS", "15"))
+        self.cinemeta_cache_ttl_seconds = int(os.getenv("CINEMETA_CACHE_TTL_SECONDS", "86400"))
+        self.tmdb_base_url = os.getenv("TMDB_BASE_URL", "https://api.themoviedb.org/3")
+        self.tmdb_api_key = os.getenv("TMDB_API_KEY", "")
+        self.tmdb_read_token = os.getenv("TMDB_READ_TOKEN", "")
+        self.tmdb_es_timeout_seconds = float(os.getenv("TMDB_ES_TIMEOUT_SECONDS", "15"))
+        self.tmdb_es_cache_ttl_seconds = int(os.getenv("TMDB_ES_CACHE_TTL_SECONDS", "2592000"))
 
         # ===== Estado interno =====
         self._config_loaded: bool = False

@@ -4,7 +4,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       args:
-        IPTV_DB_REF: 0b865ac
+        # DEV-TEST: rama feat/stremio-cinemeta-es (catalog.imdb_id). Al mergear, pinnear hash.
+        IPTV_DB_REF: ${IPTV_DB_REF:-feat/stremio-cinemeta-es}
     container_name: walactv-dev-api
     restart: unless-stopped
     env_file:

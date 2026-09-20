@@ -49,6 +49,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 or_(
                     SeriesCatalog.id.cast(String) == series_id,
                     SeriesCatalog.tmdb_id == series_id,
+                    SeriesCatalog.imdb_id == series_id,
                     SeriesCatalog.provider_id == series_id,
                     SeriesMetadata.imdb_id == series_id,
                 )

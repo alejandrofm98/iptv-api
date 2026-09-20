@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from iptv_api.core.config import get_settings
 from iptv_api.core.dependencies import get_transcode_service
 from iptv_api.routers import (
+    addons,
     admin,
     auth,
     calendar,
@@ -202,6 +203,7 @@ app.include_router(playback_preferences.router)
 app.include_router(calendar.router)
 app.include_router(replays.router)
 app.include_router(torrentio.router)
+app.include_router(addons.router)
 app.include_router(streams.router)
 app.include_router(video_extractor.router)
 app.include_router(logo.router)

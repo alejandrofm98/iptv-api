@@ -145,6 +145,10 @@ curl http://localhost:3010/api/admin/users \
 - `PUT /api/playback-preferences/{movie|series}/{catalog_id}`
 - `DELETE /api/playback-preferences/{movie|series}/{catalog_id}`
 
+### Addons Stremio (Bearer, read-only)
+
+- `GET /api/addons/meta/{movie|series}/{imdb_id}` (ficha Cinemeta + sinopsis ES de TMDB; `?include_videos=true` para episodios y `?include_sources=true` para consultar disponibilidad torrent)
+
 Las preferencias de audio y subtítulos se comparten entre clientes. En series,
 `catalog_id` identifica la serie completa, no un episodio.
 
