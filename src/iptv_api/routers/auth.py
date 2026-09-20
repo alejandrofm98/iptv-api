@@ -70,6 +70,7 @@ async def login(
         "access_token": access_token,
         "token_type": "bearer",
         "role": user.get("role", "user"),
+        "iptv_enabled": user.get("iptv_enabled", True),
     }
 
 
@@ -96,6 +97,9 @@ async def validate_stream(
 
     if not auth.can_connect:
         raise ForbiddenException(auth.message)
+
+    if not auth.iptv_enabled:
+        raise ForbiddenException("La cuenta no tiene un proveedor IPTV contratado")
 
     user_agent = request.headers.get("User-Agent", "Unknown")
     ip_address = request.client.host if request.client else "Unknown"

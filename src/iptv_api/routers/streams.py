@@ -158,6 +158,9 @@ async def _proxy_stream_handler(
     if not auth.can_connect:
         raise ForbiddenException(auth.message)
 
+    if not auth.iptv_enabled:
+        raise ForbiddenException("La cuenta no tiene un proveedor IPTV contratado")
+
     user_agent = request.headers.get("User-Agent", "Unknown")
     ip_address = request.client.host if request.client else "Unknown"
 
@@ -296,6 +299,9 @@ async def proxy_subtitle_file(
     auth = await asyncio.to_thread(user_svc.validate_credentials, username, password)
     if not auth.valid:
         raise UnauthorizedException(auth.message)
+
+    if not auth.iptv_enabled:
+        raise ForbiddenException("La cuenta no tiene un proveedor IPTV contratado")
 
     clean_pid = provider_id.rsplit(".", 1)[0] if "." in provider_id else provider_id
     tracks = await stream_svc.get_borrowed_subtitle_tracks(
@@ -504,6 +510,9 @@ async def proxy_stream_channel_chromecast(
 
     if not auth.can_connect:
         raise ForbiddenException(auth.message)
+
+    if not auth.iptv_enabled:
+        raise ForbiddenException("La cuenta no tiene un proveedor IPTV contratado")
 
     user_agent = request.headers.get("User-Agent", "Unknown")
     ip_address = request.client.host if request.client else "Unknown"

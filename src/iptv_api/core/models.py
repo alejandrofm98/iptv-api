@@ -31,6 +31,7 @@ class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6)
     max_connections: int = Field(default=5, ge=1, le=10)
+    iptv_enabled: bool = True
     role: str = Field(default="user")  # <--- NUEVO
     expires_at: datetime | None = None
 
@@ -41,6 +42,7 @@ class UserUpdate(BaseModel):
     password: str | None = Field(None, min_length=6)
     max_connections: int | None = Field(None, ge=1, le=10)
     is_active: bool | None = None
+    iptv_enabled: bool | None = None
     expires_at: datetime | None = None
     role: str | None = None  # <--- NUEVO
 
@@ -52,6 +54,7 @@ class UserResponse(BaseModel):
     username: str
     max_connections: int
     is_active: bool
+    iptv_enabled: bool = True
     expires_at: datetime | None
     created_at: datetime
     active_devices: int = 0
@@ -116,6 +119,7 @@ class Token(BaseModel):  # <--- NUEVO MODELO
     access_token: str
     token_type: str
     role: str
+    iptv_enabled: bool = True
 
 
 class AuthResult(BaseModel):
@@ -128,6 +132,7 @@ class AuthResult(BaseModel):
     can_connect: bool = False
     current_devices: int = 0
     max_devices: int = 0
+    iptv_enabled: bool = True
 
 
 # ============================================

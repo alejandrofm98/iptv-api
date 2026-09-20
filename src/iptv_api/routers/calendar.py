@@ -30,6 +30,9 @@ async def get_calendar_by_date(
     except ValueError:
         raise BadRequestException("Formato de fecha inválido. Use YYYY-MM-DD") from None
 
+    if not auth.iptv_enabled:
+        return CalendarDayResponse(fecha=fecha, total_eventos=0, eventos=[])
+
     eventos_raw = calendar_svc.get_events_by_date(fecha)
 
     if not eventos_raw:
@@ -86,6 +89,9 @@ async def get_calendar_event(
     auth: AuthDep = Depends(require_auth_with_jwt),
     calendar_svc: CalendarServiceV2 = Depends(get_calendar_service_v2),
 ):
+    if not auth.iptv_enabled:
+        raise NotFoundException("Evento", event_id)
+
     evento = calendar_svc.get_event_by_id(event_id)
 
     if not evento:

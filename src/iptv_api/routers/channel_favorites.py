@@ -17,6 +17,9 @@ async def list_channel_favorites(
     auth: AuthDep = Depends(require_auth_with_jwt),
     favorites_svc: ChannelFavoritesServiceV2 = Depends(get_channel_favorites_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"items": [], "total": 0}
+
     items = favorites_svc.list_favorites(auth.user_id)
     return {"items": items, "total": len(items)}
 
@@ -27,6 +30,9 @@ async def add_channel_favorite(
     auth: AuthDep = Depends(require_auth_with_jwt),
     favorites_svc: ChannelFavoritesServiceV2 = Depends(get_channel_favorites_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"channel_provider_id": body.channel_provider_id, "created": False}
+
     return favorites_svc.add_favorite(auth.user_id, body.channel_provider_id)
 
 
@@ -36,6 +42,9 @@ async def delete_channel_favorite(
     auth: AuthDep = Depends(require_auth_with_jwt),
     favorites_svc: ChannelFavoritesServiceV2 = Depends(get_channel_favorites_service_v2),
 ):
+    if not auth.iptv_enabled:
+        raise NotFoundException("ChannelFavorite", channel_provider_id)
+
     deleted = favorites_svc.remove_favorite(auth.user_id, channel_provider_id)
     if not deleted:
         raise NotFoundException("ChannelFavorite", channel_provider_id)

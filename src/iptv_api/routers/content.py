@@ -24,6 +24,18 @@ settings = get_settings()
 # Valores reservados que tienen su propio endpoint — nunca deben llegar aquí
 _RESERVED_ITEM_IDS = {"full", "all"}
 
+
+def _empty_page(page: int, page_size: int) -> dict:
+    return {
+        "items": [],
+        "total": 0,
+        "page": page,
+        "page_size": page_size,
+        "pages": 0,
+        "has_next": False,
+        "has_prev": page > 1,
+    }
+
 # ============================================
 # API: Contenido (Público)
 # ============================================
@@ -38,6 +50,9 @@ async def get_groups_public(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"groups": []}
+
     country_list = None
     if countries:
         country_list = [c.strip().upper() for c in countries.split(",") if c.strip()]
@@ -54,6 +69,9 @@ async def get_countries_public(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"countries": []}
+
     return {"countries": content_svc.get_countries(content_type)}
 
 
@@ -78,6 +96,9 @@ async def get_content(
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
     favorites_svc: ChannelFavoritesServiceV2 = Depends(get_channel_favorites_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return _empty_page(page, page_size)
+
     if content_type == "channels" and group == "Favorites":
         return favorites_svc.get_favorite_channels(
             user_id=auth.user_id,
@@ -129,6 +150,9 @@ async def get_content_filters(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"countries": [], "groups": [], "genres": []}
+
     payload = content_svc.get_catalog_filters(content_type=content_type, country=country)
     if content_type == "channels" and not any(g["value"] == "Favorites" for g in payload["groups"]):
         payload = {
@@ -144,6 +168,9 @@ async def get_content_genres(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"genres": []}
+
     return {"genres": content_svc.get_genres(content_type)}
 
 
@@ -155,6 +182,9 @@ async def get_content_stats(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"content_type": content_type, "total": 0}
+
     return content_svc.get_content_stats(content_type=content_type)
 
 
@@ -169,6 +199,9 @@ async def get_channels_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"items": [], "total": 0}
+
     json_data = content_svc.get_all_content_bulk("channels")
     for base_dir in [
         "/app/data/json",
@@ -201,6 +234,9 @@ async def get_movies_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"items": [], "total": 0}
+
     json_data = content_svc.get_all_content_bulk("movies")
     for base_dir in [
         "/app/data/json",
@@ -233,6 +269,9 @@ async def get_series_full(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"items": [], "total": 0}
+
     json_data = content_svc.get_all_content_bulk("series")
     for base_dir in [
         "/app/data/json",
@@ -265,6 +304,9 @@ async def get_all_channels_bulk(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        return {"items": [], "total": 0}
+
     return content_svc.get_all_channels_bulk()
 
 
@@ -282,6 +324,9 @@ async def get_content_item(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        raise NotFoundException("Contenido IPTV", item_id)
+
     if content_type not in ["channels", "movies", "series"]:
         raise BadRequestException("Tipo de contenido inválido")
 
@@ -315,6 +360,14 @@ async def get_home(
     favorites_svc: ChannelFavoritesServiceV2 = Depends(get_channel_favorites_service_v2),
 ):
     """Obtiene bloques ligeros para la home de clientes TV."""
+    if not auth.iptv_enabled:
+        return {
+            "movie_sections": [],
+            "series_sections": [],
+            "stats": {"channels": 0, "movies": 0, "series": 0},
+            "favorites": [],
+        }
+
     payload = content_svc.get_home_catalog_new(
         username=auth.username,
         country=country,
@@ -350,6 +403,13 @@ async def get_home_v2(
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
     """Obtiene bloques ligeros para la home (nueva versión con paginación infinita)."""
+    if not auth.iptv_enabled:
+        return {
+            "movie_sections": [],
+            "series_sections": [],
+            "stats": {"channels": 0, "movies": 0, "series": 0},
+        }
+
     return content_svc.get_home_catalog_new(
         username=auth.username,
         country=country,
@@ -373,6 +433,9 @@ async def get_section(
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
     """Carga más items de una sección específica. Para paginación infinita."""
+    if not auth.iptv_enabled:
+        return _empty_page(page, page_size)
+
     result = content_svc.get_section_page(
         content_type=content_type,
         section_title=section_title,
@@ -402,6 +465,9 @@ async def search_content(
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
     """Busca contenido en varios tipos sin descargar la playlist completa."""
+    if not auth.iptv_enabled:
+        return _empty_page(page, page_size)
+
     requested_types = [
         value.strip() for value in (types or "channels,movies,series").split(",") if value.strip()
     ]

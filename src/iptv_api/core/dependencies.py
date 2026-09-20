@@ -213,6 +213,7 @@ async def require_auth_with_jwt(
             can_connect=True,
             current_devices=user.get("active_devices", 0),
             max_devices=user.get("max_connections", 5),
+            iptv_enabled=user.get("iptv_enabled", True),
         )
 
     except JWTError:
@@ -241,6 +242,7 @@ async def require_auth_with_credentials(
         can_connect=auth.can_connect,
         current_devices=auth.current_devices,
         max_devices=auth.max_devices,
+        iptv_enabled=auth.iptv_enabled,
     )
 
 
@@ -284,4 +286,5 @@ async def require_auth_with_session(
         can_connect=auth.can_connect,
         current_devices=auth.current_devices,
         max_devices=auth.max_devices,
+        iptv_enabled=auth.iptv_enabled,
     )

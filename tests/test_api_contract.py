@@ -12,6 +12,8 @@ ANDROID_CONTRACT_PATHS = {
     "/api/playback-preferences/{content_type}/{catalog_id}",
     "/api/torrentio/movies/{movie_id}",
     "/api/torrentio/series/{series_id}/episodes/{season}/{episode}",
+    "/api/addons/catalog/{content_type}/{catalog_id}",
+    "/api/addons/meta/{content_type}/{imdb_id}",
     "/api/channel-favorites",
     "/api/hidden-groups",
     "/api/calendar/{fecha}",

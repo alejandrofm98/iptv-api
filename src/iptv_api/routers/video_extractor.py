@@ -13,6 +13,7 @@ from iptv_api.core.dependencies import (
 )
 from iptv_api.core.exceptions import (
     BadRequestException,
+    ForbiddenException,
     NotFoundException,
     TooManyRequestsException,
     UnauthorizedException,
@@ -146,6 +147,9 @@ async def get_stream_url_internal(
 
     if not auth.valid or not auth.can_connect:
         raise UnauthorizedException("Credenciales inválidas")
+
+    if not auth.iptv_enabled:
+        raise ForbiddenException("La cuenta no tiene un proveedor IPTV contratado")
 
     user_agent = request.headers.get("User-Agent", "Unknown")
     ip_address = request.client.host if request.client else "Unknown"

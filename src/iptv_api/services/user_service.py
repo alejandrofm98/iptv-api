@@ -36,6 +36,7 @@ class UserServiceV2:
             "username": user.username,
             "max_connections": user.max_connections,
             "is_active": user.is_active,
+            "iptv_enabled": getattr(user, "iptv_enabled", True),
             "role": user.role,
             "expires_at": user.expires_at.isoformat() if user.expires_at else None,
             "created_at": user.created_at.isoformat() if user.created_at else None,
@@ -53,6 +54,7 @@ class UserServiceV2:
             "password_hash": user.password_hash,
             "max_connections": user.max_connections,
             "is_active": user.is_active,
+            "iptv_enabled": getattr(user, "iptv_enabled", True),
             "role": user.role,
             "expires_at": user.expires_at,
         }
@@ -78,6 +80,7 @@ class UserServiceV2:
             can_connect=active < user.get("max_connections", 2),
             current_devices=active,
             max_devices=user.get("max_connections", 2),
+            iptv_enabled=user.get("iptv_enabled", True),
         )
 
     def create_user(self, username: str, password: str, **kwargs) -> dict:
@@ -94,6 +97,7 @@ class UserServiceV2:
             "username": user.username,
             "max_connections": user.max_connections,
             "is_active": user.is_active,
+            "iptv_enabled": getattr(user, "iptv_enabled", True),
             "role": user.role,
         }
 
@@ -104,6 +108,7 @@ class UserServiceV2:
             max_connections=user_data.max_connections,
             is_active=True,
             role=getattr(user_data, "role", "user"),
+            iptv_enabled=getattr(user_data, "iptv_enabled", True),
             expires_at=(user_data.expires_at.isoformat() if user_data.expires_at else None),
         )
 
@@ -118,6 +123,8 @@ class UserServiceV2:
             update_dict["max_connections"] = user_data.max_connections
         if user_data.is_active is not None:
             update_dict["is_active"] = user_data.is_active
+        if user_data.iptv_enabled is not None:
+            update_dict["iptv_enabled"] = user_data.iptv_enabled
         if user_data.expires_at is not None:
             update_dict["expires_at"] = user_data.expires_at
         if hasattr(user_data, "role") and user_data.role is not None:
@@ -145,6 +152,7 @@ class UserServiceV2:
                 "username": u.username,
                 "max_connections": u.max_connections,
                 "is_active": u.is_active,
+                "iptv_enabled": getattr(u, "iptv_enabled", True),
                 "role": u.role,
                 "expires_at": u.expires_at.isoformat() if u.expires_at else None,
                 "created_at": u.created_at.isoformat() if u.created_at else None,

@@ -23,6 +23,9 @@ async def get_serie_episodes(
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
+    if not auth.iptv_enabled:
+        raise NotFoundException("Serie", serie_name)
+
     if "page" not in request.query_params and "page_size" not in request.query_params:
         episodes = content_svc.get_episodes_by_serie_name(
             serie_name=serie_name,
@@ -66,6 +69,9 @@ async def get_serie_episodes_by_id(
     wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Get episodes for a series by any identifier (UUID, tmdb_id, provider_id, or name)."""
+    if not auth.iptv_enabled:
+        raise NotFoundException("Serie", series_id)
+
     row = content_svc._find_series_catalog(series_id)
     if not row:
         raise NotFoundException("Serie", series_id)

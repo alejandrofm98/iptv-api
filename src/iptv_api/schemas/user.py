@@ -8,6 +8,7 @@ class UserResponse(BaseModel):
     username: str
     max_connections: int
     is_active: bool
+    iptv_enabled: bool = True
     role: str
     expires_at: datetime | None = None
     created_at: datetime | None = None
@@ -20,6 +21,7 @@ class UserCreate(BaseModel):
     password: str
     max_connections: int = 2
     is_active: bool = True
+    iptv_enabled: bool = True
     role: str = "user"
     expires_at: datetime | None = None
 
@@ -28,5 +30,6 @@ class UserUpdate(BaseModel):
     password: str | None = None
     max_connections: int | None = None
     is_active: bool | None = None
+    iptv_enabled: bool | None = None
     role: str | None = None
     expires_at: datetime | None = None

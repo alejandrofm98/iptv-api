@@ -16,5 +16,4 @@ curl_cffi
 alembic==1.18.4
 sqlalchemy==2.0.50
 # iptv-db: shared ORM models, schemas, and Alembic migrations
-# DEV-TEST: ref a rama feat/stremio-cinemeta-es (catalog.imdb_id). Al mergear, pinnear hash.
-iptv-db @ git+https://github.com/alejandrofm98/iptv-db.git@feat/stremio-cinemeta-es
+iptv-db @ git+https://github.com/alejandrofm98/iptv-db.git@bd98d9f
