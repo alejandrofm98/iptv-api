@@ -7,6 +7,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -75,22 +76,28 @@ class CinemetaService:
         content_type: str,
         catalog_id: str = "top",
         skip: int = 0,
+        search: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Devuelve un catálogo Cinemeta normalizado para navegación sin IPTV."""
+        """Devuelve un catálogo Cinemeta normalizado, opcionalmente filtrado por texto."""
         if content_type not in ("movie", "series"):
             raise ValueError("content_type debe ser movie o series")
         if not catalog_id or not re.fullmatch(r"[A-Za-z0-9_-]+", catalog_id):
             raise ValueError("catalog_id no es válido")
         if skip < 0:
             raise ValueError("skip no puede ser negativo")
+        normalized_search = search.strip() if search else ""
+        if len(normalized_search) > 120:
+            raise ValueError("search no puede superar 120 caracteres")
 
-        cache_key = f"catalog/{content_type}/{catalog_id}/{skip}"
+        cache_key = f"catalog/{content_type}/{catalog_id}/{skip}/{normalized_search.lower()}"
         now = time.monotonic()
         cached = self._cache.get(cache_key)
         if cached and cached.expires_at > now:
             return [dict(item) for item in cached.meta.get("items", [])]
 
         path = f"/catalog/{content_type}/{catalog_id}"
+        if normalized_search:
+            path += f"/search={quote(normalized_search, safe='')}"
         if skip:
             path += f"/skip={skip}"
         response = self.session.get(f"{self.base_url}{path}.json", timeout=self.timeout)

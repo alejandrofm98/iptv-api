@@ -103,6 +103,34 @@ def test_cinemeta_catalog_is_normalized_and_cached():
     assert first == second
 
 
+def test_cinemeta_catalog_supports_title_search():
+    session = Mock()
+    session.get.return_value = make_response(
+        {
+            "metas": [
+                {
+                    "id": "tt32333324",
+                    "name": "Batman: Knightfall - Part 1: Knightfall",
+                    "description": "A story",
+                    "releaseInfo": "2026",
+                }
+            ]
+        }
+    )
+
+    with patch(
+        "iptv_api.services.cinemeta_service.get_settings",
+        return_value=make_settings(),
+    ):
+        CinemetaService._cache.clear()
+        items = CinemetaService(session=session).get_catalog("movie", search="Batman: Knightfall")
+
+    assert items[0]["imdb_id"] == "tt32333324"
+    assert session.get.call_args.args[0].endswith(
+        "/catalog/movie/top/search=Batman%3A%20Knightfall.json"
+    )
+
+
 def test_cinemeta_rejects_invalid_imdb_id():
     with (
         patch(

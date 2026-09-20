@@ -29,13 +29,14 @@ def get_addon_catalog(
     content_type: Literal["movie", "series"] = Path(description="Tipo de contenido"),
     catalog_id: str = Path(description="Identificador de catálogo Cinemeta"),
     skip: int = Query(0, ge=0, le=5000, description="Offset de paginación"),
+    search: str | None = Query(None, max_length=120, description="Texto de búsqueda Cinemeta"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     cinemeta_svc: CinemetaService = Depends(get_cinemeta_service),
 ):
     """Devuelve un catálogo externo para cuentas sin catálogo IPTV VOD."""
     del auth
     try:
-        items = cinemeta_svc.get_catalog(content_type, catalog_id, skip)
+        items = cinemeta_svc.get_catalog(content_type, catalog_id, skip, search=search)
     except ValueError as exc:
         raise BadRequestException(str(exc)) from exc
     except Exception as exc:
