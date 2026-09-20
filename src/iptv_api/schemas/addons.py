@@ -33,3 +33,24 @@ class AddonMetaResponse(BaseModel):
     total_episodes: int = 0
     seasons: list[int] = Field(default_factory=list)
     episodes: list[AddonEpisode] = Field(default_factory=list)
+
+
+class AddonCatalogItem(BaseModel):
+    id: str
+    title: str | None = None
+    type: str
+    description: str | None = None
+    poster: str | None = None
+    backdrop: str | None = None
+    logo: str | None = None
+    genres: list[str] = Field(default_factory=list)
+    rating: float | None = None
+    year: int | None = None
+    imdb_id: str | None = None
+
+
+class AddonCatalogResponse(BaseModel):
+    items: list[AddonCatalogItem] = Field(default_factory=list)
+    content_type: str
+    catalog_id: str
+    skip: int = 0

@@ -14,7 +14,7 @@ from iptv_api.core.dependencies import (
     require_auth_with_jwt,
 )
 from iptv_api.core.exceptions import BadRequestException, ServiceUnavailableException
-from iptv_api.schemas.addons import AddonMetaResponse
+from iptv_api.schemas.addons import AddonCatalogResponse, AddonMetaResponse
 from iptv_api.services.cinemeta_service import CinemetaService
 from iptv_api.services.tmdb_es_service import TmdbEsService
 from iptv_api.services.torrentio_service import TorrentioService
@@ -22,6 +22,30 @@ from iptv_api.services.torrentio_service import TorrentioService
 logger = logging.getLogger("iptv-api.addons")
 
 router = APIRouter(prefix="/api/addons", tags=["Addons"])
+
+
+@router.get("/catalog/{content_type}/{catalog_id}", response_model=AddonCatalogResponse)
+def get_addon_catalog(
+    content_type: Literal["movie", "series"] = Path(description="Tipo de contenido"),
+    catalog_id: str = Path(description="Identificador de catálogo Cinemeta"),
+    skip: int = Query(0, ge=0, le=5000, description="Offset de paginación"),
+    auth: AuthDep = Depends(require_auth_with_jwt),
+    cinemeta_svc: CinemetaService = Depends(get_cinemeta_service),
+):
+    """Devuelve un catálogo externo para cuentas sin catálogo IPTV VOD."""
+    del auth
+    try:
+        items = cinemeta_svc.get_catalog(content_type, catalog_id, skip)
+    except ValueError as exc:
+        raise BadRequestException(str(exc)) from exc
+    except Exception as exc:
+        raise ServiceUnavailableException("Cinemeta no esta disponible") from exc
+    return {
+        "items": items,
+        "content_type": content_type,
+        "catalog_id": catalog_id,
+        "skip": skip,
+    }
 
 
 @router.get("/meta/{content_type}/{imdb_id}", response_model=AddonMetaResponse)

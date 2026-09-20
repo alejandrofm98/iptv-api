@@ -70,6 +70,39 @@ def test_cinemeta_meta_is_normalized_and_cached():
     assert first == second
 
 
+def test_cinemeta_catalog_is_normalized_and_cached():
+    session = Mock()
+    session.get.return_value = make_response(
+        {
+            "metas": [
+                {
+                    "id": "tt0111161",
+                    "name": "The Shawshank Redemption",
+                    "description": "A story",
+                    "releaseInfo": "1994",
+                    "genres": ["Drama"],
+                    "imdbRating": "9.3",
+                    "poster": "poster",
+                }
+            ]
+        }
+    )
+
+    with patch(
+        "iptv_api.services.cinemeta_service.get_settings",
+        return_value=make_settings(),
+    ):
+        CinemetaService._cache.clear()
+        service = CinemetaService(session=session)
+        first = service.get_catalog("movie")
+        second = service.get_catalog("movie")
+
+    session.get.assert_called_once()
+    assert first[0]["imdb_id"] == "tt0111161"
+    assert first[0]["year"] == 1994
+    assert first == second
+
+
 def test_cinemeta_rejects_invalid_imdb_id():
     with (
         patch(

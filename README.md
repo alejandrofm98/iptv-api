@@ -147,6 +147,7 @@ curl http://localhost:3010/api/admin/users \
 
 ### Addons Stremio (Bearer, read-only)
 
+- `GET /api/addons/catalog/{movie|series}/{catalog_id}` (catálogo Cinemeta paginado con `skip`)
 - `GET /api/addons/meta/{movie|series}/{imdb_id}` (ficha Cinemeta + sinopsis ES de TMDB; `?include_videos=true` para episodios y `?include_sources=true` para consultar disponibilidad torrent)
 
 Las preferencias de audio y subtítulos se comparten entre clientes. En series,

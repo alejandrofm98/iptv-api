@@ -70,6 +70,44 @@ class CinemetaService:
         self._trim_cache(now)
         return dict(meta)
 
+    def get_catalog(
+        self,
+        content_type: str,
+        catalog_id: str = "top",
+        skip: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Devuelve un catálogo Cinemeta normalizado para navegación sin IPTV."""
+        if content_type not in ("movie", "series"):
+            raise ValueError("content_type debe ser movie o series")
+        if not catalog_id or not re.fullmatch(r"[A-Za-z0-9_-]+", catalog_id):
+            raise ValueError("catalog_id no es válido")
+        if skip < 0:
+            raise ValueError("skip no puede ser negativo")
+
+        cache_key = f"catalog/{content_type}/{catalog_id}/{skip}"
+        now = time.monotonic()
+        cached = self._cache.get(cache_key)
+        if cached and cached.expires_at > now:
+            return [dict(item) for item in cached.meta.get("items", [])]
+
+        path = f"/catalog/{content_type}/{catalog_id}"
+        if skip:
+            path += f"/skip={skip}"
+        response = self.session.get(f"{self.base_url}{path}.json", timeout=self.timeout)
+        response.raise_for_status()
+        payload = response.json()
+        raw_items = payload.get("metas") if isinstance(payload, dict) else None
+        if not isinstance(raw_items, list):
+            raise ValueError("Cinemeta devolvió un catálogo inválido")
+        items = [
+            self._normalize_catalog_item(item, content_type)
+            for item in raw_items
+            if isinstance(item, dict) and (item.get("id") or item.get("imdb_id"))
+        ]
+        self._cache[cache_key] = _CacheEntry(now + self.cache_ttl, {"items": items})
+        self._trim_cache(now)
+        return [dict(item) for item in items]
+
     @staticmethod
     def _normalize(raw: dict[str, Any], content_type: str) -> dict[str, Any]:
         raw_videos = raw.get("videos")
@@ -112,6 +150,30 @@ class CinemetaService:
             "total_episodes": len(episodes),
             "seasons": seasons,
             "episodes": episodes,
+        }
+
+    @staticmethod
+    def _normalize_catalog_item(raw: dict[str, Any], content_type: str) -> dict[str, Any]:
+        item_id = str(raw.get("imdb_id") or raw.get("id") or "")
+        release_info = str(raw.get("releaseInfo") or raw.get("year") or "")
+        year_match = re.search(r"\b(19|20)\d{2}\b", release_info)
+        rating = raw.get("imdbRating") or raw.get("rating")
+        try:
+            rating_value = float(rating) if rating is not None else None
+        except (TypeError, ValueError):
+            rating_value = None
+        return {
+            "id": item_id,
+            "title": raw.get("name") or raw.get("title"),
+            "type": content_type,
+            "description": raw.get("description") or raw.get("overview"),
+            "poster": raw.get("poster"),
+            "backdrop": raw.get("background") or raw.get("backdrop"),
+            "logo": raw.get("logo"),
+            "genres": _as_str_list(raw.get("genres") or raw.get("genre")),
+            "rating": rating_value,
+            "year": int(year_match.group(0)) if year_match else None,
+            "imdb_id": item_id if _IMDB_PATTERN.fullmatch(item_id) else None,
         }
 
     @classmethod
