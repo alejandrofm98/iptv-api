@@ -1,4 +1,4 @@
-"""Fichas read-only desde addons Stremio (Cinemeta + sinopsis ES de TMDB)."""
+"""Fichas de Stremio con sinopsis TMDB en español persistida por el scraper."""
 
 from __future__ import annotations
 
@@ -12,14 +12,12 @@ from iptv_api.core.dependencies import AuthResult as AuthDep
 from iptv_api.core.dependencies import (
     get_cinemeta_service,
     get_db,
-    get_tmdb_es_service,
     require_auth_with_jwt,
 )
 from iptv_api.core.exceptions import BadRequestException, ServiceUnavailableException
 from iptv_api.repositories.external_catalog_repo import ExternalCatalogRepository
 from iptv_api.schemas.addons import AddonCatalogResponse, AddonMetaResponse
 from iptv_api.services.cinemeta_service import CinemetaService
-from iptv_api.services.tmdb_es_service import TmdbEsService
 from iptv_api.services.torrentio_service import TorrentioService
 
 logger = logging.getLogger("iptv-api.addons")
@@ -107,9 +105,8 @@ def get_addon_meta(
     auth: AuthDep = Depends(require_auth_with_jwt),
     session: Session = Depends(get_db),
     cinemeta_svc: CinemetaService = Depends(get_cinemeta_service),
-    tmdb_es_svc: TmdbEsService = Depends(get_tmdb_es_service),
 ):
-    """Devuelve ficha Cinemeta + sinopsis ES (TMDB lazy) + disponibilidad torrent.
+    """Devuelve ficha Cinemeta + sinopsis ES persistida + disponibilidad torrent.
 
     Para series la disponibilidad se estima con una muestra (S1E1), igual que
     hace el clasificador del scrapper. El detalle por episodio sigue en
@@ -123,16 +120,17 @@ def get_addon_meta(
     except Exception as exc:
         raise ServiceUnavailableException("Cinemeta no esta disponible") from exc
 
-    spanish: dict | None = None
-    if meta.get("moviedb_id"):
-        try:
-            spanish = tmdb_es_svc.get_spanish(meta["moviedb_id"], content_type)
-        except Exception as exc:
-            logger.warning("TMDB ES degradado para %s: %s", imdb_id, exc)
-
+    spanish: dict[str, str | None] | None = None
     if hasattr(session, "execute"):
         try:
-            ExternalCatalogRepository(session).save_meta(content_type, imdb_id, meta, spanish)
+            repository = ExternalCatalogRepository(session)
+            cached = repository.get_metadata_by_imdb_ids(content_type, [imdb_id]).get(imdb_id)
+            if cached and (cached.title_es or cached.overview_es):
+                spanish = {
+                    "title_es": cached.title_es,
+                    "overview_es": cached.overview_es,
+                }
+            repository.save_meta(content_type, imdb_id, meta, spanish)
             session.commit()
         except Exception as exc:
             session.rollback()

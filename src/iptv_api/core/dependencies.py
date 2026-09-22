@@ -28,7 +28,6 @@ from iptv_api.services.device_service import DeviceServiceV2  # noqa: E402
 from iptv_api.services.hidden_group_service import HiddenGroupService  # noqa: E402
 from iptv_api.services.playback_preference_service import PlaybackPreferenceService  # noqa: E402
 from iptv_api.services.stream_service import StreamProxyServiceV2  # noqa: E402
-from iptv_api.services.tmdb_es_service import TmdbEsService  # noqa: E402
 from iptv_api.services.transcode_service import TranscodeService  # noqa: E402
 from iptv_api.services.user_service import UserServiceV2  # noqa: E402
 from iptv_api.services.watch_progress_service import WatchProgressServiceV2  # noqa: E402
@@ -140,10 +139,6 @@ def get_content_service_v2(
 
 def get_cinemeta_service() -> CinemetaService:
     return CinemetaService()
-
-
-def get_tmdb_es_service() -> TmdbEsService:
-    return TmdbEsService()
 
 
 # ============================================

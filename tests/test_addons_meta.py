@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
@@ -5,7 +6,6 @@ import pytest
 from iptv_api.core.exceptions import BadRequestException, ServiceUnavailableException
 from iptv_api.routers.addons import get_addon_meta
 from iptv_api.services.cinemeta_service import CinemetaService
-from iptv_api.services.tmdb_es_service import TmdbEsService
 
 
 def make_response(payload: dict) -> Mock:
@@ -20,11 +20,6 @@ def make_settings(**overrides: object) -> Mock:
     settings.cinemeta_base_url = "https://v3-cinemeta.strem.io"
     settings.cinemeta_timeout_seconds = 15.0
     settings.cinemeta_cache_ttl_seconds = 86400
-    settings.tmdb_base_url = "https://api.themoviedb.org/3"
-    settings.tmdb_api_key = ""
-    settings.tmdb_read_token = ""
-    settings.tmdb_es_timeout_seconds = 15.0
-    settings.tmdb_es_cache_ttl_seconds = 2592000
     for key, value in overrides.items():
         setattr(settings, key, value)
     return settings
@@ -142,35 +137,7 @@ def test_cinemeta_rejects_invalid_imdb_id():
         CinemetaService(session=Mock()).get_meta("movie", "278")
 
 
-def test_tmdb_es_returns_none_without_credentials():
-    with patch(
-        "iptv_api.services.tmdb_es_service.get_settings",
-        return_value=make_settings(),
-    ):
-        assert TmdbEsService(session=Mock()).get_spanish(278, "movie") is None
-
-
-def test_tmdb_es_returns_spanish_overview():
-    session = Mock()
-    session.get.return_value = make_response(
-        {"title": "Cadena perpetua", "overview": "Tras el secuestro..."}
-    )
-
-    with patch(
-        "iptv_api.services.tmdb_es_service.get_settings",
-        return_value=make_settings(tmdb_api_key="key"),
-    ):
-        TmdbEsService._cache.clear()
-        item = TmdbEsService(session=session).get_spanish(278, "movie")
-
-    assert item == {"title_es": "Cadena perpetua", "overview_es": "Tras el secuestro..."}
-    assert session.get.call_args.kwargs["params"] == {
-        "language": "es-ES",
-        "api_key": "key",
-    }
-
-
-def test_addon_meta_merges_cinemeta_tmdb_and_torrent():
+def test_addon_meta_uses_scraper_persisted_spanish_and_torrent():
     cinemeta = Mock()
     cinemeta.get_meta.return_value = {
         "imdb_id": "tt0111161",
@@ -188,10 +155,13 @@ def test_addon_meta_merges_cinemeta_tmdb_and_torrent():
         "seasons": [],
         "episodes": [],
     }
-    tmdb_es = Mock()
-    tmdb_es.get_spanish.return_value = {
-        "title_es": "Cadena perpetua",
-        "overview_es": "Sinopsis en espanol",
+    db_session = Mock()
+    repository = Mock()
+    repository.get_metadata_by_imdb_ids.return_value = {
+        "tt0111161": SimpleNamespace(
+            title_es="Cadena perpetua",
+            overview_es="Sinopsis en espanol",
+        )
     }
     torrentio = Mock()
     torrentio.get_movie_streams.return_value = [
@@ -199,9 +169,18 @@ def test_addon_meta_merges_cinemeta_tmdb_and_torrent():
         {"language": "EN"},
     ]
 
-    with patch("iptv_api.routers.addons.TorrentioService", return_value=torrentio):
+    with (
+        patch("iptv_api.routers.addons.TorrentioService", return_value=torrentio),
+        patch("iptv_api.routers.addons.ExternalCatalogRepository", return_value=repository),
+    ):
         result = get_addon_meta(
-            "movie", "tt0111161", False, True, auth=Mock(), cinemeta_svc=cinemeta, tmdb_es_svc=tmdb_es
+            "movie",
+            "tt0111161",
+            False,
+            True,
+            auth=Mock(),
+            session=db_session,
+            cinemeta_svc=cinemeta,
         )
 
     assert result["overview_es"] == "Sinopsis en espanol"
@@ -209,6 +188,8 @@ def test_addon_meta_merges_cinemeta_tmdb_and_torrent():
     assert result["has_torrent_source"] is True
     assert result["torrent_languages"] == ["EN", "ES"]
     assert result["torrent_status"] == "ok"
+    repository.save_meta.assert_called_once()
+    db_session.commit.assert_called_once()
 
 
 def test_addon_meta_skips_torrent_lookup_by_default():
@@ -230,9 +211,7 @@ def test_addon_meta_skips_torrent_lookup_by_default():
     }
 
     with patch("iptv_api.routers.addons.TorrentioService") as torrentio_cls:
-        result = get_addon_meta(
-            "movie", "tt0111161", False, auth=Mock(), cinemeta_svc=cinemeta, tmdb_es_svc=Mock()
-        )
+        result = get_addon_meta("movie", "tt0111161", False, auth=Mock(), cinemeta_svc=cinemeta)
 
     torrentio_cls.assert_not_called()
     assert result["torrent_status"] == "not_requested"
@@ -257,19 +236,17 @@ def test_addon_meta_degrades_when_torrentio_is_down():
         "seasons": [],
         "episodes": [],
     }
-    tmdb_es = Mock()
     torrentio = Mock()
     torrentio.get_movie_streams.side_effect = RuntimeError("boom")
 
     with patch("iptv_api.routers.addons.TorrentioService", return_value=torrentio):
         result = get_addon_meta(
-            "movie", "tt0111161", False, True, auth=Mock(), cinemeta_svc=cinemeta, tmdb_es_svc=tmdb_es
+            "movie", "tt0111161", False, True, auth=Mock(), cinemeta_svc=cinemeta
         )
 
     assert result["torrent_status"] == "unavailable"
     assert result["has_torrent_source"] is False
     assert result["overview_source"] == "none"
-    tmdb_es.get_spanish.assert_not_called()
 
 
 def test_addon_meta_rejects_invalid_imdb_id():
@@ -277,9 +254,7 @@ def test_addon_meta_rejects_invalid_imdb_id():
     cinemeta.get_meta.side_effect = ValueError("imdb_id debe tener formato tt1234567")
 
     with pytest.raises(BadRequestException):
-        get_addon_meta(
-            "movie", "278", False, auth=Mock(), cinemeta_svc=cinemeta, tmdb_es_svc=Mock()
-        )
+        get_addon_meta("movie", "278", False, auth=Mock(), cinemeta_svc=cinemeta)
 
 
 def test_addon_meta_maps_cinemeta_outage_to_503():
@@ -293,5 +268,4 @@ def test_addon_meta_maps_cinemeta_outage_to_503():
             False,
             auth=Mock(),
             cinemeta_svc=cinemeta,
-            tmdb_es_svc=Mock(),
         )
