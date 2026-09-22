@@ -6,14 +6,17 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Path, Query
+from sqlalchemy.orm import Session
 
 from iptv_api.core.dependencies import AuthResult as AuthDep
 from iptv_api.core.dependencies import (
     get_cinemeta_service,
+    get_db,
     get_tmdb_es_service,
     require_auth_with_jwt,
 )
 from iptv_api.core.exceptions import BadRequestException, ServiceUnavailableException
+from iptv_api.repositories.external_catalog_repo import ExternalCatalogRepository
 from iptv_api.schemas.addons import AddonCatalogResponse, AddonMetaResponse
 from iptv_api.services.cinemeta_service import CinemetaService
 from iptv_api.services.tmdb_es_service import TmdbEsService
@@ -28,15 +31,60 @@ router = APIRouter(prefix="/api/addons", tags=["Addons"])
 def get_addon_catalog(
     content_type: Literal["movie", "series"] = Path(description="Tipo de contenido"),
     catalog_id: str = Path(description="Identificador de catálogo Cinemeta"),
-    skip: int = Query(0, ge=0, le=5000, description="Offset de paginación"),
+    skip: int = Query(0, ge=0, description="Offset de paginación"),
+    page_size: int = Query(50, ge=1, le=100, description="Tamaño de página"),
     search: str | None = Query(None, max_length=120, description="Texto de búsqueda Cinemeta"),
     auth: AuthDep = Depends(require_auth_with_jwt),
+    session: Session = Depends(get_db),
     cinemeta_svc: CinemetaService = Depends(get_cinemeta_service),
 ):
-    """Devuelve un catálogo externo para cuentas sin catálogo IPTV VOD."""
+    """Devuelve catálogo externo persistido, importando la página si falta."""
     del auth
     try:
-        items = cinemeta_svc.get_catalog(content_type, catalog_id, skip, search=search)
+        repository = ExternalCatalogRepository(session)
+        cached = [] if search else repository.list_page(content_type, catalog_id, skip, page_size)
+        if search or len(cached) < max(1, page_size - 5):
+            fresh = cinemeta_svc.get_catalog(
+                content_type,
+                catalog_id,
+                skip,
+                search=search,
+            )
+            if not search:
+                repository.upsert_page(content_type, catalog_id, skip, fresh)
+                cached = repository.list_page(content_type, catalog_id, skip, page_size)
+            else:
+                return {
+                    "items": fresh,
+                    "content_type": content_type,
+                    "catalog_id": catalog_id,
+                    "skip": skip,
+                    "has_next": bool(fresh),
+                }
+        localized = repository.get_metadata_by_imdb_ids(
+            content_type,
+            [row.imdb_id for row in cached],
+        )
+        items = []
+        for row in cached:
+            detail = localized.get(row.imdb_id)
+            items.append(
+                {
+                    "id": row.imdb_id,
+                    "imdb_id": row.imdb_id,
+                    "moviedb_id": row.moviedb_id,
+                    "title": (detail.title_es if detail else None) or row.title,
+                    "type": row.content_type,
+                    "description": (detail.overview_es if detail else None)
+                    or row.overview_es
+                    or row.description_en,
+                    "poster": row.poster,
+                    "backdrop": row.backdrop,
+                    "rating": row.rating,
+                    "year": row.year,
+                }
+            )
+        session.commit()
     except ValueError as exc:
         raise BadRequestException(str(exc)) from exc
     except Exception as exc:
@@ -46,6 +94,7 @@ def get_addon_catalog(
         "content_type": content_type,
         "catalog_id": catalog_id,
         "skip": skip,
+        "has_next": bool(items),
     }
 
 
@@ -56,6 +105,7 @@ def get_addon_meta(
     include_videos: bool = Query(False, description="Incluir el detalle de episodios de la serie"),
     include_sources: bool = Query(False, description="Consultar disponibilidad torrent"),
     auth: AuthDep = Depends(require_auth_with_jwt),
+    session: Session = Depends(get_db),
     cinemeta_svc: CinemetaService = Depends(get_cinemeta_service),
     tmdb_es_svc: TmdbEsService = Depends(get_tmdb_es_service),
 ):
@@ -79,6 +129,14 @@ def get_addon_meta(
             spanish = tmdb_es_svc.get_spanish(meta["moviedb_id"], content_type)
         except Exception as exc:
             logger.warning("TMDB ES degradado para %s: %s", imdb_id, exc)
+
+    if hasattr(session, "execute"):
+        try:
+            ExternalCatalogRepository(session).save_meta(content_type, imdb_id, meta, spanish)
+            session.commit()
+        except Exception as exc:
+            session.rollback()
+            logger.warning("No se pudo persistir la ficha Cinemeta %s: %s", imdb_id, exc)
 
     # `Query(False)` is a FastAPI object when this function is called directly
     # by unit tests; checking identity also keeps that direct-call default safe.

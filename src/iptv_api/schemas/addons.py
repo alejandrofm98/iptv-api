@@ -47,6 +47,7 @@ class AddonCatalogItem(BaseModel):
     rating: float | None = None
     year: int | None = None
     imdb_id: str | None = None
+    moviedb_id: int | None = None
 
 
 class AddonCatalogResponse(BaseModel):
@@ -54,3 +55,4 @@ class AddonCatalogResponse(BaseModel):
     content_type: str
     catalog_id: str
     skip: int = 0
+    has_next: bool = False

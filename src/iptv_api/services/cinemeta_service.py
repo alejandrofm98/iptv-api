@@ -173,6 +173,7 @@ class CinemetaService:
             "id": item_id,
             "title": raw.get("name") or raw.get("title"),
             "type": content_type,
+            "moviedb_id": _as_int(raw.get("moviedb_id")),
             "description": raw.get("description") or raw.get("overview"),
             "poster": raw.get("poster"),
             "backdrop": raw.get("background") or raw.get("backdrop"),
@@ -191,3 +192,10 @@ class CinemetaService:
     def _validate_imdb_id(imdb_id: str) -> None:
         if not _IMDB_PATTERN.fullmatch(imdb_id):
             raise ValueError("imdb_id debe tener formato tt1234567")
+
+
+def _as_int(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None

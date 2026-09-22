@@ -19,6 +19,7 @@ from iptv_api.core.config import get_settings
 from iptv_api.repositories.channel_repo import ChannelRepository
 from iptv_api.repositories.config_repo import SyncMetadataRepository
 from iptv_api.repositories.content_repo import ContentRepository
+from iptv_api.repositories.external_catalog_repo import ExternalCatalogRepository
 from iptv_api.repositories.replay_repo import ReplayRepository
 from iptv_api.repositories.series_repo import SeriesRepository
 from iptv_api.repositories.watch_progress_repo import WatchProgressRepository
@@ -1707,6 +1708,7 @@ class ContentServiceV2:
                 genre=genre,
             )
             items = result.get("items") or []
+            self._enrich_rows_from_external_catalog(items, "series")
             total = result.get("total", 0)
             parsed_items = [
                 self._to_android_series_from_catalog(
@@ -1720,6 +1722,7 @@ class ContentServiceV2:
                 rows, total = self.get_movies_paginated(
                     page, page_size, country, search, year, genre, group
                 )
+                self._enrich_rows_from_external_catalog(rows, "movie")
             else:
                 channels, total = self.get_channels_paginated(
                     page, page_size, country, group, search
@@ -1733,6 +1736,37 @@ class ContentServiceV2:
             ]
             return self._build_paginated_payload(android_items, total, page, page_size)
         return self._build_paginated_payload([], 0, page, page_size)
+
+    def _enrich_rows_from_external_catalog(
+        self, rows: list[dict[str, Any]], content_type: str
+    ) -> None:
+        """Completa títulos IPTV con Cinemeta/TMDB usando el IMDb ya asociado."""
+        imdb_ids = list(
+            {
+                str(row.get("imdb_id"))
+                for row in rows
+                if row.get("imdb_id") and str(row.get("imdb_id")).startswith("tt")
+            }
+        )
+        if not imdb_ids:
+            return
+        metadata = ExternalCatalogRepository(self.session).get_metadata_by_imdb_ids(
+            content_type, imdb_ids
+        )
+        for row in rows:
+            imdb_id = str(row.get("imdb_id") or "")
+            external = metadata.get(imdb_id)
+            if external is None:
+                continue
+            if not row.get("overview_es") and external.overview_es:
+                row["overview_es"] = external.overview_es
+                row["overview"] = external.overview_es
+            if not row.get("tmdb_title"):
+                row["tmdb_title"] = external.title_es or external.title
+            if not row.get("poster_path") and external.poster:
+                row["poster_path"] = external.poster
+            if not row.get("backdrop_path") and external.backdrop:
+                row["backdrop_path"] = external.backdrop
 
     def get_section_page(
         self,
