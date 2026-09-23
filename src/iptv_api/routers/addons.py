@@ -34,31 +34,16 @@ def get_addon_catalog(
     search: str | None = Query(None, max_length=120, description="Texto de búsqueda Cinemeta"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     session: Session = Depends(get_db),
-    cinemeta_svc: CinemetaService = Depends(get_cinemeta_service),
 ):
-    """Devuelve catálogo externo persistido, importando la página si falta."""
+    """Devuelve exclusivamente el catálogo externo persistido por el scraper."""
     del auth
     try:
         repository = ExternalCatalogRepository(session)
-        cached = [] if search else repository.list_page(content_type, catalog_id, skip, page_size)
-        if search or len(cached) < max(1, page_size - 5):
-            fresh = cinemeta_svc.get_catalog(
-                content_type,
-                catalog_id,
-                skip,
-                search=search,
-            )
-            if not search:
-                repository.upsert_page(content_type, catalog_id, skip, fresh)
-                cached = repository.list_page(content_type, catalog_id, skip, page_size)
-            else:
-                return {
-                    "items": fresh,
-                    "content_type": content_type,
-                    "catalog_id": catalog_id,
-                    "skip": skip,
-                    "has_next": bool(fresh),
-                }
+        cached = (
+            repository.search_page(content_type, catalog_id, search, skip, page_size)
+            if search
+            else repository.list_page(content_type, catalog_id, skip, page_size)
+        )
         localized = repository.get_metadata_by_imdb_ids(
             content_type,
             [row.imdb_id for row in cached],
@@ -71,28 +56,35 @@ def get_addon_catalog(
                     "id": row.imdb_id,
                     "imdb_id": row.imdb_id,
                     "moviedb_id": row.moviedb_id,
-                    "title": (detail.title_es if detail else None) or row.title,
+                    "title": row.title_es or (detail.title_es if detail else None) or row.title,
                     "type": row.content_type,
-                    "description": (detail.overview_es if detail else None)
-                    or row.overview_es
-                    or row.description_en,
+                    "description": row.overview_es or (detail.overview_es if detail else None),
                     "poster": row.poster,
                     "backdrop": row.backdrop,
                     "rating": row.rating,
                     "year": row.year,
                 }
             )
-        session.commit()
+        has_next = bool(
+            not search
+            and len(cached) == page_size
+            and repository.list_page(
+                content_type,
+                catalog_id,
+                skip + len(cached),
+                1,
+            )
+        )
     except ValueError as exc:
         raise BadRequestException(str(exc)) from exc
     except Exception as exc:
-        raise ServiceUnavailableException("Cinemeta no esta disponible") from exc
+        raise ServiceUnavailableException("No se pudo leer el catálogo persistido") from exc
     return {
         "items": items,
         "content_type": content_type,
         "catalog_id": catalog_id,
         "skip": skip,
-        "has_next": bool(items),
+        "has_next": has_next,
     }
 
 

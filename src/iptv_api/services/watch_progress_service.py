@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from iptv_api.repositories.content_repo import ContentRepository
+from iptv_api.repositories.external_catalog_repo import ExternalCatalogRepository
 from iptv_api.repositories.playback_preference_repo import PlaybackPreferenceRepository
 from iptv_api.repositories.series_repo import SeriesRepository
 from iptv_api.repositories.watch_progress_repo import WatchProgressRepository
@@ -23,6 +24,7 @@ class WatchProgressServiceV2:
         self.session = session
         self.wp_repo = WatchProgressRepository(session)
         self.content_repo = ContentRepository(session)
+        self.external_catalog_repo = ExternalCatalogRepository(session)
         self.series_repo = SeriesRepository(session)
         self.playback_preference_repo = PlaybackPreferenceRepository(session)
 
@@ -366,12 +368,54 @@ class WatchProgressServiceV2:
                     self._apply_metadata(normalized, content_type, twin)
                     normalized["series_name"] = twin.get("serie_name") or row.series_name
 
+        self._apply_scraper_metadata(normalized, content_type, row.content_id, content_row)
+
         position = row.position_ms or 0
         duration = row.duration_ms or 0
         normalized["progress_percent"] = int(position / duration * 100) if duration > 0 else 0
         normalized["is_watched"] = row.is_watched
 
         return normalized
+
+    def _apply_scraper_metadata(
+        self,
+        normalized: dict,
+        content_type: str | None,
+        content_id: str | None,
+        content_row: dict | None,
+    ) -> None:
+        """Fill progress cards from scraper metadata already stored in the DB."""
+        if content_type not in ("movie", "series"):
+            return
+        imdb_id = str((content_row or {}).get("imdb_id") or normalized.get("imdb_id") or "")
+        if not imdb_id and content_id:
+            candidate = self._lookup_id(content_id)
+            imdb_id = candidate if re.fullmatch(r"tt\d+", candidate, re.IGNORECASE) else ""
+        if not imdb_id:
+            return
+
+        metadata = self.external_catalog_repo.get_by_imdb(content_type, imdb_id)
+        if metadata is None:
+            return
+
+        title_es = metadata.title_es or ""
+        overview_es = metadata.overview_es or ""
+        if title_es:
+            normalized["title"] = title_es
+            normalized["normalized_title"] = title_es
+            normalized["tmdb_title"] = title_es
+        if overview_es:
+            normalized["overview"] = overview_es
+            normalized["overview_es"] = overview_es
+        if metadata.poster:
+            normalized["poster_path"] = metadata.poster
+            if not normalized.get("image_url") or self._is_placeholder(
+                str(normalized["image_url"])
+            ):
+                normalized["image_url"] = metadata.poster
+        if metadata.backdrop:
+            normalized["backdrop_path"] = metadata.backdrop
+        normalized["imdb_id"] = imdb_id
 
     def _normalized_title(self, content_type: str | None, content_row: dict) -> str:
         if content_type == "movie":

@@ -31,6 +31,34 @@ class ExternalCatalogRepository:
         )
         return list(self.session.execute(stmt).scalars().all())
 
+    def search_page(
+        self, content_type: str, catalog_id: str, query: str, skip: int, page_size: int
+    ) -> list[ExternalCatalogItem]:
+        """Search the scraper-imported catalog without calling Cinemeta at request time."""
+        pattern = f"%{query.strip()}%"
+        starts_with = f"{query.strip()}%"
+        stmt = (
+            select(ExternalCatalogItem)
+            .where(
+                ExternalCatalogItem.content_type == content_type,
+                ExternalCatalogItem.catalog_id == catalog_id,
+                (
+                    ExternalCatalogItem.title_es.ilike(pattern)
+                    | ExternalCatalogItem.title.ilike(pattern)
+                    | ExternalCatalogItem.imdb_id.ilike(pattern)
+                ),
+            )
+            .order_by(
+                case((ExternalCatalogItem.title_es.ilike(starts_with), 0), else_=1),
+                case((ExternalCatalogItem.title.ilike(starts_with), 0), else_=1),
+                ExternalCatalogItem.catalog_position,
+                ExternalCatalogItem.imdb_id,
+            )
+            .offset(skip)
+            .limit(page_size)
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
     def get_by_imdb(self, content_type: str, imdb_id: str) -> ExternalCatalogItem | None:
         """Busca una ficha externa para enriquecer un título IPTV por IMDb."""
         stmt = (
@@ -39,7 +67,11 @@ class ExternalCatalogRepository:
                 ExternalCatalogItem.content_type == content_type,
                 ExternalCatalogItem.imdb_id == imdb_id,
             )
-            .order_by(ExternalCatalogItem.last_seen_at.desc())
+            .order_by(
+                case((ExternalCatalogItem.overview_es.is_not(None), 0), else_=1),
+                case((ExternalCatalogItem.title_es.is_not(None), 0), else_=1),
+                ExternalCatalogItem.last_seen_at.desc(),
+            )
             .limit(1)
         )
         return self.session.execute(stmt).scalars().first()

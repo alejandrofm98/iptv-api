@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from iptv_api.core.exceptions import BadRequestException, ServiceUnavailableException
-from iptv_api.routers.addons import get_addon_meta
+from iptv_api.routers.addons import get_addon_catalog, get_addon_meta
 from iptv_api.services.cinemeta_service import CinemetaService
 
 
@@ -124,6 +124,43 @@ def test_cinemeta_catalog_supports_title_search():
     assert session.get.call_args.args[0].endswith(
         "/catalog/movie/top/search=Batman%3A%20Knightfall.json"
     )
+
+
+def test_addon_catalog_search_uses_scraper_database_only():
+    session = Mock()
+    repository = Mock()
+    repository.search_page.return_value = [
+        SimpleNamespace(
+            imdb_id="tt0111161",
+            moviedb_id=278,
+            title="The Shawshank Redemption",
+            title_es="Cadena perpetua",
+            content_type="movie",
+            overview_es="Dos hombres crean un vínculo durante décadas.",
+            description_en="English overview",
+            poster="poster",
+            backdrop="backdrop",
+            rating=9.3,
+            year=1994,
+        )
+    ]
+    repository.get_metadata_by_imdb_ids.return_value = {}
+
+    with patch("iptv_api.routers.addons.ExternalCatalogRepository", return_value=repository):
+        result = get_addon_catalog(
+            "movie",
+            "top",
+            0,
+            50,
+            "Cadena perpetua",
+            auth=Mock(),
+            session=session,
+        )
+
+    repository.search_page.assert_called_once_with("movie", "top", "Cadena perpetua", 0, 50)
+    repository.list_page.assert_not_called()
+    assert result["items"][0]["title"] == "Cadena perpetua"
+    assert result["items"][0]["description"] == "Dos hombres crean un vínculo durante décadas."
 
 
 def test_cinemeta_rejects_invalid_imdb_id():

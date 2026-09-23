@@ -89,6 +89,31 @@ def test_continue_watching_movie_includes_tmdb_metadata_and_poster_for_placehold
     assert item["progress_percent"] == 10
 
 
+def test_continue_watching_uses_scraped_localization_when_provider_row_is_missing():
+    progress_row = make_progress_row(content_id="movie:tt15467380")
+    service = make_service_with_mocks(progress_row)
+    service.content_repo.search_by_provider_id = MagicMock(return_value=None)
+    service.external_catalog_repo.get_by_imdb = MagicMock(
+        return_value=MagicMock(
+            title_es="La película en español",
+            overview_es="Sinopsis guardada por el scraper.",
+            poster="https://images.test/poster.jpg",
+            backdrop="https://images.test/backdrop.jpg",
+        )
+    )
+
+    item = service.get_continue_watching("user-1", limit=20)[0]
+
+    service.external_catalog_repo.get_by_imdb.assert_called_once_with("movie", "tt15467380")
+    assert item["title"] == "La película en español"
+    assert item["normalized_title"] == "La película en español"
+    assert item["tmdb_title"] == "La película en español"
+    assert item["overview"] == "Sinopsis guardada por el scraper."
+    assert item["overview_es"] == "Sinopsis guardada por el scraper."
+    assert item["poster_path"] == "https://images.test/poster.jpg"
+    assert item["backdrop_path"] == "https://images.test/backdrop.jpg"
+
+
 def test_continue_watching_keeps_real_logo_when_available():
     progress_row = make_progress_row()
 
