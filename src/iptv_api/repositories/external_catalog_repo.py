@@ -3,8 +3,8 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from iptv_db.models.external_catalog import ExternalCatalogItem
-from sqlalchemy import case, func, select
+from iptv_db.models.external_catalog import ExternalCatalogEpisode, ExternalCatalogItem
+from sqlalchemy import case, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -75,6 +75,18 @@ class ExternalCatalogRepository:
             .limit(1)
         )
         return self.session.execute(stmt).scalars().first()
+
+    def list_episodes(self, imdb_id: str) -> list[ExternalCatalogEpisode]:
+        """Lee los episodios externos ya enriquecidos por el scraper."""
+        stmt = (
+            select(ExternalCatalogEpisode)
+            .where(ExternalCatalogEpisode.imdb_id == imdb_id)
+            .order_by(
+                ExternalCatalogEpisode.season_number,
+                ExternalCatalogEpisode.episode_number,
+            )
+        )
+        return list(self.session.execute(stmt).scalars().all())
 
     def get_metadata_by_imdb_ids(
         self, content_type: str, imdb_ids: list[str]
@@ -151,66 +163,3 @@ class ExternalCatalogRepository:
             },
         )
         self.session.execute(stmt)
-
-    def save_meta(
-        self,
-        content_type: str,
-        imdb_id: str,
-        meta: dict[str, Any],
-        spanish: dict[str, Any] | None,
-    ) -> None:
-        """Persiste una ficha cargada al abrir un título, incluyendo su sinopsis ES."""
-        now = datetime.now(UTC)
-        stmt = insert(ExternalCatalogItem).values(
-            content_type=content_type,
-            catalog_id="meta",
-            catalog_position=0,
-            imdb_id=imdb_id,
-            moviedb_id=meta.get("moviedb_id"),
-            title=meta.get("name"),
-            title_es=(spanish or {}).get("title_es"),
-            description_en=meta.get("description_en"),
-            overview_es=(spanish or {}).get("overview_es"),
-            poster=meta.get("poster"),
-            backdrop=meta.get("background"),
-            rating=_as_float(meta.get("imdb_rating")),
-            year=_as_year(meta.get("year")),
-            imported_at=now,
-            last_seen_at=now,
-            updated_at=now,
-        )
-        excluded = stmt.excluded
-        self.session.execute(
-            stmt.on_conflict_do_update(
-                constraint="uq_external_catalog_items_identity",
-                set_={
-                    "moviedb_id": excluded.moviedb_id,
-                    "title": excluded.title,
-                    "title_es": func.coalesce(excluded.title_es, ExternalCatalogItem.title_es),
-                    "description_en": excluded.description_en,
-                    "overview_es": func.coalesce(
-                        excluded.overview_es, ExternalCatalogItem.overview_es
-                    ),
-                    "poster": excluded.poster,
-                    "backdrop": excluded.backdrop,
-                    "rating": excluded.rating,
-                    "year": excluded.year,
-                    "last_seen_at": now,
-                    "updated_at": now,
-                },
-            )
-        )
-
-
-def _as_float(value: Any) -> float | None:
-    try:
-        return float(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _as_year(value: Any) -> int | None:
-    try:
-        return int(str(value)[:4]) if value is not None else None
-    except (TypeError, ValueError):
-        return None

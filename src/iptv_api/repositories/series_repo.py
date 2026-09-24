@@ -501,6 +501,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                     sm.genres, sm.backdrop_path, sm.poster_path,
                     sm.title AS tmdb_title, sm.release_date, sm.popularity,
                     sm.status, sm.imdb_id,
+                    sm.tmdb_data ->> 'last_air_date' AS last_air_date,
                     COALESCE(
                         (SELECT COUNT(DISTINCT se.id) FROM series_episodes se WHERE se.catalog_id = sc.id),
                         0
@@ -565,6 +566,7 @@ class SeriesRepository(BaseRepository[SeriesCatalog]):
                 sm.genres, sm.backdrop_path, sm.poster_path,
                 sm.title AS tmdb_title, sm.release_date, sm.popularity,
                 sm.status, sm.imdb_id,
+                sm.tmdb_data ->> 'last_air_date' AS last_air_date,
                 tr.rank AS trending_rank,
                 COALESCE(
                     (SELECT COUNT(DISTINCT se.id) FROM series_episodes se WHERE se.catalog_id = sc.id),

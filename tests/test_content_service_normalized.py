@@ -108,6 +108,7 @@ def test_android_series_group_item_includes_tmdb_metadata():
         "backdrop_path": "/backdrop.jpg",
         "tagline": "Tagline",
         "release_date": "2025-01-01",
+        "last_air_date": "2025-11-01",
         "tmdb_id": 123,
         "tmdb_title": "TMDB Serie Uno",
         "popularity": 10.5,
@@ -130,6 +131,7 @@ def test_android_series_group_item_includes_tmdb_metadata():
     assert item["tmdb_id"] == 123
     assert item["tmdb_title"] == "TMDB Serie Uno"
     assert item["total_seasons"] == 2
+    assert item["last_air_date"] == "2025-11-01"
 
 
 def test_android_series_group_item_no_tmdb_fallback():

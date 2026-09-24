@@ -7,6 +7,8 @@ class AddonEpisode(BaseModel):
     episode: int | None = None
     title: str | None = None
     overview: str | None = None
+    overview_es: str | None = None
+    overview_en: str | None = None
     thumbnail: str | None = None
     released: str | None = None
 
@@ -40,6 +42,7 @@ class AddonCatalogItem(BaseModel):
     title: str | None = None
     type: str
     description: str | None = None
+    overview_en: str | None = None
     poster: str | None = None
     backdrop: str | None = None
     logo: str | None = None
