@@ -30,6 +30,7 @@ from iptv_api.services.playback_preference_service import PlaybackPreferenceServ
 from iptv_api.services.stream_service import StreamProxyServiceV2  # noqa: E402
 from iptv_api.services.transcode_service import TranscodeService  # noqa: E402
 from iptv_api.services.user_service import UserServiceV2  # noqa: E402
+from iptv_api.services.vod_favorites_service import VodFavoritesService  # noqa: E402
 from iptv_api.services.watch_progress_service import WatchProgressServiceV2  # noqa: E402
 
 # Configuración JWT
@@ -101,6 +102,12 @@ def get_channel_favorites_service_v2(
     session: Session = Depends(get_db),
 ) -> ChannelFavoritesServiceV2:
     return ChannelFavoritesServiceV2(session)
+
+
+def get_vod_favorites_service(
+    session: Session = Depends(get_db),
+) -> VodFavoritesService:
+    return VodFavoritesService(session, ContentServiceV2(session))
 
 
 def get_hidden_group_service(

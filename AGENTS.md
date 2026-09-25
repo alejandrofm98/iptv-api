@@ -176,6 +176,8 @@ Lista exhaustiva (verificada contra el cliente Kotlin):
 - `GET /api/channel-favorites`
 - `POST /api/channel-favorites`
 - `DELETE /api/channel-favorites`
+- `GET /api/vod-favorites` — biblioteca de películas/series vinculada al usuario, sin requisito IPTV
+- `POST /api/vod-favorites` / `DELETE /api/vod-favorites/{content_type}/{content_id}`
 - `GET /api/content/countries?content_type=...`
 - `GET /api/search?q=...&page=1&page_size=60`
 - `GET /api/content/{kind}/{id}`

@@ -20,7 +20,7 @@ dependencies = [
     "alembic==1.18.4",
     "sqlalchemy==2.0.50",
     # iptv-db: shared ORM models, schemas, and Alembic migrations
-    "iptv-db @ git+https://github.com/alejandrofm98/iptv-db.git@4c8a0f168cba0bf3f73d1643864b3490e25d07dd",
+    "iptv-db @ git+https://github.com/alejandrofm98/iptv-db.git@8b5c9c76faad8e9259461ed2a134a97e3f309380",
 ]
 
 [tool.setuptools.packages.find]

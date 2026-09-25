@@ -4,6 +4,7 @@ Modelos Pydantic para IPTV API
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -324,6 +325,13 @@ class ChannelFavoriteCreate(BaseModel):
     """Modelo para agregar un canal a favoritos."""
 
     channel_provider_id: str = Field(..., min_length=1, max_length=100)
+
+
+class VodFavoriteCreate(BaseModel):
+    """A movie or series identifier to save to the signed-in user's library."""
+
+    content_type: Literal["movies", "series"]
+    content_id: str = Field(..., min_length=1, max_length=255)
 
 
 class ChannelFavoriteResponse(BaseModel):

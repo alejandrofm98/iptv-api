@@ -15,6 +15,7 @@ ANDROID_CONTRACT_PATHS = {
     "/api/addons/catalog/{content_type}/{catalog_id}",
     "/api/addons/meta/{content_type}/{imdb_id}",
     "/api/channel-favorites",
+    "/api/vod-favorites",
     "/api/hidden-groups",
     "/api/calendar/{fecha}",
     "/{content_type}/{username}/{password}/{stream_id}",

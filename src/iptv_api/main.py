@@ -35,6 +35,7 @@ from iptv_api.routers import (
     streams,
     torrentio,
     video_extractor,
+    vod_favorites,
     watch_progress,
 )
 from iptv_api.services.transcode_service import TranscodeService
@@ -196,6 +197,7 @@ app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(content.router)
 app.include_router(channel_favorites.router)
+app.include_router(vod_favorites.router)
 app.include_router(hidden_groups.router)
 app.include_router(series.router)
 app.include_router(watch_progress.router)
