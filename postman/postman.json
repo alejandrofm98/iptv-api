@@ -777,13 +777,17 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/watch-progress?limit=20",
+              "raw": "{{baseUrl}}/api/watch-progress?limit=20&language=es",
               "host": ["{{baseUrl}}"],
               "path": ["api", "watch-progress"],
               "query": [
                 {
                   "key": "limit",
                   "value": "20"
+                },
+                {
+                  "key": "language",
+                  "value": "es"
                 }
               ]
             },
@@ -801,9 +805,15 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/watch-progress/{{content_id}}",
+              "raw": "{{baseUrl}}/api/watch-progress/{{content_id}}?language=es",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "watch-progress", "{{content_id}}"]
+              "path": ["api", "watch-progress", "{{content_id}}"],
+              "query": [
+                {
+                  "key": "language",
+                  "value": "es"
+                }
+              ]
             },
             "description": "Obtiene el progreso de un item específico"
           }
@@ -823,9 +833,15 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/watch-progress/{{content_id}}",
+              "raw": "{{baseUrl}}/api/watch-progress/{{content_id}}?language=es",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "watch-progress", "{{content_id}}"]
+              "path": ["api", "watch-progress", "{{content_id}}"],
+              "query": [
+                {
+                  "key": "language",
+                  "value": "es"
+                }
+              ]
             },
             "body": {
               "mode": "raw",

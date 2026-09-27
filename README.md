@@ -147,8 +147,8 @@ curl http://localhost:3010/api/admin/users \
 
 ### Addons Stremio (Bearer)
 
-- `GET /api/addons/catalog/{movie|series}/{catalog_id}` (catálogo importado por el scraper y leído de BD, paginado con `skip`; admite `search` sobre esos registros persistidos)
-- `GET /api/addons/meta/{movie|series}/{imdb_id}` (ficha Cinemeta + sinopsis ES de TMDB persistida por el scraper; `?include_videos=true` para episodios y `?include_sources=true` para consultar disponibilidad torrent)
+- `GET /api/addons/catalog/{movie|series}/{catalog_id}` (catálogo importado por el scraper y leído de BD, paginado con `skip`; admite `search` sobre esos registros persistidos y `language=es|en` para elegir el logo localizado, por defecto `es`)
+- `GET /api/addons/meta/{movie|series}/{imdb_id}` (ficha Cinemeta + sinopsis ES de TMDB persistida por el scraper; `language=es|en` selecciona el logo, por defecto `es`; `?include_videos=true` para episodios y `?include_sources=true` para consultar disponibilidad torrent)
 
 Las preferencias de audio y subtítulos se comparten entre clientes. En series,
 `catalog_id` identifica la serie completa, no un episodio.

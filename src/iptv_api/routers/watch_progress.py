@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 
 from iptv_api.core.dependencies import AuthResult as AuthDep
@@ -15,22 +17,24 @@ router = APIRouter()
 @router.get("/api/watch-progress", tags=["Watch Progress"])
 async def get_continue_watching(
     limit: int = Query(20, ge=1, le=50, description="Máximo de items"),
+    language: Literal["es", "en"] = "es",
     auth: AuthDep = Depends(require_auth_with_jwt),
     wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Obtiene items con progreso de visualización incompleto. Requiere Bearer Token."""
-    items = wp_svc.get_continue_watching(auth.user_id, limit=limit)
+    items = wp_svc.get_continue_watching(auth.user_id, limit=limit, language=language)
     return {"items": items, "total": len(items)}
 
 
 @router.get("/api/watch-progress/continue", tags=["Watch Progress"])
 async def get_home_continue_watching(
     limit: int = Query(20, ge=1, le=50, description="Máximo de películas o series"),
+    language: Literal["es", "en"] = "es",
     auth: AuthDep = Depends(require_auth_with_jwt),
     wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Obtiene una entrada resumida por película o serie para Home."""
-    items = wp_svc.get_continue_watching_home(auth.user_id, limit=limit)
+    items = wp_svc.get_continue_watching_home(auth.user_id, limit=limit, language=language)
     return {"items": items, "total": len(items)}
 
 
@@ -38,21 +42,23 @@ async def get_home_continue_watching(
 async def get_watched_items(
     limit: int = Query(100, ge=1, le=500, description="Máximo de items por página"),
     offset: int = Query(0, ge=0, description="Desplazamiento para paginación"),
+    language: Literal["es", "en"] = "es",
     auth: AuthDep = Depends(require_auth_with_jwt),
     wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Obtiene items marcados como vistos, paginados. Requiere Bearer Token."""
-    return wp_svc.get_watched_items(auth.user_id, limit=limit, offset=offset)
+    return wp_svc.get_watched_items(auth.user_id, limit=limit, offset=offset, language=language)
 
 
 @router.get("/api/watch-progress/{content_id}", tags=["Watch Progress"])
 async def get_watch_progress(
     content_id: str,
+    language: Literal["es", "en"] = "es",
     auth: AuthDep = Depends(require_auth_with_jwt),
     wp_svc: WatchProgressServiceV2 = Depends(get_watch_progress_service_v2),
 ):
     """Obtiene el progreso de un item específico. Requiere Bearer Token."""
-    progress = wp_svc.get_progress(auth.user_id, content_id)
+    progress = wp_svc.get_progress(auth.user_id, content_id, language=language)
     if not progress:
         raise NotFoundException("WatchProgress", content_id)
     return progress

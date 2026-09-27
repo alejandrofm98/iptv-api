@@ -99,6 +99,9 @@ def test_continue_watching_uses_scraped_localization_when_provider_row_is_missin
             overview_es="Sinopsis guardada por el scraper.",
             poster="https://images.test/poster.jpg",
             backdrop="https://images.test/backdrop.jpg",
+            logo="legacy.png",
+            logo_es="spanish-logo.png",
+            logo_en="english-logo.png",
         )
     )
 
@@ -112,6 +115,28 @@ def test_continue_watching_uses_scraped_localization_when_provider_row_is_missin
     assert item["overview_es"] == "Sinopsis guardada por el scraper."
     assert item["poster_path"] == "https://images.test/poster.jpg"
     assert item["backdrop_path"] == "https://images.test/backdrop.jpg"
+    assert item["title_logo_url"] == "spanish-logo.png"
+
+
+def test_continue_watching_selects_logo_using_requested_client_language():
+    progress_row = make_progress_row(content_id="movie:tt15467380")
+    service = make_service_with_mocks(progress_row)
+    service.content_repo.search_by_provider_id = MagicMock(return_value=None)
+    service.external_catalog_repo.get_by_imdb = MagicMock(
+        return_value=MagicMock(
+            title_es="La película en español",
+            overview_es="Sinopsis guardada por el scraper.",
+            poster="poster.jpg",
+            backdrop="backdrop.jpg",
+            logo="legacy.png",
+            logo_es="spanish-logo.png",
+            logo_en="english-logo.png",
+        )
+    )
+
+    item = service.get_continue_watching("user-1", limit=20, language="en")[0]
+
+    assert item["title_logo_url"] == "english-logo.png"
 
 
 def test_continue_watching_keeps_real_logo_when_available():
@@ -217,7 +242,7 @@ def test_continue_watching_dedupes_series_episodes_to_one_entry():
     service = WatchProgressServiceV2(MagicMock())
     service.wp_repo.get_continue_watching = MagicMock(return_value=rows)
     service._normalize = MagicMock(
-        side_effect=lambda row: {
+        side_effect=lambda row, language="es": {
             "content_type": row.content_type,
             "content_id": "645757c6-d3bd-4dfa-a6a0-adabf9e640fc",
             "series_name": row.series_name or "The Rookie (2018)",
@@ -246,7 +271,7 @@ def test_continue_watching_keeps_multiple_distinct_movies():
     service = WatchProgressServiceV2(MagicMock())
     service.wp_repo.get_continue_watching = MagicMock(return_value=rows)
     service._normalize = MagicMock(
-        side_effect=lambda row: {
+        side_effect=lambda row, language="es": {
             "content_type": "movie",
             "content_id": row.content_id,
             "series_name": None,
@@ -292,7 +317,7 @@ def test_home_continue_watching_prefers_active_episode_and_groups_series():
     service.wp_repo.get_continue_watching = MagicMock(return_value=[active])
     service.wp_repo.get_watched_items = MagicMock(return_value=[watched])
     service._normalize = MagicMock(
-        side_effect=lambda row: {
+        side_effect=lambda row, language="es": {
             "content_type": row.content_type,
             "content_id": row.content_id,
             "series_name": row.series_name,
@@ -318,7 +343,7 @@ def _home_service_with(active_rows, watched_rows) -> WatchProgressServiceV2:
     service.wp_repo.get_continue_watching = MagicMock(return_value=active_rows)
     service.wp_repo.get_watched_items = MagicMock(return_value=watched_rows)
     service._normalize = MagicMock(
-        side_effect=lambda row: {
+        side_effect=lambda row, language="es": {
             "content_type": row.content_type,
             "content_id": row.content_id,
             "series_name": row.series_name,
@@ -592,7 +617,7 @@ def test_get_watched_items_forwards_limit_and_offset_and_returns_real_total():
     service.wp_repo.get_watched_items = MagicMock(return_value=[row_a, row_b])
     service.wp_repo.count_watched_items = MagicMock(return_value=7)
     service._normalize = MagicMock(
-        side_effect=lambda row: {
+        side_effect=lambda row, language="es": {
             "content_type": "movie",
             "content_id": row.content_id,
             "is_watched": row.is_watched,

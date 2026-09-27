@@ -12,7 +12,13 @@ class AddonCatalogService:
         self.repository = ExternalCatalogRepository(session)
 
     def catalog(
-        self, content_type: str, catalog_id: str, skip: int, page_size: int, search: str | None
+        self,
+        content_type: str,
+        catalog_id: str,
+        skip: int,
+        page_size: int,
+        search: str | None,
+        language: str = "es",
     ) -> dict:
         cached = (
             self.repository.search_page(content_type, catalog_id, search, skip, page_size)
@@ -37,7 +43,8 @@ class AddonCatalogService:
                     or (detail.description_en if detail else None),
                     "poster": row.poster,
                     "backdrop": row.backdrop,
-                    "logo": row.logo or (detail.logo if detail else None),
+                    "logo": self._logo_for_language(row, language)
+                    or (self._logo_for_language(detail, language) if detail else None),
                     "genres": row.genres or (detail.genres if detail else None) or [],
                     "rating": row.rating,
                     "year": row.year,
@@ -56,7 +63,9 @@ class AddonCatalogService:
             "has_next": has_next,
         }
 
-    def meta(self, content_type: str, imdb_id: str, include_videos: bool) -> dict | None:
+    def meta(
+        self, content_type: str, imdb_id: str, include_videos: bool, language: str = "es"
+    ) -> dict | None:
         row = self.repository.get_by_imdb(content_type, imdb_id)
         if row is None:
             return None
@@ -86,7 +95,7 @@ class AddonCatalogService:
             "overview_source": "tmdb" if row.overview_es else "none",
             "poster": row.poster,
             "background": row.backdrop,
-            "logo": row.logo,
+            "logo": self._logo_for_language(row, language),
             "genres": row.genres or [],
             "cast": row.cast or [],
             "imdb_rating": str(row.rating) if row.rating is not None else None,
@@ -95,3 +104,16 @@ class AddonCatalogService:
             "seasons": sorted({episode.season_number for episode in saved_episodes}),
             "episodes": episodes if include_videos else [],
         }
+
+    @staticmethod
+    def _logo_for_language(item, language: str) -> str | None:
+        """Devuelve el logo preferido y usa la otra lengua como fallback."""
+        normalized_language = language.casefold().split("-", maxsplit=1)[0]
+        english_first = normalized_language == "en"
+        preferred = getattr(item, "logo_en" if english_first else "logo_es", None)
+        fallback = getattr(item, "logo_es" if english_first else "logo_en", None)
+        legacy = getattr(item, "logo", None)
+        return next(
+            (value for value in (preferred, fallback, legacy) if isinstance(value, str) and value),
+            None,
+        )

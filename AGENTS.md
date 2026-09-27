@@ -162,8 +162,12 @@ coordinar rompe clientes en produccion.
 Lista exhaustiva (verificada contra el cliente Kotlin):
 
 - `POST /api/auth/login`
-- `GET /api/watch-progress`
-- `GET /api/watch-progress/continue` — resumen para Home, una entrada por película o serie
+- `GET /api/watch-progress?language=es|en` — el idioma selecciona el logo del título; por defecto `es`
+- `GET /api/watch-progress/continue?language=es|en` — resumen para Home, una entrada por película o serie
+- `GET /api/watch-progress/watched?language=es|en` — el mismo selector de logo
+- `GET /api/watch-progress/{content_id}?language=es|en` — el mismo selector de logo
+- `GET /api/addons/catalog/{movie|series}/{catalog_id}?language=es|en` — catálogo Cinemeta persistido y logo localizado
+- `GET /api/addons/meta/{movie|series}/{imdb_id}?language=es|en` — ficha Cinemeta persistida y logo localizado
 - `GET /api/playback-preferences/{movie|series}/{catalog_id}`
 - `PUT /api/playback-preferences/{movie|series}/{catalog_id}`
 - `DELETE /api/playback-preferences/{movie|series}/{catalog_id}`

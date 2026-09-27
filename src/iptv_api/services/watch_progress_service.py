@@ -28,7 +28,9 @@ class WatchProgressServiceV2:
         self.series_repo = SeriesRepository(session)
         self.playback_preference_repo = PlaybackPreferenceRepository(session)
 
-    def get_continue_watching(self, user_id: str, limit: int = 20) -> list[dict]:
+    def get_continue_watching(
+        self, user_id: str, limit: int = 20, language: str = "es"
+    ) -> list[dict]:
 
         rows = self.wp_repo.get_continue_watching(user_id, limit * 5)
         if not rows:
@@ -42,17 +44,21 @@ class WatchProgressServiceV2:
                 continue
             progress = position / duration
             if progress < 0.95:
-                incomplete.append(self._normalize(item))
+                incomplete.append(self._normalize(item, language))
 
         return self._dedupe_by_series(incomplete)[:limit]
 
-    def get_continue_watching_home(self, user_id: str, limit: int = 20) -> list[dict]:
+    def get_continue_watching_home(
+        self, user_id: str, limit: int = 20, language: str = "es"
+    ) -> list[dict]:
         """Obtiene una entrada por película o serie para la pantalla de inicio."""
         active_rows = self.wp_repo.get_continue_watching(user_id, max(limit * 5, 100))
         watched_rows = self.wp_repo.get_watched_items(user_id, max(limit * 5, 100), 0)
 
-        active = [self._normalize(row) for row in active_rows if self._has_resume_progress(row)]
-        watched = [self._normalize(row) for row in watched_rows]
+        active = [
+            self._normalize(row, language) for row in active_rows if self._has_resume_progress(row)
+        ]
+        watched = [self._normalize(row, language) for row in watched_rows]
         by_group: dict[str, dict] = {}
 
         for item in active:
@@ -146,16 +152,18 @@ class WatchProgressServiceV2:
 
         return score(new_item) > score(old_item)
 
-    def get_watched_items(self, user_id: str, limit: int = 100, offset: int = 0) -> dict:
+    def get_watched_items(
+        self, user_id: str, limit: int = 100, offset: int = 0, language: str = "es"
+    ) -> dict:
         rows = self.wp_repo.get_watched_items(user_id, limit, offset)
         total = self.wp_repo.count_watched_items(user_id)
-        return {"items": [self._normalize(r) for r in rows], "total": total}
+        return {"items": [self._normalize(r, language) for r in rows], "total": total}
 
-    def get_progress(self, user_id: str, content_id: str) -> dict | None:
+    def get_progress(self, user_id: str, content_id: str, language: str = "es") -> dict | None:
         rows = self._lookup_rows(user_id, content_id)
         if not rows:
             return None
-        return self._normalize(rows[0])
+        return self._normalize(rows[0], language)
 
     def upsert_progress(self, user_id: str, content_id: str, data: dict) -> dict:
         canonical = self._canonical_content_id(data.get("content_type"), content_id)
@@ -312,7 +320,7 @@ class WatchProgressServiceV2:
         last = self.wp_repo.get_series_last_episode(user_id, series_name)
         return last is not None and bool(last.is_watched)
 
-    def _normalize(self, row) -> dict:
+    def _normalize(self, row, language: str = "es") -> dict:
         content_type = row.content_type
         content_row = self._find_content_row(content_type, row.content_id)
         canonical_id = self._lookup_id(row.content_id)
@@ -368,7 +376,7 @@ class WatchProgressServiceV2:
                     self._apply_metadata(normalized, content_type, twin)
                     normalized["series_name"] = twin.get("serie_name") or row.series_name
 
-        self._apply_scraper_metadata(normalized, content_type, row.content_id, content_row)
+        self._apply_scraper_metadata(normalized, content_type, row.content_id, content_row, language)
 
         position = row.position_ms or 0
         duration = row.duration_ms or 0
@@ -383,6 +391,7 @@ class WatchProgressServiceV2:
         content_type: str | None,
         content_id: str | None,
         content_row: dict | None,
+        language: str,
     ) -> None:
         """Fill progress cards from scraper metadata already stored in the DB."""
         if content_type not in ("movie", "series"):
@@ -397,6 +406,27 @@ class WatchProgressServiceV2:
         metadata = self.external_catalog_repo.get_by_imdb(content_type, imdb_id)
         if metadata is None:
             return
+
+        language_key = language.casefold().split("-", maxsplit=1)[0]
+        preferred_logo = (
+            getattr(metadata, "logo_en", None)
+            if language_key == "en"
+            else getattr(metadata, "logo_es", None)
+        )
+        fallback_logo = (
+            getattr(metadata, "logo_es", None)
+            if language_key == "en"
+            else getattr(metadata, "logo_en", None)
+        )
+        legacy_logo = getattr(metadata, "logo", None)
+        normalized["title_logo_url"] = next(
+            (
+                logo
+                for logo in (preferred_logo, fallback_logo, legacy_logo)
+                if isinstance(logo, str) and logo
+            ),
+            None,
+        )
 
         title_es = metadata.title_es or ""
         overview_es = metadata.overview_es or ""

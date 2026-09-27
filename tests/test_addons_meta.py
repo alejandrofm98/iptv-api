@@ -9,6 +9,7 @@ from iptv_api.core.exceptions import (
     ServiceUnavailableException,
 )
 from iptv_api.routers.addons import get_addon_catalog, get_addon_meta
+from iptv_api.services.addon_catalog_service import AddonCatalogService
 from iptv_api.services.cinemeta_service import CinemetaService
 
 
@@ -145,6 +146,8 @@ def test_addon_catalog_search_uses_scraper_database_only():
             poster="poster",
             backdrop="backdrop",
             logo=None,
+            logo_es="https://img.test/logo-es.png",
+            logo_en="https://img.test/logo-en.png",
             genres=[],
             rating=9.3,
             year=1994,
@@ -161,6 +164,7 @@ def test_addon_catalog_search_uses_scraper_database_only():
             0,
             50,
             "Cadena perpetua",
+            language="en",
             auth=Mock(),
             session=session,
         )
@@ -170,6 +174,7 @@ def test_addon_catalog_search_uses_scraper_database_only():
     assert result["items"][0]["title"] == "Cadena perpetua"
     assert result["items"][0]["description"] == "Dos hombres crean un vínculo durante décadas."
     assert result["items"][0]["overview_en"] == "English overview"
+    assert result["items"][0]["logo"] == "https://img.test/logo-en.png"
 
 
 def test_cinemeta_rejects_invalid_imdb_id():
@@ -225,11 +230,12 @@ def test_addon_meta_uses_scraper_persisted_spanish_and_torrent():
         )
 
     assert result["overview_es"] == "Sinopsis en espanol"
+    assert result["logo"] is None
     assert result["overview_source"] == "tmdb"
     assert result["has_torrent_source"] is True
     assert result["torrent_languages"] == ["EN", "ES"]
     assert result["torrent_status"] == "ok"
-    service.meta.assert_called_once_with("movie", "tt0111161", False)
+    service.meta.assert_called_once_with("movie", "tt0111161", False, "es")
     db_session.commit.assert_not_called()
 
 
@@ -259,6 +265,8 @@ def test_addon_series_meta_uses_scraped_spanish_episode_synopsis():
         poster="poster",
         backdrop="background",
         logo=None,
+        logo_es="https://img.test/logo-es.png",
+        logo_en="https://img.test/logo-en.png",
         genres=[],
         cast=[],
         rating=9.5,
@@ -300,6 +308,38 @@ def test_addon_series_meta_uses_scraped_spanish_episode_synopsis():
     assert result["episodes"][1]["overview"] == "English fallback"
     assert result["total_episodes"] == 2
     session.commit.assert_not_called()
+
+
+def test_addon_meta_returns_logo_for_requested_language():
+    repository = Mock()
+    repository.get_by_imdb.return_value = SimpleNamespace(
+        title_es="La película",
+        title="The Movie",
+        year=2025,
+        description_en="English synopsis",
+        overview_es="Sinopsis española",
+        poster="poster",
+        backdrop="backdrop",
+        logo="legacy.png",
+        logo_es="spanish.png",
+        logo_en="english.png",
+        genres=[],
+        cast=[],
+        rating=8.0,
+        moviedb_id=42,
+    )
+    repository.list_episodes.return_value = []
+
+    with patch(
+        "iptv_api.services.addon_catalog_service.ExternalCatalogRepository",
+        return_value=repository,
+    ):
+        service = AddonCatalogService(Mock())
+        spanish = service.meta("movie", "tt1234567", False, "es")
+        english = service.meta("movie", "tt1234567", False, "en")
+
+    assert spanish["logo"] == "spanish.png"
+    assert english["logo"] == "english.png"
 
 
 def test_addon_meta_degrades_when_torrentio_is_down():

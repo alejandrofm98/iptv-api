@@ -34,6 +34,7 @@ def get_addon_catalog(
     skip: int = Query(0, ge=0, description="Offset de paginación"),
     page_size: int = Query(50, ge=1, le=100, description="Tamaño de página"),
     search: str | None = Query(None, max_length=120, description="Texto de búsqueda Cinemeta"),
+    language: Literal["es", "en"] = "es",
     auth: AuthDep = Depends(require_auth_with_jwt),
     session: Session = Depends(get_db),
 ):
@@ -41,7 +42,7 @@ def get_addon_catalog(
     del auth
     try:
         return AddonCatalogService(session).catalog(
-            content_type, catalog_id, skip, page_size, search
+            content_type, catalog_id, skip, page_size, search, language
         )
     except ValueError as exc:
         raise BadRequestException(str(exc)) from exc
@@ -55,6 +56,7 @@ def get_addon_meta(
     imdb_id: str = Path(description="Identificador IMDb (tt1234567)"),
     include_videos: bool = Query(False, description="Incluir el detalle de episodios de la serie"),
     include_sources: bool = Query(False, description="Consultar disponibilidad torrent"),
+    language: Literal["es", "en"] = "es",
     auth: AuthDep = Depends(require_auth_with_jwt),
     session: Session = Depends(get_db),
 ):
@@ -68,7 +70,9 @@ def get_addon_meta(
     try:
         if not imdb_id.startswith("tt") or not imdb_id[2:].isdigit():
             raise BadRequestException("imdb_id debe tener formato tt1234567")
-        meta = AddonCatalogService(session).meta(content_type, imdb_id, include_videos is True)
+        meta = AddonCatalogService(session).meta(
+            content_type, imdb_id, include_videos is True, language
+        )
         if meta is None:
             raise NotFoundException("Ficha", imdb_id)
     except (BadRequestException, NotFoundException):
