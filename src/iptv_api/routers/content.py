@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import JSONResponse
@@ -43,7 +44,7 @@ def _empty_page(page: int, page_size: int) -> dict:
 
 @router.get("/api/content/groups", tags=["Content"])
 async def get_groups_public(
-    content_type: str = Query("channels", enum=["channels", "movies", "series"]),
+    content_type: Literal["channels", "movies", "series"] = "channels",
     countries: str | None = Query(
         None, description="Filtrar por países (separados por coma: US,MX,ES)"
     ),
@@ -65,7 +66,7 @@ async def get_groups_public(
 
 @router.get("/api/content/countries", tags=["Content"])
 async def get_countries_public(
-    content_type: str = Query("channels", enum=["channels", "movies", "series"]),
+    content_type: Literal["channels", "movies", "series"] = "channels",
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
@@ -77,8 +78,8 @@ async def get_countries_public(
 
 @router.get("/api/content", tags=["Content"])
 async def get_content(
-    content_type: str = Query(
-        ..., enum=["channels", "movies", "series"], description="Tipo de contenido"
+    content_type: Literal["channels", "movies", "series"] = Query(
+        ..., description="Tipo de contenido"
     ),
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(50, ge=1, le=100, description="Items por página"),
@@ -143,8 +144,8 @@ async def get_content(
 
 @router.get("/api/content/filters", tags=["Content"])
 async def get_content_filters(
-    content_type: str = Query(
-        ..., enum=["channels", "movies", "series"], description="Tipo de contenido"
+    content_type: Literal["channels", "movies", "series"] = Query(
+        ..., description="Tipo de contenido"
     ),
     country: str | None = Query(None, description="Filtrar grupos por país"),
     auth: AuthDep = Depends(require_auth_with_jwt),
@@ -164,7 +165,7 @@ async def get_content_filters(
 
 @router.get("/api/content/genres", tags=["Content"])
 async def get_content_genres(
-    content_type: str = Query(..., enum=["movies", "series"], description="Tipo de contenido"),
+    content_type: Literal["movies", "series"] = Query(..., description="Tipo de contenido"),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
 ):
@@ -176,8 +177,8 @@ async def get_content_genres(
 
 @router.get("/api/content/stats", tags=["Content"])
 async def get_content_stats(
-    content_type: str = Query(
-        ..., enum=["channels", "movies", "series"], description="Tipo de contenido"
+    content_type: Literal["channels", "movies", "series"] = Query(
+        ..., description="Tipo de contenido"
     ),
     auth: AuthDep = Depends(require_auth_with_jwt),
     content_svc: ContentServiceV2 = Depends(get_content_service_v2),
@@ -420,7 +421,7 @@ async def get_home_v2(
 
 @router.get("/api/content/section", tags=["Content"])
 async def get_section(
-    content_type: str = Query(..., enum=["movies", "series"], description="Tipo de contenido"),
+    content_type: Literal["movies", "series"] = Query(..., description="Tipo de contenido"),
     section_title: str = Query(..., description="Título de sección: NETFLIX, 2026 ESTRENOS, ..."),
     page: int = Query(
         2,
