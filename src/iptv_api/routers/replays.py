@@ -2,10 +2,10 @@ import asyncio
 import logging
 from urllib.parse import quote, urljoin
 
+import jwt
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from jose import JWTError, jwt
 
 from iptv_api.core.config import get_settings
 from iptv_api.core.dependencies import AuthResult as AuthDep
@@ -36,7 +36,7 @@ def validate_stream_token(token: str) -> dict:
             raise UnauthorizedException("Token inválido")
 
         return {"id": user_id, "role": role}
-    except JWTError:
+    except jwt.PyJWTError:
         raise UnauthorizedException("Token inválido o expirado") from None
 
 
