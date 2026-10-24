@@ -4,9 +4,9 @@ Dependencias reutilizables para la API
 
 import logging
 
+import jwt
 from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger("iptv-api")
@@ -156,7 +156,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
         return {"id": user_id, "role": role}
 
-    except JWTError:
+    except jwt.PyJWTError:
         raise UnauthorizedException("Token inválido o expirado") from None
 
 
@@ -205,7 +205,7 @@ async def require_auth_with_jwt(
             max_devices=user.get("max_connections", 5),
         )
 
-    except JWTError:
+    except jwt.PyJWTError:
         raise UnauthorizedException("Token inválido o expirado") from None
 
 

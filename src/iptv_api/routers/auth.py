@@ -1,9 +1,9 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+import jwt
 from fastapi import APIRouter, Depends, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from jose import jwt
 from starlette.responses import PlainTextResponse
 
 from iptv_api.core.config import get_settings
